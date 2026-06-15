@@ -22,6 +22,7 @@ printf 'TRACESHIELD_CORE_PATH=%s\n' "${TRACESHIELD_CORE_PATH:-/opt/traceshield-c
 printf 'AUDIT_CORE_URL=%s\n' "${AUDIT_CORE_URL:-http://127.0.0.1:8001}"
 printf 'AGENT_GO_PORT=%s\n' "${AGENT_GO_PORT:-8080}"
 printf 'AUDIT_CORE_PORT=%s\n' "${AUDIT_CORE_PORT:-8001}"
+printf 'EINO_ENABLED=%s\n' "${EINO_ENABLED:-false}"
 
 section "current user"
 id || true

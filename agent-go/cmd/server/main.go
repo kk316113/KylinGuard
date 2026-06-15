@@ -20,11 +20,14 @@ func main() {
 	registry := tools.NewDefaultRegistry()
 	traceStore := logtrace.NewStore()
 	runtime := agent.NewRuntime(registry, auditclient.NewHTTPClient(cfg.AuditCoreURL), traceStore)
+	stableAdapter := agent.NewStableRuntimeAdapter(runtime)
+	einoAdapter := agent.NewEinoAdapter(cfg.EinoEnabled)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/os/info", osInfoHandler(registry, traceStore))
 	mux.HandleFunc("/api/agent/run", agentRunHandler(runtime))
+	mux.HandleFunc("/api/agent/run-eino", agentRunEinoHandler(einoAdapter, stableAdapter))
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
@@ -89,6 +92,53 @@ func agentRunHandler(runtime *agent.Runtime) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, resp)
 	}
+}
+
+func agentRunEinoHandler(einoAdapter agent.AgentAdapter, fallbackAdapter agent.AgentAdapter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireMethod(w, r, http.MethodPost) {
+			return
+		}
+
+		var req agent.AgentRunRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		if einoAdapter.Enabled() {
+			resp, err := einoAdapter.Run(r.Context(), req)
+			if err == nil {
+				writeJSON(w, http.StatusOK, resp)
+				return
+			}
+		}
+
+		resp, err := fallbackAdapter.Run(r.Context(), req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		resp.Summary = appendSummary(resp.Summary, einoFallbackSummary(einoAdapter))
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+func einoFallbackSummary(adapter agent.AgentAdapter) string {
+	type fallbackSummarizer interface {
+		FallbackSummary() string
+	}
+	if summarizer, ok := adapter.(fallbackSummarizer); ok {
+		return summarizer.FallbackSummary()
+	}
+	return "eino adapter disabled, stable runtime fallback used"
+}
+
+func appendSummary(summary string, detail string) string {
+	if summary == "" {
+		return detail
+	}
+	return summary + "; " + detail
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {

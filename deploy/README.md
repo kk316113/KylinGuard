@@ -17,5 +17,6 @@
 - `AUDIT_CORE_URL`：默认 `http://127.0.0.1:8001`
 - `AGENT_GO_PORT`：默认 `8080`
 - `AUDIT_CORE_PORT`：默认 `8001`
+- `EINO_ENABLED`：默认 `false`，Stage 3 仅提供 Eino adapter fallback 路径
 
 脚本不包含 Windows 路径。后续需要结合银河麒麟高级服务器版 V11 和 LoongArch 环境继续验证。

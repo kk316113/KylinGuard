@@ -3,7 +3,8 @@
 ## Agent
 
 - 确认 Eino 官方 module path 和 API。
-- 新增 Eino planner/runtime adapter。
+- 用 build tag 或替换 adapter 实现接入真实 Eino planner/runtime。
+- 为 `/api/agent/run-eino` 增加真实 Eino 编排路径并保持 intent_guard/audit-core-py 不可绕过。
 - 接入远程模型 API provider。
 - 增加工具权限策略和审批流。
 

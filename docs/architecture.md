@@ -14,9 +14,9 @@ User Task
 -> Final Report
 ```
 
-## 当前 Stage 2 状态
+## 当前 Stage 3 状态
 
-- `Go/Eino Agent Runtime`：当前为 Go runtime + static planner，占位等待 Eino adapter。
+- `Go/Eino Agent Runtime`：稳定主链路仍为 Go runtime + static planner；新增默认禁用的 Eino adapter 骨架。
 - `Intent Guard`：当前为关键词规则占位。
 - `Tool Registry`：当前已注册基础工具接口。
 - `Kylin Ops Tools`：当前仅提供保守实现和 stub。
@@ -54,4 +54,4 @@ Kylin Ops Tool
 
 ## Eino 接入边界
 
-当前不硬编码 Eino import 路径。后续确认官方模块路径和 API 后，可在 `agent-go/internal/agent` 下新增 adapter，并保留 `Planner` interface 作为稳定边界。
+当前不硬编码 Eino import 路径，也不引入 Eino 外部依赖。`/api/agent/run` 是稳定主链路，`/api/agent/run-eino` 是实验链路。Eino adapter 未启用或真实 runtime 未实现时，handler fallback 到 `StableRuntimeAdapter`，因此仍会执行 `intent_guard`、Tool Registry、语义 trace 和 audit-core-py。

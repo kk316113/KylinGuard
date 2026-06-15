@@ -7,6 +7,7 @@ KYLINGUARD_HOME="${KYLINGUARD_HOME:-$REPO_ROOT}"
 AGENT_DIR="$KYLINGUARD_HOME/agent-go"
 AUDIT_CORE_URL="${AUDIT_CORE_URL:-http://127.0.0.1:8001}"
 AGENT_GO_PORT="${AGENT_GO_PORT:-8080}"
+EINO_ENABLED="${EINO_ENABLED:-false}"
 
 if [[ ! -d "$AGENT_DIR" ]]; then
   printf 'agent-go directory not found: %s\n' "$AGENT_DIR" >&2
@@ -43,6 +44,7 @@ fi
 cd "$AGENT_DIR"
 export AUDIT_CORE_URL
 export KYLIN_GUARD_AGENT_PORT="$AGENT_GO_PORT"
+export EINO_ENABLED
 
 if [[ -x bin/kylin-guard-agent ]]; then
   printf 'starting built agent binary on port %s\n' "$AGENT_GO_PORT"

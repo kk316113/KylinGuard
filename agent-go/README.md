@@ -10,6 +10,8 @@ go run ./cmd/server
 
 默认监听 `:8080`。可通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。审计服务默认调用 `AUDIT_CORE_URL=http://127.0.0.1:8001`。
 
+`EINO_ENABLED` 默认 `false`。Stage 3 只提供 Eino adapter 骨架，不引入真实 Eino 依赖。
+
 ## 接口
 
 `GET /health`
@@ -36,6 +38,10 @@ go run ./cmd/server
 
 返回 agent 结果，包含 `tool_trace` 和来自 `audit-core-py` 的 `audit_result`。如果 `audit-core-py` 不可用，会回退到本地 mock 审计结果。
 
+`POST /api/agent/run-eino`
+
+实验接口。当前 Eino adapter 未启用时 fallback 到稳定 runtime，返回结构与 `/api/agent/run` 相同，并在 `summary` 中标记 `eino adapter disabled, stable runtime fallback used`。
+
 `tool_trace` 已包含 Stage 2 工具语义字段：
 
 - `operation_type`
@@ -50,7 +56,7 @@ go run ./cmd/server
 
 ## Eino 接入说明
 
-当前阶段没有硬编码 Eino import 路径。`internal/agent/planner.go` 只提供 `Planner` interface 与 `StaticPlanner` 占位实现。后续确认 Eino 的实际模块路径和 API 后，再新增 adapter 接入。
+当前阶段没有硬编码 Eino import 路径，也没有把 Eino 外部依赖加入 `go.mod`。`internal/agent/eino_adapter.go` 只提供默认禁用的 adapter 骨架。后续确认 Eino 的实际模块路径、版本和 Kylin 构建方式后，再通过 build tag 或替换 adapter 实现接入。
 
 ## 安全边界
 

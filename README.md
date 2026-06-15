@@ -2,7 +2,7 @@
 
 项目名称：KylinGuard-Agent
 
-当前阶段：Stage 2.5：Linux/麒麟兼容性预验证与部署脚本加固
+当前阶段：Stage 3：Eino Adapter 接入
 
 ## 当前已完成
 
@@ -17,6 +17,8 @@
 - audit-core-py risk_graph 输出语义节点
 - 麒麟/Linux 部署脚本预加固
 - Windows 与 Linux E2E 测试脚本
+- 可选 Eino Adapter 骨架
+- 实验接口 `/api/agent/run-eino`
 
 ## 当前未做
 
@@ -69,6 +71,7 @@ export TRACESHIELD_CORE_PATH=/opt/traceshield-core
 export AUDIT_CORE_URL=http://127.0.0.1:8001
 export AGENT_GO_PORT=8080
 export AUDIT_CORE_PORT=8001
+export EINO_ENABLED=false
 ```
 
 部署命令：
@@ -92,6 +95,9 @@ curl http://127.0.0.1:8080/api/os/info
 curl -X POST http://127.0.0.1:8080/api/agent/run \
   -H "Content-Type: application/json" \
   -d '{"task":"检查当前系统状态"}'
+curl -X POST http://127.0.0.1:8080/api/agent/run-eino \
+  -H "Content-Type: application/json" \
+  -d '{"task":"检查当前系统状态"}'
 ```
 
 Python audit-core：
@@ -113,3 +119,7 @@ Go/Eino Agent 不直接依赖 TraceShield，只调用 `AUDIT_CORE_URL` 指向的
 如果 TraceShield 无法 import 或运行失败，`audit-core-py` 会返回 `method=fallback-mock`，并在 `message` 中说明 fallback 原因。
 
 Stage 2 在 `tool_trace` 中新增 `operation_type`、`resource_type`、`resource_path`、`permission_scope`、`boundary_level`、`tool_semantic`、`requires_privilege`、`allowed_by_policy`、`policy_reason`。这些字段由 Go 工具注册层生成，audit-core-py adapter 会保留并映射到 `risk_graph.nodes`。
+
+## Stage 3 Eino Adapter
+
+`/api/agent/run` 仍是稳定主链路。`/api/agent/run-eino` 是实验链路，当前默认 `EINO_ENABLED=false`，不会引入真实 Eino 外部依赖，也不会改写稳定 runtime。当前 `run-eino` fallback 到稳定 runtime，并在 `summary` 中标记 `stable runtime fallback used`。
