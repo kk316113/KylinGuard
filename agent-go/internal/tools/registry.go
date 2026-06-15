@@ -49,6 +49,8 @@ func (r *Registry) Invoke(ctx context.Context, name string, input map[string]any
 		StartedAt: startedAt,
 		RiskHint:  "low",
 	}
+	semantic := SemanticForTool(name, input)
+	applySemantic(&trace, semantic)
 
 	handler, ok := r.tools[name]
 	if !ok {
@@ -73,6 +75,18 @@ func (r *Registry) Invoke(ctx context.Context, name string, input map[string]any
 	trace.FinishedAt = time.Now().UTC()
 
 	return Result{Output: output, Trace: trace}, err
+}
+
+func applySemantic(trace *logtrace.ToolTrace, semantic ToolSemantic) {
+	trace.OperationType = semantic.OperationType
+	trace.ResourceType = semantic.ResourceType
+	trace.ResourcePath = semantic.ResourcePath
+	trace.PermissionScope = semantic.PermissionScope
+	trace.BoundaryLevel = semantic.BoundaryLevel
+	trace.ToolSemantic = semantic.ToolSemantic
+	trace.RequiresPrivilege = semantic.RequiresPrivilege
+	trace.AllowedByPolicy = semantic.AllowedByPolicy
+	trace.PolicyReason = semantic.PolicyReason
 }
 
 func stringValue(input map[string]any, key string, fallback string) string {

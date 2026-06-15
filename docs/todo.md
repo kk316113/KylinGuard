@@ -9,10 +9,11 @@
 
 ## Audit Core
 
-- 根据 Kylin 运维工具扩展 TraceShield tool-name 适配映射。
-- 将 `risk_graph.nodes/edges` 从当前 HTTP 兼容结构升级为真实可视化图结构。
+- 持续扩展 Kylin 运维工具到 TraceShield tool-name 的适配映射。
+- 将 `risk_graph.nodes/edges` 从当前语义展示结构升级为可视化图结构。
 - 为 TraceShield fallback 场景增加可观测日志和告警。
 - 明确生产环境 `TRACESHIELD_CORE_PATH` 管理方式。
+- 将更多 TraceShield 原生 evidence 信息映射为用户可解释证据链。
 
 ## Kylin
 
@@ -30,6 +31,7 @@
 
 - 增加 Go 单元测试和 HTTP handler 测试。
 - 扩展 Python FastAPI endpoint 测试，覆盖 risky samples 和 fallback 行为。
+- 增加 Linux E2E 脚本在 Kylin V11 上的实机验证记录。
 - 增加最小 CI。
 
 ## Current Fallback Note

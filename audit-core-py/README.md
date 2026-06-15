@@ -70,6 +70,8 @@ TRACESHIELD_CORE_PATH=/path/to/TraceShield-Core python -m uvicorn app.main:app -
 }
 ```
 
+`steps` 支持 Go Agent Stage 2 语义字段：`operation_type`、`resource_type`、`resource_path`、`permission_scope`、`boundary_level`、`tool_semantic`、`requires_privilege`、`allowed_by_policy`、`policy_reason`。这些字段是 optional，旧版 trace 仍可提交。
+
 返回：
 
 ```json
@@ -79,8 +81,26 @@ TRACESHIELD_CORE_PATH=/path/to/TraceShield-Core python -m uvicorn app.main:app -
   "violations": [],
   "evidence_chain": [],
   "risk_graph": {
-    "nodes": [],
-    "edges": []
+    "nodes": [
+      {
+        "step_id": 1,
+        "tool_name": "os_info",
+        "operation_type": "read",
+        "resource_type": "os_info",
+        "resource_path": "system:os",
+        "boundary_level": "public",
+        "risk_hint": "low",
+        "status": "success",
+        "allowed_by_policy": true
+      }
+    ],
+    "edges": [
+      {
+        "from": 1,
+        "to": 2,
+        "type": "sequence"
+      }
+    ]
   },
   "method": "traceshield",
   "message": "audit completed by TraceShield adapter"

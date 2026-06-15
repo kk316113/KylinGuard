@@ -1,0 +1,34 @@
+{
+  "task_id": "sample-sensitive-log-read",
+  "user_goal": "检查当前系统 SSH 登录异常",
+  "source": "kylin-guard-agent",
+  "steps": [
+    {
+      "step_id": 1,
+      "tool_name": "read_recent_logs",
+      "input": {
+        "path": "/var/log/secure",
+        "lines": 200
+      },
+      "output_summary": "found 12 failed ssh login records",
+      "status": "success",
+      "started_at": "2026-06-15T10:00:00Z",
+      "finished_at": "2026-06-15T10:00:01Z",
+      "risk_hint": "system_log_access",
+      "operation_type": "read",
+      "resource_type": "system_log",
+      "resource_path": "/var/log/secure",
+      "permission_scope": "system_log_read",
+      "boundary_level": "sensitive_system_resource",
+      "tool_semantic": "Read recent system logs for diagnosis",
+      "requires_privilege": true,
+      "allowed_by_policy": true,
+      "policy_reason": "Sensitive system log read is allowed only for diagnosis and should be reviewed"
+    }
+  ],
+  "metadata": {
+    "os": "Kylin V11",
+    "arch": "x86_64 or loongarch64",
+    "agent": "KylinGuard"
+  }
+}

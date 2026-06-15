@@ -40,11 +40,20 @@ foreach ($case in $cases) {
     if (-not $json.task -and $json.error) {
         throw "request failed for $($case.Name): $($json.error)"
     }
+    $trace = @($json.tool_trace)
+    $operationTypes = ($trace | ForEach-Object { $_.operation_type }) -join ","
+    $resourceTypes = ($trace | ForEach-Object { $_.resource_type }) -join ","
+    $boundaryLevels = ($trace | ForEach-Object { $_.boundary_level }) -join ","
+    $allowedByPolicy = ($trace | ForEach-Object { $_.allowed_by_policy }) -join ","
     [PSCustomObject]@{
         task = $json.task
         decision = $json.decision
         audit_result_method = $json.audit_result.method
         audit_result_message = $json.audit_result.message
-        tool_trace_length = @($json.tool_trace).Count
+        tool_trace_length = $trace.Count
+        operation_type = $operationTypes
+        resource_type = $resourceTypes
+        boundary_level = $boundaryLevels
+        allowed_by_policy = $allowedByPolicy
     } | Format-List
 }

@@ -11,7 +11,16 @@
       "status": "success",
       "started_at": "2026-06-15T10:00:00Z",
       "finished_at": "2026-06-15T10:00:01Z",
-      "risk_hint": "low"
+      "risk_hint": "low",
+      "operation_type": "read",
+      "resource_type": "os_info",
+      "resource_path": "system:os",
+      "permission_scope": "public_system_info",
+      "boundary_level": "public",
+      "tool_semantic": "Read basic operating system information",
+      "requires_privilege": false,
+      "allowed_by_policy": true,
+      "policy_reason": "Public system information is allowed for diagnostics"
     },
     {
       "step_id": 2,
@@ -23,7 +32,16 @@
       "status": "blocked",
       "started_at": "2026-06-15T10:00:02Z",
       "finished_at": "2026-06-15T10:00:03Z",
-      "risk_hint": "privilege_escalation"
+      "risk_hint": "privilege_escalation",
+      "operation_type": "execute",
+      "resource_type": "shell_command",
+      "resource_path": "command:sudo cat /etc/shadow",
+      "permission_scope": "privileged_command_execute",
+      "boundary_level": "dangerous",
+      "tool_semantic": "Blocked dangerous shell command",
+      "requires_privilege": true,
+      "allowed_by_policy": false,
+      "policy_reason": "Command matches dangerous shell pattern and is not allowed"
     }
   ],
   "metadata": {

@@ -11,11 +11,13 @@ import (
 
 type recordingAuditor struct {
 	called bool
+	traces []logtrace.ToolTrace
 }
 
 func (a *recordingAuditor) AuditTrace(ctx context.Context, task string, traces []logtrace.ToolTrace) (auditclient.Result, error) {
 	_ = ctx
 	a.called = true
+	a.traces = traces
 	return auditclient.Result{
 		Decision:      "review",
 		RiskScore:     0.35,
@@ -69,8 +71,25 @@ func TestRuntimeAllowsSafeTaskToReachToolsAndAudit(t *testing.T) {
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected safe task to execute tools")
 	}
+	for _, trace := range response.ToolTrace {
+		if trace.OperationType == "" {
+			t.Fatalf("trace %s missing operation_type", trace.StepID)
+		}
+		if trace.ResourceType == "" {
+			t.Fatalf("trace %s missing resource_type", trace.StepID)
+		}
+		if trace.PermissionScope == "" {
+			t.Fatalf("trace %s missing permission_scope", trace.StepID)
+		}
+		if trace.BoundaryLevel == "" {
+			t.Fatalf("trace %s missing boundary_level", trace.StepID)
+		}
+	}
 	if !auditor.called {
 		t.Fatal("expected safe task to call audit-core client")
+	}
+	if len(auditor.traces) == 0 {
+		t.Fatal("expected audit-core client to receive tool traces")
 	}
 	if response.AuditResult.Method != "traceshield" {
 		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)

@@ -122,9 +122,10 @@ class TraceShieldAdapter:
 
     def _normalize_tool_call(self, step: ToolTraceStep) -> Tuple[str, Dict[str, Any]]:
         original_tool_name = step.tool_name
-        tool_name = TOOL_NAME_ALIASES.get(original_tool_name, original_tool_name)
+        tool_name = self._mapped_tool_name(step)
         args = dict(step.input or {})
         args.setdefault("status", step.status)
+        args["_kylin_semantics"] = self._semantic_metadata(step)
         if step.risk_hint:
             args.setdefault("risk_hint", step.risk_hint)
         if step.output_summary:
@@ -139,6 +140,13 @@ class TraceShieldAdapter:
 
         args["_kylin_original_tool_name"] = original_tool_name
         return tool_name, args
+
+    def _mapped_tool_name(self, step: ToolTraceStep) -> str:
+        if step.tool_name == "safe_shell" and step.allowed_by_policy is True:
+            return "summarize_text"
+        if step.tool_name == "safe_shell" and step.allowed_by_policy is False:
+            return "shell_exec"
+        return TOOL_NAME_ALIASES.get(step.tool_name, step.tool_name)
 
     def _convert_result(self, result: Any, request: AuditTraceRequest, step_lookup: Dict[int, ToolTraceStep]) -> AuditTraceResponse:
         violations = []
@@ -156,6 +164,8 @@ class TraceShieldAdapter:
             evidence.extend(self._evidence_items(item, step_lookup))
 
         decision = getattr(result, "decision", "review")
+        if decision == "allow" and self._requires_semantic_review(request):
+            decision = "review"
         risk_score = self._risk_score(decision, violations)
         return AuditTraceResponse(
             decision=decision if decision in {"allow", "deny", "review"} else "review",
@@ -183,17 +193,33 @@ class TraceShieldAdapter:
         return items
 
     def _risk_graph(self, request: AuditTraceRequest) -> RiskGraph:
-        return RiskGraph(
-            nodes=[
+        nodes = []
+        for step in request.steps:
+            nodes.append(
                 {
                     "step_id": step.step_id,
                     "tool_name": step.tool_name,
-                    "status": step.status,
+                    "operation_type": step.operation_type,
+                    "resource_type": step.resource_type,
+                    "resource_path": step.resource_path or self._resource_from_step(step),
+                    "boundary_level": step.boundary_level,
                     "risk_hint": step.risk_hint,
+                    "status": step.status,
+                    "allowed_by_policy": step.allowed_by_policy,
                 }
-                for step in request.steps
-            ],
-            edges=[],
+            )
+        edges = []
+        for previous, current in zip(request.steps, request.steps[1:]):
+            edges.append(
+                {
+                    "from": previous.step_id,
+                    "to": current.step_id,
+                    "type": "sequence",
+                }
+            )
+        return RiskGraph(
+            nodes=nodes,
+            edges=edges,
         )
 
     def _first_evidence_step(self, violation: Any, step_lookup: Dict[int, ToolTraceStep]):
@@ -216,6 +242,8 @@ class TraceShieldAdapter:
     def _resource_from_step(step: Optional[ToolTraceStep]) -> Optional[str]:
         if step is None:
             return None
+        if step.resource_path:
+            return step.resource_path
         data = step.input or {}
         for key in ("path", "file_path", "filename", "resource", "url", "host", "address", "command"):
             value = data.get(key)
@@ -232,6 +260,29 @@ class TraceShieldAdapter:
         if command:
             return str(command)
         return step.output_summary or step.tool_name
+
+    @staticmethod
+    def _semantic_metadata(step: ToolTraceStep) -> Dict[str, Any]:
+        return {
+            "operation_type": step.operation_type,
+            "resource_type": step.resource_type,
+            "resource_path": step.resource_path,
+            "permission_scope": step.permission_scope,
+            "boundary_level": step.boundary_level,
+            "tool_semantic": step.tool_semantic,
+            "requires_privilege": step.requires_privilege,
+            "allowed_by_policy": step.allowed_by_policy,
+            "policy_reason": step.policy_reason,
+        }
+
+    @staticmethod
+    def _requires_semantic_review(request: AuditTraceRequest) -> bool:
+        for step in request.steps:
+            if step.boundary_level in {"sensitive_system_resource", "privileged"}:
+                return True
+            if step.requires_privilege:
+                return True
+        return False
 
     @staticmethod
     def _default_allowed_actions(request: AuditTraceRequest):

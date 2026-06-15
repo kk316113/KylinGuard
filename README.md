@@ -2,7 +2,7 @@
 
 项目名称：KylinGuard-Agent
 
-当前阶段：Stage 1：接入清洗后的 TraceShield 审计核心
+当前阶段：Stage 2：麒麟运维工具语义映射
 
 ## 当前已完成
 
@@ -13,6 +13,8 @@
 - Python audit-core-py 独立审计服务
 - TraceShield adapter 接入层
 - Go Agent 通过 HTTP 调用 audit-core-py
+- 工具调用 trace 携带 operation/resource/permission/boundary 语义字段
+- audit-core-py risk_graph 输出语义节点
 - 麒麟部署脚本占位
 
 ## 当前未做
@@ -76,10 +78,12 @@ curl -X POST http://127.0.0.1:8001/audit/trace \
   -d @data/sample_traces/sample_safe_system_check.json
 ```
 
-## Stage 1 接入说明
+## Stage 2 接入说明
 
 TraceShield 是清洗后的论文核心方法来源，源码目录默认位于 `D:\code\2026\TraceShield-Core`。当前采用策略 A：`audit-core-py` 通过 `TRACESHIELD_CORE_PATH` 动态加入 Python import 路径并调用 `traceshield_experiment_core.TraceShieldEvaluator`，不复制整个 TraceShield 仓库，也不修改其内部逻辑。
 
 Go/Eino Agent 不直接依赖 TraceShield，只调用 `AUDIT_CORE_URL` 指向的 HTTP API。后续 LoongArch 部署只需要保证 Python、FastAPI、PyYAML、Pydantic 和 `audit-core-py` 可运行。
 
 如果 TraceShield 无法 import 或运行失败，`audit-core-py` 会返回 `method=fallback-mock`，并在 `message` 中说明 fallback 原因。
+
+Stage 2 在 `tool_trace` 中新增 `operation_type`、`resource_type`、`resource_path`、`permission_scope`、`boundary_level`、`tool_semantic`、`requires_privilege`、`allowed_by_policy`、`policy_reason`。这些字段由 Go 工具注册层生成，audit-core-py adapter 会保留并映射到 `risk_graph.nodes`。

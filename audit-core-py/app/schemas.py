@@ -15,6 +15,15 @@ class ToolTraceStep(BaseModel):
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     risk_hint: Optional[str] = None
+    operation_type: Optional[str] = None
+    resource_type: Optional[str] = None
+    resource_path: Optional[str] = None
+    permission_scope: Optional[str] = None
+    boundary_level: Optional[str] = None
+    tool_semantic: Optional[str] = None
+    requires_privilege: Optional[bool] = None
+    allowed_by_policy: Optional[bool] = None
+    policy_reason: Optional[str] = None
 
 
 class AuditTraceRequest(BaseModel):
