@@ -18,7 +18,7 @@ type Result struct {
 	RiskScore     float64        `json:"risk_score"`
 	Violations    []Violation    `json:"violations"`
 	EvidenceChain []EvidenceItem `json:"evidence_chain"`
-	RiskGraph     RiskGraph      `json:"risk_graph"`
+	RiskGraph     *RiskGraph     `json:"risk_graph"`
 	Method        string         `json:"method"`
 	Message       string         `json:"message"`
 }
@@ -27,7 +27,7 @@ type Violation struct {
 	Type     string `json:"type"`
 	Severity string `json:"severity"`
 	Message  string `json:"message"`
-	StepID   any    `json:"step_id,omitempty"`
+	StepID   any    `json:"step_id"`
 }
 
 type EvidenceItem struct {
@@ -61,7 +61,7 @@ func (MockClient) AuditTrace(ctx context.Context, task string, traces []logtrace
 		RiskScore:     0.35,
 		Violations:    []Violation{},
 		EvidenceChain: []EvidenceItem{},
-		RiskGraph:     RiskGraph{Nodes: []map[string]any{}, Edges: []map[string]any{}},
+		RiskGraph:     &RiskGraph{Nodes: []map[string]any{}, Edges: []map[string]any{}},
 		Method:        "fallback-mock",
 		Message:       "audit-core-py unavailable, fallback mock used",
 	}, nil
@@ -158,14 +158,14 @@ type auditTraceRequest struct {
 }
 
 type auditTraceStep struct {
-	StepID        string    `json:"step_id"`
-	ToolName      string    `json:"tool_name"`
-	Input         any       `json:"input"`
-	OutputSummary string    `json:"output_summary"`
-	Status        string    `json:"status"`
-	StartedAt     string    `json:"started_at"`
-	FinishedAt    string    `json:"finished_at"`
-	RiskHint      string    `json:"risk_hint"`
+	StepID        string `json:"step_id"`
+	ToolName      string `json:"tool_name"`
+	Input         any    `json:"input"`
+	OutputSummary string `json:"output_summary"`
+	Status        string `json:"status"`
+	StartedAt     string `json:"started_at"`
+	FinishedAt    string `json:"finished_at"`
+	RiskHint      string `json:"risk_hint"`
 }
 
 func normalizeStatus(status string) string {

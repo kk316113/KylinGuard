@@ -3,7 +3,7 @@ package security
 type PermissionScope string
 
 const (
-	PermissionObserve PermissionScope = "observe"
+	PermissionObserve  PermissionScope = "observe"
 	PermissionReadOnly PermissionScope = "read_only"
 	PermissionExecute  PermissionScope = "execute"
 )

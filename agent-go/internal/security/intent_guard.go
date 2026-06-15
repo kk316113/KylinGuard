@@ -19,11 +19,11 @@ func NewIntentGuard() IntentGuard {
 }
 
 func (g IntentGuard) Evaluate(task string) IntentResult {
-	normalized := strings.ToLower(task)
+	normalized := normalizeIntentText(task)
 	matches := make([]string, 0)
 
 	for _, keyword := range g.policy.DangerKeywords {
-		if strings.Contains(normalized, strings.ToLower(keyword)) {
+		if strings.Contains(normalized, normalizeIntentText(keyword)) {
 			matches = append(matches, keyword)
 		}
 	}
@@ -38,7 +38,11 @@ func (g IntentGuard) Evaluate(task string) IntentResult {
 
 	return IntentResult{
 		Decision:        DecisionReview,
-		Reason:          "Stage 0 default safety posture requires review",
+		Reason:          "default safety posture requires review",
 		MatchedKeywords: []string{},
 	}
+}
+
+func normalizeIntentText(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
 }

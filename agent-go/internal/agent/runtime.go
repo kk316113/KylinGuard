@@ -61,26 +61,24 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 	if intent.Decision == security.DecisionDeny {
 		audit := auditclient.Result{
 			Decision:  string(security.DecisionDeny),
-			RiskScore: 0.95,
+			RiskScore: 1.0,
 			Violations: []auditclient.Violation{
 				{
-					Type:     "intent_guard_denied",
+					Type:     "dangerous_intent",
 					Severity: "high",
-					Message:  intent.Reason,
+					Message:  "dangerous task denied before tool execution",
+					StepID:   "",
 				},
 			},
-			EvidenceChain: []auditclient.EvidenceItem{
-				{
-					Reason: "matched keywords: " + strings.Join(intent.MatchedKeywords, ", "),
-				},
-			},
-			Method:  "intent_guard",
-			Message: "task denied before audit-core-py call",
+			EvidenceChain: []auditclient.EvidenceItem{},
+			RiskGraph:     nil,
+			Method:        "intent_guard",
+			Message:       "dangerous task denied before tool execution",
 		}
 		return RunResponse{
 			Task:        task,
 			Decision:    string(security.DecisionDeny),
-			Summary:     "task denied by intent guard",
+			Summary:     "request denied by intent guard",
 			ToolTrace:   []logtrace.ToolTrace{},
 			AuditResult: audit,
 		}, nil
