@@ -2,7 +2,7 @@
 
 项目名称：KylinGuard-Agent
 
-当前阶段：Stage 2：麒麟运维工具语义映射
+当前阶段：Stage 2.5：Linux/麒麟兼容性预验证与部署脚本加固
 
 ## 当前已完成
 
@@ -15,7 +15,8 @@
 - Go Agent 通过 HTTP 调用 audit-core-py
 - 工具调用 trace 携带 operation/resource/permission/boundary 语义字段
 - audit-core-py risk_graph 输出语义节点
-- 麒麟部署脚本占位
+- 麒麟/Linux 部署脚本预加固
+- Windows 与 Linux E2E 测试脚本
 
 ## 当前未做
 
@@ -32,7 +33,7 @@
 - `audit-core-py/`：Python FastAPI 审计服务，封装 TraceShield adapter
 - `frontend/`：前端占位目录
 - `data/`：样例 trace、审计 case、报告输出目录
-- `deploy/kylin/`：麒麟/Linux 部署脚本占位
+- `deploy/kylin/`：麒麟/Linux 部署和环境检查脚本
 - `docs/`：架构、工具、安全和 TODO 文档
 
 ## 启动 Go 服务
@@ -57,6 +58,31 @@ python3 -m venv .venv
 python -m pip install -r requirements.txt
 TRACESHIELD_CORE_PATH=/path/to/TraceShield-Core python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
+
+## Linux/麒麟部署预检查
+
+推荐环境变量：
+
+```bash
+export KYLINGUARD_HOME=/opt/kylin-guard-agent
+export TRACESHIELD_CORE_PATH=/opt/traceshield-core
+export AUDIT_CORE_URL=http://127.0.0.1:8001
+export AGENT_GO_PORT=8080
+export AUDIT_CORE_PORT=8001
+```
+
+部署命令：
+
+```bash
+bash deploy/kylin/check_env.sh
+bash deploy/kylin/install_audit_core_py.sh
+bash deploy/kylin/install_agent_go.sh
+bash deploy/kylin/run_audit_core_py.sh
+bash deploy/kylin/run_agent_go.sh
+bash scripts/linux/test_agent_e2e.sh
+```
+
+当前预期支持 `x86_64`、`loongarch64`、`aarch64`。Windows 本机和 x86_64 麒麟 VM 只能完成预适配，LoongArch 最终验证仍未完成。
 
 ## 接口测试
 

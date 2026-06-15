@@ -21,6 +21,9 @@
 - 验证 LoongArch 构建与运行。
 - 补充 systemd service 文件。
 - 验证 TraceShield-Core 在 LoongArch Python 环境中的 `pydantic` 和 `PyYAML` 安装。
+- 在 Kylin V11 VM 上运行 `deploy/kylin/check_env.sh` 和 `scripts/linux/test_agent_e2e.sh`。
+- 验证 `/var/log/*` 读取权限和日志路径差异。
+- 验证 `ss`、`netstat`、`journalctl` 在目标系统上的可用性。
 
 ## Frontend
 
