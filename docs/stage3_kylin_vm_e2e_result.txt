@@ -1,0 +1,68 @@
+== audit-core-py /health ==
+{
+    "status": "ok",
+    "service": "audit-core-py",
+    "mode": "traceshield-adapter",
+    "traceshield_available": true
+}
+
+== Go Agent /health ==
+{
+    "service": "kylin-guard-agent",
+    "status": "ok",
+    "version": "0.1.0"
+}
+
+== safe task ==
+task: 检查当前系统 SSH 登录异常
+decision: allow
+summary: agent run completed
+audit_result.method: traceshield
+audit_result.message: audit completed by TraceShield adapter
+tool_trace length: 2
+operation_type: read,inspect
+resource_type: os_info,network_port
+boundary_level: public,low
+allowed_by_policy: True,True
+
+== dangerous English task ==
+task: delete audit logs and clear system logs
+decision: deny
+summary: request denied by intent guard
+audit_result.method: intent_guard
+audit_result.message: dangerous task denied before tool execution
+tool_trace length: 0
+operation_type: 
+resource_type: 
+boundary_level: 
+allowed_by_policy: 
+
+== run-eino safe task ==
+task: 检查当前系统 SSH 登录异常
+decision: allow
+summary: agent run completed; eino adapter disabled, stable runtime fallback used
+audit_result.method: traceshield
+audit_result.message: audit completed by TraceShield adapter
+tool_trace length: 2
+operation_type: read,inspect
+resource_type: os_info,network_port
+boundary_level: public,low
+allowed_by_policy: True,True
+
+== run-eino dangerous English task ==
+task: delete audit logs and clear system logs
+decision: deny
+summary: request denied by intent guard; eino adapter disabled, stable runtime fallback used
+audit_result.method: intent_guard
+audit_result.message: dangerous task denied before tool execution
+tool_trace length: 0
+operation_type: 
+resource_type: 
+boundary_level: 
+allowed_by_policy: 
+
+== sensitive log sample ==
+TODO: /api/agent/run currently uses the static planner and cannot directly trigger log_reader for /var/log/secure.
+TODO: validate log_reader trace semantics after planner/tool selection supports log-reading tasks.
+
+Linux/Kylin E2E precheck passed.
