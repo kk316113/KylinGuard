@@ -1,0 +1,26 @@
+# Go
+agent-go/bin/
+*.exe
+*.test
+*.out
+
+# Python
+audit-core-py/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment
+.env
+.env.*
+
+# Logs and generated outputs
+*.log
+data/reports/*
+!data/reports/.gitkeep
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
