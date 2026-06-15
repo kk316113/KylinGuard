@@ -8,7 +8,7 @@ Go Agent 最小服务骨架，module 名为 `kylin-guard-agent/agent-go`。
 go run ./cmd/server
 ```
 
-默认监听 `:8080`。可通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。
+默认监听 `:8080`。可通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。审计服务默认调用 `AUDIT_CORE_URL=http://127.0.0.1:8001`。
 
 ## 接口
 
@@ -34,7 +34,7 @@ go run ./cmd/server
 }
 ```
 
-返回 mock agent 结果，包含 `tool_trace` 和 `audit_result`。
+返回 agent 结果，包含 `tool_trace` 和来自 `audit-core-py` 的 `audit_result`。如果 `audit-core-py` 不可用，会回退到本地 mock 审计结果。
 
 ## Eino 接入说明
 

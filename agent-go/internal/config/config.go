@@ -16,7 +16,7 @@ func Load() Config {
 
 	return Config{
 		Addr:         addr,
-		AuditCoreURL: getenv("AUDIT_CORE_URL", "http://127.0.0.1:8090"),
+		AuditCoreURL: getenv("AUDIT_CORE_URL", "http://127.0.0.1:8001"),
 	}
 }
 

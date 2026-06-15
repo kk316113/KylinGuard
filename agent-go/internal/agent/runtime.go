@@ -60,10 +60,22 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 	intent := r.guard.Evaluate(task)
 	if intent.Decision == security.DecisionDeny {
 		audit := auditclient.Result{
-			Decision:      string(security.DecisionDeny),
-			RiskScore:     0.95,
-			Violations:    intent.MatchedKeywords,
-			EvidenceChain: []string{intent.Reason},
+			Decision:  string(security.DecisionDeny),
+			RiskScore: 0.95,
+			Violations: []auditclient.Violation{
+				{
+					Type:     "intent_guard_denied",
+					Severity: "high",
+					Message:  intent.Reason,
+				},
+			},
+			EvidenceChain: []auditclient.EvidenceItem{
+				{
+					Reason: "matched keywords: " + strings.Join(intent.MatchedKeywords, ", "),
+				},
+			},
+			Method:  "intent_guard",
+			Message: "task denied before audit-core-py call",
 		}
 		return RunResponse{
 			Task:        task,
@@ -86,7 +98,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		r.traces.Add(result.Trace)
 	}
 
-	audit, err := r.auditor.AuditTrace(ctx, traces)
+	audit, err := r.auditor.AuditTrace(ctx, task, traces)
 	if err != nil {
 		return RunResponse{}, err
 	}
@@ -97,7 +109,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 	return RunResponse{
 		Task:        task,
 		Decision:    audit.Decision,
-		Summary:     "mock agent run completed",
+		Summary:     "agent run completed",
 		ToolTrace:   traces,
 		AuditResult: audit,
 	}, nil

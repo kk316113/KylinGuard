@@ -19,7 +19,7 @@ func main() {
 	cfg := config.Load()
 	registry := tools.NewDefaultRegistry()
 	traceStore := logtrace.NewStore()
-	runtime := agent.NewRuntime(registry, auditclient.NewMockClient(), traceStore)
+	runtime := agent.NewRuntime(registry, auditclient.NewHTTPClient(cfg.AuditCoreURL), traceStore)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)

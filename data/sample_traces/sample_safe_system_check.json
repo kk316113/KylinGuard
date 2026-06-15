@@ -1,0 +1,25 @@
+{
+  "task_id": "sample-safe-system-check",
+  "user_goal": "检查当前系统 SSH 登录异常",
+  "source": "kylin-guard-agent",
+  "steps": [
+    {
+      "step_id": 1,
+      "tool_name": "read_recent_logs",
+      "input": {
+        "path": "/var/log/secure",
+        "lines": 200
+      },
+      "output_summary": "found 12 failed ssh login records",
+      "status": "success",
+      "started_at": "2026-06-15T10:00:00Z",
+      "finished_at": "2026-06-15T10:00:01Z",
+      "risk_hint": "system_log_access"
+    }
+  ],
+  "metadata": {
+    "os": "Kylin V11",
+    "arch": "x86_64 or loongarch64",
+    "agent": "KylinGuard"
+  }
+}

@@ -6,13 +6,14 @@
 - Linux systemd 环境
 - x86_64、aarch64、LoongArch 等架构
 
-## Stage 0 适配原则
+## Stage 1 适配原则
 
 - Go 代码使用标准库优先。
-- Python stub 只使用 FastAPI、uvicorn、pydantic。
+- Python audit-core 使用 FastAPI、uvicorn、pydantic、PyYAML 和 TraceShield-Core。
 - 部署脚本使用 POSIX sh，避免 Windows 路径。
 - Agent 默认调用远程模型 API，不在本机或虚拟机内运行大模型。
 - 运维工具默认走只读或低风险路径。
+- Go/Eino Agent 只通过 HTTP 调用 audit-core-py，不直接 import TraceShield。
 
 ## 后续验证项
 
@@ -20,3 +21,4 @@
 - 验证 Go 编译器版本和 `GOARCH=loong64` 支持情况。
 - 验证 systemd、日志路径、权限模型和服务管理策略。
 - 验证 Python venv 和 pip 源可用性。
+- 验证 `TRACESHIELD_CORE_PATH` 在目标机器上的部署路径。
