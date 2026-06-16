@@ -18,7 +18,7 @@ User Task
 -> Audit Result / Risk Graph
 ```
 
-当前阶段：Stage 9A：Eino Runtime Skeleton + MCP-like Tools Adapter。
+当前阶段：Stage 9B：CloudWeGo Eino Graph Runtime + Deterministic ChatModel Stub。
 
 ## 当前做了什么
 
@@ -29,7 +29,7 @@ User Task
 - 增加了运维工具注册表和基础工具：`os_info`、`port_checker`、`service_status`、`log_reader`、`safe_shell`。
 - 扩展了工具调用 trace，使其携带 `operation_type`、`resource_type`、`boundary_level`、`allowed_by_policy` 等语义字段。
 - audit-core-py 会把语义 trace 映射到 `risk_graph.nodes`，便于后续解释和可视化。
-- 加入了可选 Eino Adapter 骨架和实验接口 `/api/agent/run-eino`。
+- 加入了 CloudWeGo Eino `compose.Graph` 实验运行路径和 `/api/agent/run-eino`。
 - 加入了 Rule-based Ops Planner，可以根据 SSH 异常、服务状态、端口检查、系统概览等任务生成可解释 Plan。
 - 增强了 `service_status` 和 `log_reader`，支持受控 systemctl 探测和白名单系统日志读取。
 - 新增 `ssh_login_analyzer`，可以采集认证日志或 journalctl，分析 SSH 登录失败、无效用户、成功登录和来源 IP。
@@ -40,9 +40,9 @@ User Task
 - 为 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`、`safe_shell` 注册了 `ToolMetadata`。
 - 新增 `/api/tools`、`/api/tools/{name}`、`/api/tools/call`，其中 `/api/tools/call` 必须经过 Tool Policy、semantic trace 和 audit-core-py / TraceShield 审计链路。
 - `security_report.audit_metadata` 增加 `tool_protocol=mcp-like`、`tool_protocol_version=stage8-v1`、注册工具数和 `tools_used`。
-- 新增 deterministic Eino Runtime Skeleton，`/api/agent/run-eino` 默认进入 `eino-runtime`，不再 fallback 到 stable runtime。
-- 新增 MCP-like Tool Adapter，Eino skeleton 通过 Tool Policy 和 Tool Registry 执行 planner steps，不直接执行 shell 或读取文件。
-- run-eino 路径的 `security_report.audit_metadata` 会标记 `runtime=eino`、`llm_enabled=false`、`orchestration=deterministic-planner-backed`、`eino_runtime_version=stage9a-v1`。
+- 新增 deterministic ChatModel Stub，`/api/agent/run-eino` 默认进入 Eino graph tool-calling runtime，不再 fallback 到 stable runtime。
+- 新增 MCP-like Tool Adapter，Eino graph tool node 通过 Tool Policy 和 Tool Registry 执行工具调用，不直接执行 shell 或任意读取文件。
+- run-eino 路径的 `security_report.audit_metadata` 会标记 `runtime=eino`、`eino_graph_enabled=true`、`llm_enabled=false`、`chat_model=deterministic-stub`、`orchestration=eino-graph-tool-calling`、`eino_runtime_version=stage9b-v1`。
 - 加固了 Linux/麒麟部署脚本和 Windows/Linux E2E 测试脚本。
 - 已在 Windows 本机和银河麒麟高级服务器版 V11 x86_64 VM 上完成预验证。
 
@@ -51,12 +51,12 @@ User Task
 - 没有修改 `TraceShield-Core` 仓库。
 - 没有改变 TraceShield 核心算法语义。
 - 没有实现 Boundary Lattice、真实 Data-flow Evidence、真实 Provenance Contract。
-- 没有接入真实 CloudWeGo Eino 依赖、ChatModel 或 ReAct Agent；Stage 9A 只是 deterministic Eino Runtime Skeleton。
+- 没有接入真实 LLM ChatModel、ReAct Agent、模型厂商 SDK 或远程模型 API；Stage 9B 使用 deterministic ChatModel Stub。
 - 没有接入真实 LLM 或本地大模型。
 - 没有引入 `torch`、`transformers`、`faiss`、`sentence-transformers` 等重依赖。
 - 没有实现前端页面。
 - LoongArch 环境尚未完成最终验证。
-- Rule-based Planner 仍是轻量规则匹配，不等同于真实 LLM/Eino 智能规划。
+- Deterministic ChatModel Stub 仍是轻量规则映射，不等同于真实 LLM 智能规划。
 - `ssh_login_analyzer` 不会自动封禁 IP，不会修改防火墙，也不会删除或移动日志。
 - `security_report` 不负责最终裁决，不会覆盖 `decision` 或 `audit_result`。
 - 前端不是安全边界，不直接调用 audit-core-py，不执行命令，不提供自动处置按钮。
@@ -108,7 +108,7 @@ Python audit-core：
 - `POST /audit/trace`
 
 `/api/agent/run` 是稳定主链路。
-`/api/agent/run-eino` 是实验链路；当前默认进入 deterministic Eino Runtime Skeleton，并在 `summary` 中标记 `Eino runtime executed deterministic planner-backed tool orchestration.`。
+`/api/agent/run-eino` 是实验链路；当前默认进入 CloudWeGo Eino graph runtime，并在 `summary` 中标记 `Eino graph runtime executed deterministic tool-calling orchestration.`。
 
 `/api/agent/run` 和 `/api/agent/run-eino` 当前都会返回可选字段 `plan`。危险任务被 `intent_guard` 短路时不会返回 plan。
 
@@ -130,6 +130,7 @@ $env:AUDIT_CORE_URL = "http://127.0.0.1:8001"
 $env:KYLIN_GUARD_AGENT_PORT = "8080"
 $env:EINO_ENABLED = "false"
 $env:EINO_RUNTIME_ENABLED = "true"
+$env:EINO_GRAPH_ENABLED = "true"
 $env:EINO_LLM_ENABLED = "false"
 ```
 
@@ -143,6 +144,7 @@ export AGENT_GO_PORT=8080
 export AUDIT_CORE_PORT=8001
 export EINO_ENABLED=false
 export EINO_RUNTIME_ENABLED=true
+export EINO_GRAPH_ENABLED=true
 export EINO_LLM_ENABLED=false
 ```
 
@@ -165,6 +167,7 @@ cd D:\code\2026\KylinGuard-Agent\agent-go
 $env:AUDIT_CORE_URL = "http://127.0.0.1:8001"
 $env:EINO_ENABLED = "false"
 $env:EINO_RUNTIME_ENABLED = "true"
+$env:EINO_GRAPH_ENABLED = "true"
 $env:EINO_LLM_ENABLED = "false"
 go run ./cmd/server
 ```
@@ -249,6 +252,7 @@ export AUDIT_CORE_URL=http://127.0.0.1:8001
 export AGENT_GO_PORT=8080
 export EINO_ENABLED=false
 export EINO_RUNTIME_ENABLED=true
+export EINO_GRAPH_ENABLED=true
 export EINO_LLM_ENABLED=false
 bash deploy/kylin/run_agent_go.sh
 ```
@@ -261,6 +265,7 @@ export TRACESHIELD_CORE_PATH=/opt/traceshield-core
 export AUDIT_CORE_PORT=8001
 export AGENT_GO_PORT=8080
 export AUDIT_CORE_URL=http://127.0.0.1:8001
+export EINO_GRAPH_ENABLED=true
 bash scripts/linux/start_all.sh
 ```
 
@@ -335,11 +340,14 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run-eino \
 预期：
 
 - 返回结构与 `/api/agent/run` 一致
-- `summary` 包含 `Eino runtime executed deterministic planner-backed tool orchestration.`
-- 当前走 Eino Runtime Skeleton、Rule-based Ops Planner、MCP-like Tool Adapter、Tool Policy、SSH diagnosis 工具链和 TraceShield 审计
+- `summary` 包含 `Eino graph runtime executed deterministic tool-calling orchestration.`
+- 当前走 CloudWeGo Eino graph、Deterministic ChatModel Stub、MCP-like Tool Adapter、Tool Policy、SSH diagnosis 工具链和 TraceShield 审计
 - `security_report.audit_metadata.route=eino-runtime`
 - `security_report.audit_metadata.runtime=eino`
+- `security_report.audit_metadata.eino_graph_enabled=true`
 - `security_report.audit_metadata.llm_enabled=false`
+- `security_report.audit_metadata.chat_model=deterministic-stub`
+- `security_report.audit_metadata.orchestration=eino-graph-tool-calling`
 - `security_report.audit_metadata.tool_protocol=mcp-like`
 
 工具发现：
@@ -540,22 +548,26 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 
 它只解释现有诊断与审计结果，不负责裁决。最终 `decision` 仍来自 intent_guard / TraceShield / 现有 decision flow。
 
-## Eino Runtime Skeleton 状态
+## Eino Graph Runtime 状态
 
-当前没有引入真实 Eino 依赖。
+当前已引入 CloudWeGo Eino core 依赖 `github.com/cloudwego/eino v0.9.8`，使用 `compose.Graph` 构建实验编排路径。
 
-Stage 9A 默认：
+Stage 9B 默认：
 
-- `/api/agent/run-eino` 进入 deterministic Eino Runtime Skeleton
+- `/api/agent/run-eino` 进入 Eino graph runtime
+- graph 第一节点为 deterministic ChatModel Stub
+- graph 第二节点为 MCP-like Tool Adapter / Tool Policy 执行节点
 - 不绕过 intent_guard
 - 不绕过 Tool Policy
 - 不绕过 audit-core-py
+- 不绕过 TraceShield
 - 不改变 `/api/agent/run` 行为
 - 不接真实 LLM，`llm_enabled=false`
+- 不引入模型厂商 SDK、API key 或远程模型调用
 
-`EINO_RUNTIME_ENABLED=false` 会禁用 run-eino skeleton；`EINO_LLM_ENABLED=false` 是默认值。旧的 `EINO_ENABLED=false` 仅保留兼容含义，可理解为不启用真实 LLM，不再导致 run-eino fallback 到 stable runtime。
+`EINO_RUNTIME_ENABLED=false` 会禁用 run-eino runtime；`EINO_GRAPH_ENABLED=true` 是默认值；`EINO_LLM_ENABLED=false` 是默认值。旧的 `EINO_ENABLED=false` 仅保留兼容含义，可理解为不启用真实 LLM，不再导致 run-eino fallback 到 stable runtime。
 
-未来确认 Eino 包路径、版本和麒麟/LoongArch 构建方式后，再通过 build tag 或替换 adapter 接入真实 ChatModel / ReAct Agent。
+未来可以在不改变安全链路的前提下，把 deterministic ChatModel Stub 替换为真实 Eino ChatModel / ReAct Agent，但仍必须保留 intent_guard、Tool Policy、semantic trace 和 TraceShield 审计。
 
 ## 重要文档
 
@@ -570,6 +582,7 @@ Stage 9A 默认：
 - `docs/stage6_audit_report_evidence_chain.md`：审计报告与证据链说明
 - `docs/stage8_mcp_like_tool_protocol.md`：MCP-like 工具协议与插件注册说明
 - `docs/stage9a_eino_runtime_skeleton.md`：deterministic Eino Runtime Skeleton 说明
+- `docs/stage9b_eino_graph_runtime.md`：CloudWeGo Eino Graph Runtime 与 deterministic tool calling 说明
 - `docs/todo.md`：后续计划
 - `frontend/README.md`：前端控制台启动与安全边界说明
 

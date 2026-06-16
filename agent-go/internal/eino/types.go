@@ -3,17 +3,20 @@ package eino
 import "kylin-guard-agent/agent-go/internal/tools"
 
 const (
-	RuntimeVersion        = "stage9a-v1"
-	RuntimeSummary        = "Eino runtime executed deterministic planner-backed tool orchestration."
+	RuntimeVersion        = "stage9b-v1"
+	RuntimeSummary        = "Eino graph runtime executed deterministic tool-calling orchestration."
 	DefaultRuntimeName    = "eino"
 	DefaultRoute          = "eino-runtime"
-	DefaultOrchestration  = "deterministic-planner-backed"
+	DefaultOrchestration  = "eino-graph-tool-calling"
+	DefaultChatModel      = "deterministic-stub"
 	defaultRuntimeEnabled = true
+	defaultGraphEnabled   = true
 	defaultLLMEnabled     = false
 )
 
 type RuntimeConfig struct {
 	RuntimeEnabled bool
+	GraphEnabled   bool
 	LLMEnabled     bool
 	RuntimeName    string
 	Route          string
@@ -25,6 +28,8 @@ type RuntimeMetadata struct {
 	Route         string   `json:"route"`
 	Runtime       string   `json:"runtime"`
 	LLMEnabled    bool     `json:"llm_enabled"`
+	EinoGraph     bool     `json:"eino_graph_enabled"`
+	ChatModel     string   `json:"chat_model"`
 	Orchestration string   `json:"orchestration"`
 	ToolProtocol  string   `json:"tool_protocol"`
 	Version       string   `json:"version"`
@@ -34,6 +39,7 @@ type RuntimeMetadata struct {
 func DefaultRuntimeConfig() RuntimeConfig {
 	return RuntimeConfig{
 		RuntimeEnabled: defaultRuntimeEnabled,
+		GraphEnabled:   defaultGraphEnabled,
 		LLMEnabled:     defaultLLMEnabled,
 		RuntimeName:    DefaultRuntimeName,
 		Route:          DefaultRoute,
@@ -45,7 +51,7 @@ func DefaultRuntimeConfig() RuntimeConfig {
 func NormalizeRuntimeConfig(config RuntimeConfig) RuntimeConfig {
 	defaults := DefaultRuntimeConfig()
 	if config == (RuntimeConfig{}) {
-		config.RuntimeEnabled = defaults.RuntimeEnabled
+		return defaults
 	}
 	if config.RuntimeName == "" {
 		config.RuntimeName = defaults.RuntimeName
@@ -68,6 +74,8 @@ func (c RuntimeConfig) Metadata(toolsUsed []string) RuntimeMetadata {
 		Route:         normalized.Route,
 		Runtime:       normalized.RuntimeName,
 		LLMEnabled:    normalized.LLMEnabled,
+		EinoGraph:     normalized.GraphEnabled,
+		ChatModel:     DefaultChatModel,
 		Orchestration: DefaultOrchestration,
 		ToolProtocol:  normalized.ToolProtocol,
 		Version:       normalized.Version,

@@ -14,13 +14,14 @@ import (
 )
 
 type Runtime struct {
-	config      RuntimeConfig
-	registry    *tools.Registry
-	planner     agent.Planner
-	guard       security.IntentGuard
-	auditor     auditclient.Client
-	traces      *logtrace.Store
-	toolAdapter PlanToolAdapter
+	config       RuntimeConfig
+	registry     *tools.Registry
+	guard        security.IntentGuard
+	auditor      auditclient.Client
+	traces       *logtrace.Store
+	toolAdapter  PlanToolAdapter
+	chatModel    ToolCallGenerator
+	graphRuntime *GraphRuntime
 }
 
 func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore *logtrace.Store, config RuntimeConfig) *Runtime {
@@ -34,20 +35,23 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 		traceStore = logtrace.NewStore()
 	}
 	normalized := NormalizeRuntimeConfig(config)
+	toolAdapter := NewMCPToolAdapter(registry, security.NewToolPolicy())
+	chatModel := NewDeterministicChatModelStub(registry)
 	return &Runtime{
-		config:      normalized,
-		registry:    registry,
-		planner:     agent.NewRuleBasedPlannerWithRegistry(registry),
-		guard:       security.NewIntentGuard(),
-		auditor:     auditor,
-		traces:      traceStore,
-		toolAdapter: NewMCPToolAdapter(registry, security.NewToolPolicy()),
+		config:       normalized,
+		registry:     registry,
+		guard:        security.NewIntentGuard(),
+		auditor:      auditor,
+		traces:       traceStore,
+		toolAdapter:  toolAdapter,
+		chatModel:    chatModel,
+		graphRuntime: NewGraphRuntime(chatModel, toolAdapter),
 	}
 }
 
 func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.AgentRunResponse, error) {
 	if !r.Enabled() {
-		return agent.AgentRunResponse{}, errors.New("eino runtime skeleton is disabled")
+		return agent.AgentRunResponse{}, errors.New("eino graph runtime is disabled")
 	}
 
 	task := strings.TrimSpace(req.Task)
@@ -77,20 +81,30 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 		}, nil
 	}
 
-	plan, err := r.planner.Plan(ctx, task)
+	if !r.config.GraphEnabled {
+		return agent.AgentRunResponse{}, errors.New("eino graph runtime is disabled")
+	}
+	if r.graphRuntime == nil {
+		r.graphRuntime = NewGraphRuntime(r.chatModel, r.toolAdapter)
+	}
+	graphOutput, err := r.graphRuntime.Run(ctx, task)
 	if err != nil {
 		return agent.AgentRunResponse{}, err
 	}
 
-	traces := make([]logtrace.ToolTrace, 0, len(plan.Steps))
+	plan := graphOutput.Plan
+	traces := graphOutput.ToolTrace
+	if traces == nil {
+		traces = []logtrace.ToolTrace{}
+	}
 	var diagnosis *agent.Diagnosis
-	for _, step := range plan.Steps {
-		result, _ := r.toolAdapter.Execute(ctx, step)
-		if step.ToolName == "ssh_login_analyzer" {
+	for _, result := range graphOutput.ToolResults {
+		if result.Trace.ToolName == "ssh_login_analyzer" {
 			diagnosis = diagnosisFromSSHLoginAnalyzer(plan.Scenario, result.Output)
 		}
-		traces = append(traces, result.Trace)
-		r.traces.Add(result.Trace)
+		if result.Trace.ToolName != "" {
+			r.traces.Add(result.Trace)
+		}
 	}
 
 	audit, err := r.auditor.AuditTrace(ctx, task, traces)
@@ -127,7 +141,7 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 }
 
 func (r *Runtime) Name() string {
-	return "eino_runtime_skeleton"
+	return "eino_graph_runtime"
 }
 
 func (r *Runtime) Enabled() bool {
@@ -261,7 +275,9 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 	}
 	securityReport.AuditMetadata["route"] = metadata.Route
 	securityReport.AuditMetadata["runtime"] = metadata.Runtime
+	securityReport.AuditMetadata["eino_graph_enabled"] = metadata.EinoGraph
 	securityReport.AuditMetadata["llm_enabled"] = metadata.LLMEnabled
+	securityReport.AuditMetadata["chat_model"] = metadata.ChatModel
 	securityReport.AuditMetadata["orchestration"] = metadata.Orchestration
 	securityReport.AuditMetadata["tool_protocol"] = metadata.ToolProtocol
 	securityReport.AuditMetadata["tool_protocol_version"] = tools.ToolProtocolVersion

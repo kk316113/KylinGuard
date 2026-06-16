@@ -52,6 +52,9 @@ func TestAgentRunHandlerKeepsStableRuntimeBehavior(t *testing.T) {
 	if strings.Contains(response.Summary, "stable runtime fallback") {
 		t.Fatalf("stable /api/agent/run summary should not contain fallback marker: %q", response.Summary)
 	}
+	if strings.Contains(response.Summary, "Eino graph runtime") {
+		t.Fatalf("stable /api/agent/run summary should not contain Eino marker: %q", response.Summary)
+	}
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected nonempty tool_trace")
 	}
@@ -69,7 +72,7 @@ func TestAgentRunHandlerKeepsStableRuntimeBehavior(t *testing.T) {
 	}
 }
 
-func TestAgentRunEinoSafeTaskUsesEinoRuntimeSkeleton(t *testing.T) {
+func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 	auditor := &testAuditor{}
 	registry := tools.NewDefaultRegistry()
 	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
@@ -82,11 +85,14 @@ func TestAgentRunEinoSafeTaskUsesEinoRuntimeSkeleton(t *testing.T) {
 	if response.AuditResult.Method != "traceshield" {
 		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)
 	}
-	if !strings.Contains(response.Summary, einoruntime.RuntimeSummary) {
-		t.Fatalf("expected Eino runtime marker in summary, got %q", response.Summary)
+	if response.Summary != einoruntime.RuntimeSummary {
+		t.Fatalf("expected Eino graph runtime summary, got %q", response.Summary)
 	}
 	if strings.Contains(response.Summary, "stable runtime fallback") {
 		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
+	}
+	if strings.Contains(response.Summary, "deterministic planner-backed") {
+		t.Fatalf("summary should not contain Stage 9A marker: %q", response.Summary)
 	}
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected nonempty tool_trace")
@@ -100,17 +106,30 @@ func TestAgentRunEinoSafeTaskUsesEinoRuntimeSkeleton(t *testing.T) {
 	if response.SecurityReport == nil {
 		t.Fatal("expected run-eino to return security_report")
 	}
-	if response.SecurityReport.AuditMetadata["route"] != einoruntime.DefaultRoute {
-		t.Fatalf("expected eino-runtime route, got %#v", response.SecurityReport.AuditMetadata["route"])
+	metadata := response.SecurityReport.AuditMetadata
+	if metadata["route"] != einoruntime.DefaultRoute {
+		t.Fatalf("expected eino-runtime route, got %#v", metadata["route"])
 	}
-	if response.SecurityReport.AuditMetadata["runtime"] != einoruntime.DefaultRuntimeName {
-		t.Fatalf("expected runtime=eino, got %#v", response.SecurityReport.AuditMetadata["runtime"])
+	if metadata["runtime"] != einoruntime.DefaultRuntimeName {
+		t.Fatalf("expected runtime=eino, got %#v", metadata["runtime"])
 	}
-	if response.SecurityReport.AuditMetadata["llm_enabled"] != false {
-		t.Fatalf("expected llm_enabled=false, got %#v", response.SecurityReport.AuditMetadata["llm_enabled"])
+	if metadata["eino_graph_enabled"] != true {
+		t.Fatalf("expected eino_graph_enabled=true, got %#v", metadata["eino_graph_enabled"])
+	}
+	if metadata["llm_enabled"] != false {
+		t.Fatalf("expected llm_enabled=false, got %#v", metadata["llm_enabled"])
+	}
+	if metadata["chat_model"] != einoruntime.DefaultChatModel {
+		t.Fatalf("expected deterministic stub chat model, got %#v", metadata["chat_model"])
+	}
+	if metadata["orchestration"] != einoruntime.DefaultOrchestration {
+		t.Fatalf("expected Eino graph orchestration, got %#v", metadata["orchestration"])
+	}
+	if metadata["eino_runtime_version"] != einoruntime.RuntimeVersion {
+		t.Fatalf("expected Stage 9B runtime version, got %#v", metadata["eino_runtime_version"])
 	}
 	if !auditor.called {
-		t.Fatal("expected Eino runtime skeleton to call audit client")
+		t.Fatal("expected Eino graph runtime to call audit client")
 	}
 }
 
@@ -144,6 +163,9 @@ func TestAgentRunEinoDangerousTaskDeniesBeforeAudit(t *testing.T) {
 	}
 	if response.SecurityReport.AuditMetadata["route"] != einoruntime.DefaultRoute {
 		t.Fatalf("expected eino-runtime route, got %#v", response.SecurityReport.AuditMetadata["route"])
+	}
+	if response.SecurityReport.AuditMetadata["eino_graph_enabled"] != true {
+		t.Fatalf("expected eino_graph_enabled=true, got %#v", response.SecurityReport.AuditMetadata["eino_graph_enabled"])
 	}
 	if auditor.called {
 		t.Fatal("audit client should not be called for dangerous task")

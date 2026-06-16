@@ -6,6 +6,9 @@ TRACE_HOME="${TRACESHIELD_CORE_PATH:-/opt/traceshield-core}"
 AUDIT_PORT="${AUDIT_CORE_PORT:-8001}"
 AGENT_PORT="${AGENT_GO_PORT:-8080}"
 AUDIT_URL="${AUDIT_CORE_URL:-http://127.0.0.1:${AUDIT_PORT}}"
+EINO_RUNTIME="${EINO_RUNTIME_ENABLED:-true}"
+EINO_GRAPH="${EINO_GRAPH_ENABLED:-true}"
+EINO_LLM="${EINO_LLM_ENABLED:-false}"
 
 cd "$APP_HOME"
 
@@ -16,6 +19,9 @@ echo "APP_HOME=$APP_HOME"
 echo "TRACE_HOME=$TRACE_HOME"
 echo "AUDIT_PORT=$AUDIT_PORT"
 echo "AGENT_PORT=$AGENT_PORT"
+echo "EINO_RUNTIME_ENABLED=$EINO_RUNTIME"
+echo "EINO_GRAPH_ENABLED=$EINO_GRAPH"
+echo "EINO_LLM_ENABLED=$EINO_LLM"
 echo
 
 if [ ! -d "$TRACE_HOME" ]; then
@@ -57,6 +63,9 @@ echo
 echo "== starting Go Agent =="
 export AUDIT_CORE_URL="$AUDIT_URL"
 export AGENT_GO_PORT="$AGENT_PORT"
+export EINO_RUNTIME_ENABLED="$EINO_RUNTIME"
+export EINO_GRAPH_ENABLED="$EINO_GRAPH"
+export EINO_LLM_ENABLED="$EINO_LLM"
 
 nohup bash deploy/kylin/run_agent_go.sh > logs/agent-go.log 2>&1 &
 echo $! > run/agent-go.pid

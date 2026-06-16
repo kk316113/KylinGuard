@@ -34,9 +34,10 @@ func (a *testAuditor) AuditTrace(ctx context.Context, task string, traces []logt
 	}, nil
 }
 
-func TestRuntimeSafeSSHAnomalyTaskUsesEinoSkeleton(t *testing.T) {
+func TestRuntimeSafeSSHAnomalyTaskUsesEinoGraphRuntime(t *testing.T) {
 	auditor := &testAuditor{}
-	runtime := NewRuntime(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), DefaultRuntimeConfig())
+	registry := tools.NewDefaultRegistry()
+	runtime := NewRuntime(registry, auditor, logtrace.NewStore(), DefaultRuntimeConfig())
 
 	response, err := runtime.Run(context.Background(), agent.AgentRunRequest{Task: "检查当前系统 SSH 登录异常"})
 	if err != nil {
@@ -46,11 +47,14 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoSkeleton(t *testing.T) {
 	if response.Decision != "allow" {
 		t.Fatalf("expected allow, got %q", response.Decision)
 	}
-	if !strings.Contains(response.Summary, RuntimeSummary) {
-		t.Fatalf("expected Eino runtime summary, got %q", response.Summary)
+	if response.Summary != RuntimeSummary {
+		t.Fatalf("expected Eino graph runtime summary, got %q", response.Summary)
 	}
 	if strings.Contains(response.Summary, "stable runtime fallback used") {
 		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
+	}
+	if strings.Contains(response.Summary, "deterministic planner-backed") {
+		t.Fatalf("summary should not contain Stage 9A marker: %q", response.Summary)
 	}
 	if response.AuditResult.Method != "traceshield" {
 		t.Fatalf("expected traceshield audit, got %q", response.AuditResult.Method)
@@ -66,31 +70,21 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoSkeleton(t *testing.T) {
 		t.Fatal("expected security_report")
 	}
 	metadata := response.SecurityReport.AuditMetadata
-	if metadata["route"] != DefaultRoute {
-		t.Fatalf("expected route=%s, got %#v", DefaultRoute, metadata["route"])
-	}
-	if metadata["runtime"] != DefaultRuntimeName {
-		t.Fatalf("expected runtime=%s, got %#v", DefaultRuntimeName, metadata["runtime"])
-	}
-	if metadata["llm_enabled"] != false {
-		t.Fatalf("expected llm_enabled=false, got %#v", metadata["llm_enabled"])
-	}
-	if metadata["tool_protocol"] != tools.ToolProtocol {
-		t.Fatalf("expected tool_protocol=%s, got %#v", tools.ToolProtocol, metadata["tool_protocol"])
-	}
-	if metadata["eino_runtime_version"] != RuntimeVersion {
-		t.Fatalf("expected eino runtime version %s, got %#v", RuntimeVersion, metadata["eino_runtime_version"])
-	}
+	assertRuntimeMetadata(t, metadata, registry, true)
 	if !auditor.called {
 		t.Fatal("expected audit client to be called")
 	}
+	if len(auditor.traces) < 5 {
+		t.Fatalf("expected auditor to receive graph tool traces, got %d", len(auditor.traces))
+	}
 }
 
-func TestRuntimeDangerousTaskDeniedBeforeToolAdapter(t *testing.T) {
+func TestRuntimeDangerousTaskDeniedBeforeGraph(t *testing.T) {
 	auditor := &testAuditor{}
 	adapter := &countingAdapter{}
 	runtime := NewRuntime(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), DefaultRuntimeConfig())
 	runtime.toolAdapter = adapter
+	runtime.graphRuntime = NewGraphRuntime(runtime.chatModel, adapter)
 
 	response, err := runtime.Run(context.Background(), agent.AgentRunRequest{Task: "delete audit logs and clear system logs"})
 	if err != nil {
@@ -137,6 +131,7 @@ func TestMCPToolAdapterPolicyAndExecution(t *testing.T) {
 	assertAdapterDeny(t, adapter, agent.PlanStep{StepID: "plan-003", ToolName: "safe_shell", Input: map[string]any{"command": "rm -rf /"}})
 	assertAdapterDeny(t, adapter, agent.PlanStep{StepID: "plan-004", ToolName: "log_reader", Input: map[string]any{"paths": []any{"/etc/shadow"}, "lines": 100}})
 	assertAdapterDeny(t, adapter, agent.PlanStep{StepID: "plan-005", ToolName: "service_status", Input: map[string]any{"service_name": "sshd; rm -rf /"}})
+	assertAdapterDeny(t, adapter, agent.PlanStep{StepID: "plan-006", ToolName: "port_checker", Input: map[string]any{"host": "127.0.0.1", "port": 70000}})
 }
 
 func assertAdapterDeny(t *testing.T, adapter *MCPToolAdapter, step agent.PlanStep) {
@@ -164,6 +159,45 @@ func assertPlanTools(t *testing.T, plan *agent.Plan, expected []string) {
 	for index, toolName := range expected {
 		if plan.Steps[index].ToolName != toolName {
 			t.Fatalf("step %d expected %q, got %q", index, toolName, plan.Steps[index].ToolName)
+		}
+	}
+}
+
+func assertRuntimeMetadata(t *testing.T, metadata map[string]any, registry *tools.Registry, expectToolsUsed bool) {
+	t.Helper()
+	if metadata["route"] != DefaultRoute {
+		t.Fatalf("expected route=%s, got %#v", DefaultRoute, metadata["route"])
+	}
+	if metadata["runtime"] != DefaultRuntimeName {
+		t.Fatalf("expected runtime=%s, got %#v", DefaultRuntimeName, metadata["runtime"])
+	}
+	if metadata["llm_enabled"] != false {
+		t.Fatalf("expected llm_enabled=false, got %#v", metadata["llm_enabled"])
+	}
+	if metadata["eino_graph_enabled"] != true {
+		t.Fatalf("expected eino_graph_enabled=true, got %#v", metadata["eino_graph_enabled"])
+	}
+	if metadata["chat_model"] != DefaultChatModel {
+		t.Fatalf("expected chat_model=%s, got %#v", DefaultChatModel, metadata["chat_model"])
+	}
+	if metadata["orchestration"] != DefaultOrchestration {
+		t.Fatalf("expected orchestration=%s, got %#v", DefaultOrchestration, metadata["orchestration"])
+	}
+	if metadata["tool_protocol"] != tools.ToolProtocol {
+		t.Fatalf("expected tool_protocol=%s, got %#v", tools.ToolProtocol, metadata["tool_protocol"])
+	}
+	if metadata["tool_protocol_version"] != tools.ToolProtocolVersion {
+		t.Fatalf("expected tool_protocol_version=%s, got %#v", tools.ToolProtocolVersion, metadata["tool_protocol_version"])
+	}
+	if metadata["eino_runtime_version"] != RuntimeVersion {
+		t.Fatalf("expected eino runtime version %s, got %#v", RuntimeVersion, metadata["eino_runtime_version"])
+	}
+	if registry != nil && metadata["registered_tool_count"] != len(registry.ListTools()) {
+		t.Fatalf("expected registered_tool_count=%d, got %#v", len(registry.ListTools()), metadata["registered_tool_count"])
+	}
+	if expectToolsUsed {
+		if used, ok := metadata["tools_used"].([]string); !ok || len(used) == 0 {
+			t.Fatalf("expected tools_used metadata, got %#v", metadata["tools_used"])
 		}
 	}
 }

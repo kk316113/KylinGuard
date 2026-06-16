@@ -25,6 +25,7 @@ func main() {
 	runtime := agent.NewRuntime(registry, auditor, traceStore)
 	einoAdapter := einoruntime.NewRuntimeAdapter(einoruntime.NewRuntime(registry, auditor, traceStore, einoruntime.RuntimeConfig{
 		RuntimeEnabled: cfg.EinoRuntimeEnabled,
+		GraphEnabled:   cfg.EinoGraphEnabled,
 		LLMEnabled:     cfg.EinoLLMEnabled,
 		RuntimeName:    einoruntime.DefaultRuntimeName,
 		Route:          einoruntime.DefaultRoute,
@@ -120,7 +121,7 @@ func agentRunEinoHandler(einoAdapter agent.AgentAdapter) http.HandlerFunc {
 		}
 
 		if !einoAdapter.Enabled() {
-			writeError(w, http.StatusServiceUnavailable, "eino runtime skeleton is disabled")
+			writeError(w, http.StatusServiceUnavailable, "eino graph runtime is disabled")
 			return
 		}
 

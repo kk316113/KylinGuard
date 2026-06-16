@@ -6,6 +6,7 @@ type Config struct {
 	Addr               string
 	AuditCoreURL       string
 	EinoRuntimeEnabled bool
+	EinoGraphEnabled   bool
 	EinoLLMEnabled     bool
 }
 
@@ -20,6 +21,7 @@ func Load() Config {
 		Addr:               addr,
 		AuditCoreURL:       getenv("AUDIT_CORE_URL", "http://127.0.0.1:8001"),
 		EinoRuntimeEnabled: getenvBool("EINO_RUNTIME_ENABLED", true),
+		EinoGraphEnabled:   getenvBool("EINO_GRAPH_ENABLED", true),
 		EinoLLMEnabled:     getenvBool("EINO_LLM_ENABLED", getenvBool("EINO_ENABLED", false)),
 	}
 }

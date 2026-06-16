@@ -1,44 +1,57 @@
 # Architecture
 
-未来目标架构：
+KylinGuard 当前采用稳定主链路 + 实验 Eino 链路并行演进的架构。
+
+稳定主链路：
 
 ```text
 User Task
--> Go/Eino Agent Runtime
+-> Go Agent Runtime
 -> Intent Guard
 -> Rule-based Ops Planner
--> MCP-like Tool Adapter (run-eino)
 -> MCP-like Tool Registry
 -> Kylin Ops Tools
 -> SSH Diagnosis Tools
 -> Semantic Tool Trace
 -> Python Audit Core
+-> TraceShield Adapter/Core
 -> Evidence Chain
 -> Report Builder
 -> Frontend Security Console
 ```
 
-## 当前 Stage 9A 状态
+Stage 9B 实验链路：
 
-- `Go/Eino Agent Runtime`：`/api/agent/run` 仍为稳定 Go runtime；`/api/agent/run-eino` 已进入 deterministic Eino Runtime Skeleton，不再 fallback 到稳定 runtime。
-- `Intent Guard`：当前为关键词规则占位。
-- `Rule-based Ops Planner`：根据任务选择 `ssh_anomaly_check`、`service_check`、`port_check`、`system_overview` 等工具计划。
-- `MCP-like Tool Registry`：当前已注册基础工具 metadata 和 executor，并提供 `/api/tools`、`/api/tools/{name}`、`/api/tools/call`。
-- `Tool Policy`：控制 direct tool call，禁止 unknown tool、`safe_shell` direct call、越界端口、非白名单日志和恶意 service name。
-- `MCP-like Tool Adapter`：Eino Runtime Skeleton 通过该 adapter 执行 planner steps，必须查询 ToolMetadata 并经过 Tool Policy。
-- `Kylin Ops Tools`：当前提供保守实现，不允许任意 shell 执行或任意文件读取。
-- `SSH Diagnosis Tools`：`auth_log_collector` 和 `ssh_login_analyzer` 只读采集并分析 SSH 认证日志，输出 `diagnosis`。
-- `Tool Trace`：当前已定义统一 trace 字段，并携带工具语义、资源语义、权限范围和边界级别。
-- `Python Audit Core`：当前为 FastAPI 服务，通过 TraceShield adapter 调用清洗后的 TraceShield 方法核心。
-- `Evidence Chain`：当前由 adapter 将 TraceShield evidence steps 转换为统一 HTTP 输出，并将语义 trace 转换为 `risk_graph.nodes`。
-- `Report Builder`：当前在 Go Agent 侧生成 `security_report`，用于解释 plan、tool_trace、diagnosis 和 audit_result。
-- `Frontend Security Console`：当前为 Vue 3 + Vite 单页控制台，展示任务输入、执行计划、审计摘要、证据链、敏感资源、风险解释、建议和 Raw JSON。
+```text
+User Task
+-> Go /api/agent/run-eino
+-> Intent Guard
+-> CloudWeGo Eino compose.Graph
+-> Deterministic ChatModel Stub
+-> MCP-like Tool Adapter
+-> Tool Policy
+-> MCP-like Tool Registry
+-> Kylin Ops Tools
+-> Semantic Tool Trace
+-> Python Audit Core
+-> TraceShield Adapter/Core
+-> Evidence Chain
+-> Report Builder
+```
+
+## 当前状态
+
+- `/api/agent/run` 仍是稳定 Go runtime，不被 Stage 9B 改写。
+- `/api/agent/run-eino` 已进入 CloudWeGo Eino graph runtime，不再 fallback 到 stable runtime。
+- Eino graph 第一节点是 deterministic ChatModel Stub，负责把任务映射为确定性的 tool calls。
+- Eino graph 第二节点是 MCP-like Tool Adapter，负责通过 Tool Policy 和 Tool Registry 执行工具。
+- 当前没有真实 LLM、远程模型 API、API key、模型厂商 SDK 或 ReAct Agent。
+- `audit-core-py` 仍是唯一的 TraceShield 入口，Go Agent 不直接 import TraceShield-Core。
+- `security_report` 由 Go 侧 report builder 生成，只解释结果，不改变最终 decision。
 
 ## TraceShield 接入边界
 
-当前采用策略 A：`audit-core-py` 读取 `TRACESHIELD_CORE_PATH`，将 `D:\code\2026\TraceShield-Core` 或部署环境中的等价路径加入 `sys.path`，然后调用 `traceshield_experiment_core.TraceShieldEvaluator`。
-
-Go/Eino Agent 永远只调用 `audit-core-py` 的 HTTP API：
+当前采用 `audit-core-py` 读取 `TRACESHIELD_CORE_PATH` 的方式接入 TraceShield：
 
 ```text
 Go Agent
@@ -47,38 +60,46 @@ Go Agent
 -> traceshield_experiment_core.TraceShieldEvaluator
 ```
 
-如果 TraceShield import 或运行失败，adapter 会返回 fallback mock，并在 `message` 中写明原因。
+如果 TraceShield import 或运行失败，adapter 会返回 fallback mock，并在 `message` 中说明原因。
 
-## 工具语义流
+## MCP-like Tool Protocol
+
+Stage 8 工具协议提供：
+
+- `GET /api/tools`：列出工具 metadata，不执行工具。
+- `GET /api/tools/{name}`：返回单个工具 schema 和权限边界。
+- `POST /api/tools/call`：受 Tool Policy 控制的单工具调用；允许后仍会生成 semantic trace 并进入 audit-core-py / TraceShield 审计。
+
+它不是绕过 Agent 的后门。`safe_shell` 默认禁止 direct call；`log_reader` 和 `ssh_login_analyzer` 只能访问白名单日志路径。
+
+## Eino Metadata
+
+Stage 9B run-eino 响应会在 `security_report.audit_metadata` 中记录：
+
+- `route=eino-runtime`
+- `runtime=eino`
+- `eino_graph_enabled=true`
+- `llm_enabled=false`
+- `chat_model=deterministic-stub`
+- `orchestration=eino-graph-tool-calling`
+- `tool_protocol=mcp-like`
+- `tool_protocol_version=stage8-v1`
+- `eino_runtime_version=stage9b-v1`
+- `registered_tool_count`
+- `tools_used`
+
+## 安全边界
+
+Eino 不是安全边界。run-eino 仍必须经过：
 
 ```text
-Rule-based Plan
--> PlanStep
--> MCP-like Tool Registry
--> Tool Policy for direct calls
-Kylin Ops Tool
--> SSH Diagnosis Tool
--> tools.SemanticForTool(...)
--> logtrace.ToolTrace semantic fields
--> auditclient HTTP payload
--> audit-core-py ToolTraceStep
--> TraceShieldAdapter normalized ToolEvent args
--> risk_graph semantic nodes
--> report.BuildSecurityReport(...)
--> security_report.audit_metadata tool_protocol metadata
--> security_report.evidence_chain / risk_explanation / recommendations
--> frontend security console
+intent_guard
+-> Tool Policy
+-> semantic trace
+-> audit-core-py / TraceShield
 ```
 
-## MCP-like Tool Protocol 边界
-
-Stage 8 的工具协议提供：
-
-- `GET /api/tools`：只列出工具 metadata，不执行工具。
-- `GET /api/tools/{name}`：只返回单个工具 schema 和权限边界。
-- `POST /api/tools/call`：受 Tool Policy 控制的单工具调用，允许后仍会生成 semantic trace 并进入 audit-core-py / TraceShield 审计。
-
-它不是绕过 Agent 的后门。`safe_shell` 默认禁止 direct call，`log_reader` 和 `ssh_login_analyzer` 仍只能访问白名单日志路径。前端即使展示这些接口，也不构成安全边界。
+危险任务会在 Eino graph 和 deterministic ChatModel Stub 之前被 deny，不生成 plan，不执行工具，不调用 audit-core-py。
 
 ## Frontend 边界
 
@@ -89,22 +110,3 @@ Stage 8 的工具协议提供：
 - `POST /api/agent/run-eino`
 
 前端不直接调用 audit-core-py，不执行系统命令，不决定 `allow/review/deny`，也不提供删除日志、封禁 IP、关闭防火墙或重启服务等自动处置按钮。
-
-## Eino 接入边界
-
-当前不硬编码 Eino import 路径，也不引入 Eino 外部依赖。`/api/agent/run` 是稳定主链路，`/api/agent/run-eino` 是实验链路，但 Stage 9A 后它已经进入 deterministic Eino Runtime Skeleton。
-
-run-eino 当前元数据为：
-
-- `route=eino-runtime`
-- `runtime=eino`
-- `llm_enabled=false`
-- `orchestration=deterministic-planner-backed`
-- `tool_protocol=mcp-like`
-- `eino_runtime_version=stage9a-v1`
-
-Eino 不是安全边界。run-eino 仍必须经过 `intent_guard`、Rule-based Planner、MCP-like Tool Adapter、Tool Policy、semantic trace 和 audit-core-py / TraceShield。
-
-## Report 边界
-
-`security_report` 只解释，不裁决。最终 `decision` 仍来自 intent_guard、TraceShield 和现有 decision flow。Report Builder 不接 LLM，不执行建议，也不修改任何系统状态。

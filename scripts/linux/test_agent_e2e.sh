@@ -193,11 +193,13 @@ if not (report.get("recommendations") or []):
     raise SystemExit("expected security_report.recommendations")
 
 if runtime_expectation == "eino_runtime_summary":
-    marker = "Eino runtime executed deterministic planner-backed tool orchestration"
+    marker = "Eino graph runtime executed deterministic tool-calling orchestration"
     if marker not in summary:
         raise SystemExit(f"summary does not contain {marker!r}: {summary!r}")
     if "stable runtime fallback" in summary:
         raise SystemExit(f"summary should not contain stable runtime fallback marker: {summary!r}")
+    if "deterministic planner-backed" in summary:
+        raise SystemExit(f"summary should not contain Stage 9A marker: {summary!r}")
 
 if expectation == "ssh_plan":
     if not plan:
@@ -273,12 +275,16 @@ if runtime_expectation in {"eino_runtime", "eino_runtime_summary"}:
         raise SystemExit(f"expected security_report runtime=eino, got {metadata.get('runtime')}")
     if metadata.get("llm_enabled") is not False:
         raise SystemExit(f"expected security_report llm_enabled=false, got {metadata.get('llm_enabled')}")
-    if metadata.get("orchestration") != "deterministic-planner-backed":
-        raise SystemExit(f"expected deterministic planner-backed orchestration, got {metadata.get('orchestration')}")
+    if metadata.get("eino_graph_enabled") is not True:
+        raise SystemExit(f"expected security_report eino_graph_enabled=true, got {metadata.get('eino_graph_enabled')}")
+    if metadata.get("chat_model") != "deterministic-stub":
+        raise SystemExit(f"expected chat_model=deterministic-stub, got {metadata.get('chat_model')}")
+    if metadata.get("orchestration") != "eino-graph-tool-calling":
+        raise SystemExit(f"expected eino-graph-tool-calling orchestration, got {metadata.get('orchestration')}")
     if metadata.get("tool_protocol") != "mcp-like":
         raise SystemExit(f"expected tool_protocol=mcp-like, got {metadata.get('tool_protocol')}")
-    if metadata.get("eino_runtime_version") != "stage9a-v1":
-        raise SystemExit(f"expected eino_runtime_version=stage9a-v1, got {metadata.get('eino_runtime_version')}")
+    if metadata.get("eino_runtime_version") != "stage9b-v1":
+        raise SystemExit(f"expected eino_runtime_version=stage9b-v1, got {metadata.get('eino_runtime_version')}")
 
 print("task:", body.get("task"))
 print("decision:", decision)
@@ -291,8 +297,12 @@ print("security_report.title:", report.get("title"))
 print("security_report.risk_level:", report.get("risk_level"))
 print("security_report.route:", metadata.get("route"))
 print("security_report.runtime:", metadata.get("runtime"))
+print("security_report.eino_graph_enabled:", metadata.get("eino_graph_enabled"))
 print("security_report.llm_enabled:", metadata.get("llm_enabled"))
+print("security_report.chat_model:", metadata.get("chat_model"))
+print("security_report.orchestration:", metadata.get("orchestration"))
 print("security_report.tool_protocol:", metadata.get("tool_protocol"))
+print("security_report.eino_runtime_version:", metadata.get("eino_runtime_version"))
 print("security_report.evidence_chain length:", len(report.get("evidence_chain") or []))
 print("security_report.risk_explanation:", ",".join(item.get("category", "") for item in (report.get("risk_explanation") or [])))
 print("security_report.recommendations:", len(report.get("recommendations") or []))

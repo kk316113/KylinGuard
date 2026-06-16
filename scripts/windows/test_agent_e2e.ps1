@@ -188,11 +188,14 @@ function Assert-AgentResponse {
     }
 
     if ($Case.ExpectEinoSummary) {
-        if ($Json.summary -notlike "*Eino runtime executed deterministic planner-backed tool orchestration*") {
+        if ($Json.summary -notlike "*Eino graph runtime executed deterministic tool-calling orchestration*") {
             throw "$($Case.Name): summary missing Eino runtime marker: $($Json.summary)"
         }
         if ($Json.summary -like "*stable runtime fallback*") {
             throw "$($Case.Name): summary should not contain stable runtime fallback marker: $($Json.summary)"
+        }
+        if ($Json.summary -like "*deterministic planner-backed*") {
+            throw "$($Case.Name): summary should not contain Stage 9A marker: $($Json.summary)"
         }
     }
 
@@ -276,14 +279,20 @@ function Assert-AgentResponse {
         if ($report.audit_metadata.llm_enabled -ne $false) {
             throw "$($Case.Name): expected security_report llm_enabled=false, got $($report.audit_metadata.llm_enabled)"
         }
-        if ($report.audit_metadata.orchestration -ne "deterministic-planner-backed") {
-            throw "$($Case.Name): expected deterministic planner-backed orchestration, got $($report.audit_metadata.orchestration)"
+        if ($report.audit_metadata.eino_graph_enabled -ne $true) {
+            throw "$($Case.Name): expected security_report eino_graph_enabled=true, got $($report.audit_metadata.eino_graph_enabled)"
+        }
+        if ($report.audit_metadata.chat_model -ne "deterministic-stub") {
+            throw "$($Case.Name): expected chat_model=deterministic-stub, got $($report.audit_metadata.chat_model)"
+        }
+        if ($report.audit_metadata.orchestration -ne "eino-graph-tool-calling") {
+            throw "$($Case.Name): expected eino-graph-tool-calling orchestration, got $($report.audit_metadata.orchestration)"
         }
         if ($report.audit_metadata.tool_protocol -ne "mcp-like") {
             throw "$($Case.Name): expected tool_protocol=mcp-like, got $($report.audit_metadata.tool_protocol)"
         }
-        if ($report.audit_metadata.eino_runtime_version -ne "stage9a-v1") {
-            throw "$($Case.Name): expected eino_runtime_version=stage9a-v1, got $($report.audit_metadata.eino_runtime_version)"
+        if ($report.audit_metadata.eino_runtime_version -ne "stage9b-v1") {
+            throw "$($Case.Name): expected eino_runtime_version=stage9b-v1, got $($report.audit_metadata.eino_runtime_version)"
         }
     }
 }
@@ -355,8 +364,12 @@ foreach ($case in $cases) {
         report_recommendations = @($json.security_report.recommendations).Count
         report_route = $json.security_report.audit_metadata.route
         report_runtime = $json.security_report.audit_metadata.runtime
+        report_eino_graph_enabled = $json.security_report.audit_metadata.eino_graph_enabled
         report_llm_enabled = $json.security_report.audit_metadata.llm_enabled
+        report_chat_model = $json.security_report.audit_metadata.chat_model
+        report_orchestration = $json.security_report.audit_metadata.orchestration
         report_tool_protocol = $json.security_report.audit_metadata.tool_protocol
+        report_eino_runtime_version = $json.security_report.audit_metadata.eino_runtime_version
         audit_result_method = $json.audit_result.method
         audit_result_message = $json.audit_result.message
         tool_trace_length = $trace.Count

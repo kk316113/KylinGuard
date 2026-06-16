@@ -1,6 +1,6 @@
 # agent-go
 
-Go Agent 最小服务骨架，module 名为 `kylin-guard-agent/agent-go`。
+`agent-go` 是 KylinGuard 的 Go Agent 后端，module 名称为 `kylin-guard-agent/agent-go`。它负责接收用户任务、执行安全意图护栏、调用运维工具、生成 semantic trace、调用 `audit-core-py` / TraceShield，并返回统一的审计响应。
 
 ## 启动
 
@@ -8,135 +8,98 @@ Go Agent 最小服务骨架，module 名为 `kylin-guard-agent/agent-go`。
 go run ./cmd/server
 ```
 
-默认监听 `:8080`。可通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。审计服务默认调用 `AUDIT_CORE_URL=http://127.0.0.1:8001`。
+默认监听 `:8080`。可以通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。
 
-`EINO_RUNTIME_ENABLED` 默认 `true`，`EINO_LLM_ENABLED` 默认 `false`。Stage 9A 之后，`/api/agent/run-eino` 进入 deterministic Eino Runtime Skeleton，不再 fallback 到 stable runtime。当前仍不引入真实 Eino 依赖。
+常用环境变量：
+
+```bash
+export AUDIT_CORE_URL=http://127.0.0.1:8001
+export KYLIN_GUARD_AGENT_PORT=8080
+export EINO_RUNTIME_ENABLED=true
+export EINO_GRAPH_ENABLED=true
+export EINO_LLM_ENABLED=false
+export EINO_ENABLED=false
+```
+
+`EINO_ENABLED=false` 只保留兼容含义，表示不启用真实 LLM；它不会让 `/api/agent/run-eino` fallback 到 stable runtime。
 
 ## 接口
 
-`GET /health`
+- `GET /health`
+- `GET /api/os/info`
+- `POST /api/agent/run`
+- `POST /api/agent/run-eino`
+- `GET /api/tools`
+- `GET /api/tools/{name}`
+- `POST /api/tools/call`
 
-```json
-{
-  "status": "ok",
-  "service": "kylin-guard-agent",
-  "version": "0.1.0"
-}
+`/api/agent/run` 是稳定主链路：
+
+```text
+intent_guard
+-> Rule-based Ops Planner
+-> Tool Registry
+-> Kylin Ops Tools
+-> semantic tool trace
+-> audit-core-py / TraceShield
+-> security_report
 ```
 
-`GET /api/os/info`
+`/api/agent/run-eino` 是 Stage 9B 实验链路：
 
-返回当前系统基础信息：`os`、`arch`、`hostname`、可选 `kernel`、`timestamp`。
-
-`POST /api/agent/run`
-
-```json
-{
-  "task": "检查当前系统状态"
-}
+```text
+intent_guard
+-> CloudWeGo Eino compose.Graph
+-> deterministic ChatModel Stub
+-> MCP-like Tool Adapter / Tool Policy
+-> Tool Registry
+-> semantic tool trace
+-> audit-core-py / TraceShield
+-> security_report
 ```
 
-返回 agent 结果，包含 `plan`、`tool_trace`、可选 `diagnosis`、`security_report` 和来自 `audit-core-py` 的 `audit_result`。如果 `audit-core-py` 不可用，会回退到本地 mock 审计结果。
-
-`POST /api/agent/run-eino`
-
-实验接口。当前执行 Stage 9A deterministic Eino Runtime Skeleton，返回结构与 `/api/agent/run` 兼容，并在 `summary` 中标记 `Eino runtime executed deterministic planner-backed tool orchestration.`。
-
-run-eino 路径会在 `security_report.audit_metadata` 中标记：
+run-eino 的 `security_report.audit_metadata` 会包含：
 
 - `route=eino-runtime`
 - `runtime=eino`
+- `eino_graph_enabled=true`
 - `llm_enabled=false`
-- `orchestration=deterministic-planner-backed`
+- `chat_model=deterministic-stub`
+- `orchestration=eino-graph-tool-calling`
 - `tool_protocol=mcp-like`
-- `eino_runtime_version=stage9a-v1`
+- `tool_protocol_version=stage8-v1`
+- `eino_runtime_version=stage9b-v1`
 
-`GET /api/tools`
+## 当前 Eino 状态
 
-返回 MCP-like 工具发现结果，只包含 metadata，不执行工具：
+当前已引入 CloudWeGo Eino core 依赖：
 
-```json
-{
-  "protocol": "mcp-like",
-  "version": "stage8-v1",
-  "count": 6,
-  "tools": []
-}
+```text
+github.com/cloudwego/eino v0.9.8
 ```
 
-`GET /api/tools/{name}`
+只使用 Eino `compose.Graph` / `schema` 相关能力，不接真实 ChatModel、ReAct Agent、模型厂商 SDK、API key 或远程模型调用。
 
-返回单个工具的 `ToolMetadata`，包含 `input_schema`、`output_schema`、`permission_scope`、`operation_type`、`resource_type`、`boundary_level` 等字段。未知工具返回 HTTP 404。
+Deterministic ChatModel Stub 当前固定映射：
 
-`POST /api/tools/call`
+- `检查当前系统 SSH 登录异常` -> `os_info`、`service_status(sshd)`、`port_checker(22)`、`log_reader`、`ssh_login_analyzer`
+- `检查 sshd 服务状态` -> `service_status(sshd)`
+- `检查 22 端口是否开放` -> `port_checker(22)`
 
-受 Tool Policy 控制的单工具调用入口。允许时复用现有 `Tool Registry` 执行工具、生成 semantic trace，并以 `Manual MCP-like tool call: <tool>` 作为 synthetic task 调用 audit-core-py / TraceShield。拒绝时返回 `status=denied` 和 `audit_result.method=tool_policy`，不会执行工具。
+危险任务仍在 graph 和 chat stub 之前被 `intent_guard` deny，不会执行工具，也不会调用 audit-core-py。
 
-`safe_shell` 默认 `enabled=false` 且 `direct_call_allowed=false`，不能通过 `/api/tools/call` 直连。
+## 开发测试
 
-## Rule-based Ops Planner
-
-当前支持：
-
-- `ssh_anomaly_check`：`os_info -> service_status(sshd) -> port_checker(22) -> log_reader(/var/log/secure,/var/log/auth.log) -> ssh_login_analyzer`。
-- `service_check`：`os_info -> service_status(service_name)`。
-- `port_check`：`os_info -> port_checker(port)`。
-- `system_overview`：`os_info -> port_checker(8080)`。
-
-`intent_guard` 永远在 planner 之前运行。危险任务会直接返回 `decision=deny`，不会生成 plan，不会执行工具，也不会调用 audit-core-py。
-Planner 生成计划时会查询 Tool Registry，并把工具的 `tool_category`、`risk_level`、`permission_scope` 补充到每个 plan step。
-
-## SSH Diagnosis
-
-`ssh_login_analyzer` 会按 `/var/log/secure`、`/var/log/auth.log`、`journalctl -u sshd` 的顺序采集认证日志，并分析：
-
-- `Failed password`
-- `Failed password for invalid user`
-- `Invalid user`
-- `Accepted password`
-- `Accepted publickey`
-- `authentication failure`
-
-响应中的 `diagnosis` 包含 `scenario`、`risk_level`、`findings`、`recommendations` 和诊断明细。`diagnosis` 不覆盖 `audit_result`，最终 `decision` 仍来自现有审计流程。
-
-## Security Report
-
-`security_report` 由 `internal/report` 中的确定性 Report Builder 生成，包含：
-
-- `evidence_chain`
-- `risk_explanation`
-- `sensitive_resources`
-- `recommendations`
-- `audit_metadata`
-
-`security_report.overall_decision` 始终等于响应的 `decision`。报告只做解释，不负责最终裁决。
-`security_report.audit_metadata` 会记录 `tool_protocol=mcp-like`、`tool_protocol_version=stage8-v1`、`registered_tool_count` 和 `tools_used`。
-
-`tool_trace` 已包含 Stage 2 工具语义字段：
-
-- `operation_type`
-- `resource_type`
-- `resource_path`
-- `permission_scope`
-- `boundary_level`
-- `tool_semantic`
-- `requires_privilege`
-- `allowed_by_policy`
-- `policy_reason`
-
-## Eino 接入说明
-
-当前阶段没有硬编码 Eino import 路径，也没有把 Eino 外部依赖加入 `go.mod`。`internal/eino` 提供 deterministic runtime skeleton 和 MCP-like Tool Adapter，用于验证 Eino 编排路径如何复用 planner、Tool Registry、Tool Policy 和 TraceShield。
-
-后续确认 Eino 的实际模块路径、版本和 Kylin 构建方式后，再通过 build tag 或替换 adapter 接入真实 ChatModel / ReAct Agent。
+```bash
+gofmt -w .
+go test ./...
+```
 
 ## 安全边界
 
-- `safe_shell` 只允许极少数白名单命令。
-- `log_reader` 只允许读取白名单 `/var/log/*` 路径，最多读取 500 行。
-- `ssh_login_analyzer` 只做只读采集与分析，不封禁 IP，不修改防火墙，不删除日志。
-- `security_report` 不执行任何建议，不覆盖 `audit_result`，不改变 `decision`。
-- `service_status` 只执行只读 systemctl 查询命令。
-- `intent_guard` 只做最小危险关键词拦截。
-- `auditclient` 默认通过 HTTP 调用 `audit-core-py`，服务不可用时才 fallback mock。
-- Go Agent 不直接 import TraceShield，也不包含本地大模型和重依赖。
+- `intent_guard` 永远在 planner / Eino graph / tool execution 之前运行。
+- `safe_shell` 不允许 direct call，Eino stub 也不会选择 `safe_shell`。
+- `log_reader` 和 `ssh_login_analyzer` 只读取白名单日志路径。
+- `MCPToolAdapter` 必须经过 Tool Policy。
+- `security_report` 只解释现有结果，不负责裁决。
+- Go Agent 不直接 import TraceShield-Core，只通过 `audit-core-py` HTTP API 调用。
