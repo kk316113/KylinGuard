@@ -71,6 +71,36 @@ func (p RuleBasedPlanner) Plan(ctx context.Context, task string) (Plan, error) {
 				"lines": 200,
 			}, "Analyze SSH authentication failures, accepted logins, and top failed source IPs"),
 		}), nil
+	case isSystemSecurityOverviewTask(normalized):
+		return p.newPlan(trimmed, "system_security_overview", "Rule-based planner selected system security overview workflow", []PlanStep{
+			planStep("os_info", map[string]any{}, "Collect basic OS context"),
+			planStep("resource_usage_checker", map[string]any{}, "Check system load and memory usage"),
+			planStep("disk_memory_checker", map[string]any{"include_tmpfs": false}, "Check disk usage and memory summary"),
+			planStep("network_connection_inspector", map[string]any{"state": "LISTEN", "limit": 100}, "Check network listening ports"),
+			planStep("service_status", map[string]any{"service_name": "sshd"}, "Check sshd service status"),
+			planStep("process_inspector", map[string]any{"name": "sshd", "limit": 20}, "Inspect sshd process status"),
+			planStep("journalctl_reader", map[string]any{"service_name": "sshd", "lines": 100}, "Read recent sshd journal logs"),
+		}), nil
+	case isSystemResourceCheckTask(normalized):
+		return p.newPlan(trimmed, "system_resource_check", "Rule-based planner selected system resource check workflow", []PlanStep{
+			planStep("os_info", map[string]any{}, "Collect OS context before resource check"),
+			planStep("resource_usage_checker", map[string]any{}, "Check system load and memory usage"),
+			planStep("disk_memory_checker", map[string]any{"include_tmpfs": false}, "Check disk usage and memory summary"),
+		}), nil
+	case isNetworkConnectionCheckTask(normalized):
+		return p.newPlan(trimmed, "network_connection_check", "Rule-based planner selected network connection check workflow", []PlanStep{
+			planStep("network_connection_inspector", map[string]any{"state": "LISTEN", "limit": 100}, "Inspect listening network ports"),
+			planStep("port_checker", map[string]any{"host": "127.0.0.1", "port": 22}, "Check whether local SSH port is reachable"),
+		}), nil
+	case isProcessHealthCheckTask(normalized):
+		return p.newPlan(trimmed, "process_health_check", "Rule-based planner selected process health check workflow", []PlanStep{
+			planStep("process_inspector", map[string]any{"name": "sshd", "limit": 20}, "Inspect sshd process status"),
+			planStep("service_status", map[string]any{"service_name": "sshd"}, "Check sshd service status"),
+		}), nil
+	case isJournalLogCheckTask(normalized):
+		return p.newPlan(trimmed, "journal_log_check", "Rule-based planner selected journal log check workflow", []PlanStep{
+			planStep("journalctl_reader", map[string]any{"service_name": "sshd", "lines": 100}, "Read recent sshd journal logs"),
+		}), nil
 	case isServiceCheckTask(normalized):
 		service := extractServiceName(normalized)
 		return p.newPlan(trimmed, "service_check", "Rule-based planner selected service status workflow", []PlanStep{
@@ -164,6 +194,87 @@ func isPortCheckTask(task string) bool {
 		"port",
 		"listen",
 		"open port",
+	})
+}
+
+func isSystemSecurityOverviewTask(task string) bool {
+	return containsAny(task, []string{
+		"系统安全巡检",
+		"系统安全检查",
+		"系统状态巡检",
+		"安全巡检",
+		"system security overview",
+		"system security check",
+		"security overview",
+	})
+}
+
+func isSystemResourceCheckTask(task string) bool {
+	return containsAny(task, []string{
+		"系统资源使用",
+		"查看系统负载",
+		"查看 cpu",
+		"内存状态",
+		"检查内存",
+		"检查负载",
+		"资源使用情况",
+		"system resource check",
+		"check resource",
+		"load check",
+		"memory check",
+	}) || containsAny(task, []string{
+		"资源使用",
+		"系统负载",
+	})
+}
+
+func isNetworkConnectionCheckTask(task string) bool {
+	return containsAny(task, []string{
+		"网络连接",
+		"监听端口",
+		"查看监听",
+		"异常端口",
+		"端口暴露",
+		"network connection",
+		"listening port",
+		"check connection",
+	})
+}
+
+func isProcessHealthCheckTask(task string) bool {
+	return containsAny(task, []string{
+		"进程状态",
+		"检查进程",
+		"查看进程",
+		"sshd 进程",
+		"process status",
+		"process check",
+		"check process",
+	})
+}
+
+func isJournalLogCheckTask(task string) bool {
+	return containsAny(task, []string{
+		"最近日志",
+		"读取日志",
+		"查看日志",
+		"服务日志",
+		"journal log",
+		"journalctl",
+		"read log",
+		"check log",
+		"systemd 日志",
+	}) && !containsAny(task, []string{
+		"ssh 登录异常",
+		"登录失败",
+		"暴力破解",
+		"login anomaly",
+		"failed login",
+		"brute force",
+		"删除",
+		"清除",
+		"delete",
+		"clear",
 	})
 }
 

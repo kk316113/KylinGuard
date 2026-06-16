@@ -66,6 +66,16 @@ func SemanticForTool(toolName string, input map[string]any) ToolSemantic {
 		return sshLoginAnalyzerSemantic()
 	case "safe_shell":
 		return safeShellSemantic(input)
+	case "process_inspector":
+		return processInspectorSemantic(input)
+	case "network_connection_inspector":
+		return networkConnectionInspectorSemantic(input)
+	case "journalctl_reader":
+		return journalctlReaderSemantic(input)
+	case "resource_usage_checker":
+		return resourceUsageCheckerSemantic()
+	case "disk_memory_checker":
+		return diskMemoryCheckerSemantic()
 	default:
 		return unknownSemantic(toolName)
 	}
@@ -221,6 +231,85 @@ func isDangerousShellCommand(command string) bool {
 		}
 	}
 	return false
+}
+
+func processInspectorSemantic(input map[string]any) ToolSemantic {
+	name := strings.TrimSpace(stringValue(input, "name", ""))
+	resourcePath := "process:all"
+	if name != "" {
+		resourcePath = "process:" + name
+	}
+	return ToolSemantic{
+		OperationType:     "inspect",
+		ResourceType:      "process",
+		ResourcePath:      resourcePath,
+		PermissionScope:   "process_inspect",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "process_status_inspection",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Process status inspection is allowed for diagnostics",
+	}
+}
+
+func networkConnectionInspectorSemantic(input map[string]any) ToolSemantic {
+	state := strings.ToUpper(strings.TrimSpace(stringValue(input, "state", "ALL")))
+	resourcePath := "network:connections:" + state
+	return ToolSemantic{
+		OperationType:     "inspect",
+		ResourceType:      "network_connection",
+		ResourcePath:      resourcePath,
+		PermissionScope:   "network_connection_inspect",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "network_connection_inspection",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Network connection inspection is allowed for diagnostics",
+	}
+}
+
+func journalctlReaderSemantic(input map[string]any) ToolSemantic {
+	serviceName := strings.TrimSpace(stringValue(input, "service_name", "sshd"))
+	resourcePath := "journalctl:" + serviceName
+	return ToolSemantic{
+		OperationType:     "read",
+		ResourceType:      "journal_log",
+		ResourcePath:      resourcePath,
+		PermissionScope:   "journal_log_read",
+		BoundaryLevel:     "sensitive_system_resource",
+		ToolSemantic:      "journal_log_read",
+		RequiresPrivilege: true,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Journal log read is allowed for security diagnosis",
+	}
+}
+
+func resourceUsageCheckerSemantic() ToolSemantic {
+	return ToolSemantic{
+		OperationType:     "read",
+		ResourceType:      "system_resource",
+		ResourcePath:      "procfs:loadavg,meminfo",
+		PermissionScope:   "resource_usage_read",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "resource_usage_read",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "System resource usage read is allowed for diagnostics",
+	}
+}
+
+func diskMemoryCheckerSemantic() ToolSemantic {
+	return ToolSemantic{
+		OperationType:     "read",
+		ResourceType:      "disk_memory",
+		ResourcePath:      "system:disk_memory",
+		PermissionScope:   "disk_memory_read",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "disk_memory_read",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Disk and memory read is allowed for diagnostics",
+	}
 }
 
 func normalizeShellCommand(command string) string {

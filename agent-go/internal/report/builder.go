@@ -101,7 +101,7 @@ func isSensitiveTrace(trace logtrace.ToolTrace) bool {
 		return true
 	}
 	resource := strings.ToLower(trace.ResourceType)
-	for _, token := range []string{"system_log", "ssh_auth_log", "audit_log", "secret", "credential"} {
+	for _, token := range []string{"system_log", "ssh_auth_log", "audit_log", "secret", "credential", "journal_log"} {
 		if strings.Contains(resource, token) {
 			return true
 		}

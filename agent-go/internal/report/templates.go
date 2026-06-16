@@ -13,6 +13,16 @@ func titleFor(input BuildInput) string {
 		return "KylinGuard Service Status Security Report"
 	case "port_check":
 		return "KylinGuard Port Inspection Security Report"
+	case "system_security_overview":
+		return "KylinGuard System Security Overview Report"
+	case "system_resource_check":
+		return "KylinGuard System Resource Security Report"
+	case "network_connection_check":
+		return "KylinGuard Network Connection Security Report"
+	case "process_health_check":
+		return "KylinGuard Process Health Security Report"
+	case "journal_log_check":
+		return "KylinGuard Journal Log Security Report"
 	default:
 		return "KylinGuard Security Audit Report"
 	}
@@ -36,6 +46,16 @@ func whyRelevant(trace anyToolTrace) string {
 		return "读取系统认证或安全日志，用于支持登录异常诊断。"
 	case "ssh_login_analyzer":
 		return "分析 SSH 认证日志中的失败登录、成功登录、无效用户和来源 IP。"
+	case "process_inspector":
+		return "检查目标进程的运行状态，用于确认安全关键进程是否存在。"
+	case "network_connection_inspector":
+		return "检查网络监听端口和连接状态，用于判断系统网络暴露面。"
+	case "journalctl_reader":
+		return "读取 systemd journal 服务日志，用于安全审计和异常排查。"
+	case "resource_usage_checker":
+		return "读取系统负载和内存使用情况，用于判断资源压力。"
+	case "disk_memory_checker":
+		return "检查磁盘使用率和内存概要，用于判断系统资源状态。"
 	default:
 		return "该工具由 Planner 选择，用于完成用户请求。"
 	}
@@ -53,6 +73,16 @@ func auditMeaning(trace anyToolTrace) string {
 		return "该步骤访问 system_log，通常属于 sensitive_system_resource，需要进入审计链路。"
 	case "ssh_login_analyzer":
 		return "该步骤对敏感认证日志进行安全分析，结果用于诊断但不直接作为最终审计裁决。"
+	case "process_inspector":
+		return "该步骤为只读进程状态检查，不执行进程修改或终止操作。"
+	case "network_connection_inspector":
+		return "该步骤为只读网络连接检查，不修改网络配置或断开连接。"
+	case "journalctl_reader":
+		return "该步骤访问 systemd journal，属于 sensitive_system_resource，需要进入审计链路。"
+	case "resource_usage_checker":
+		return "该步骤为只读系统资源使用检查，不修改系统配置。"
+	case "disk_memory_checker":
+		return "该步骤为只读磁盘和内存检查，不修改磁盘或挂载状态。"
 	default:
 		return "根据工具语义字段和 boundary_level 进行审计解释。"
 	}
@@ -64,6 +94,10 @@ func accessReason(toolName string, resourceType string) string {
 		return "读取系统日志以支持用户请求的安全诊断。"
 	case "ssh_login_analyzer":
 		return "分析 SSH 认证日志以生成登录异常诊断。"
+	case "journalctl_reader":
+		return "读取 systemd journal 日志以支持安全诊断。"
+	case "process_inspector":
+		return "检查进程状态以确认安全关键服务是否运行。"
 	default:
 		if strings.Contains(resourceType, "credential") || strings.Contains(resourceType, "secret") {
 			return "该资源可能包含敏感凭据，需要审计确认访问边界。"
@@ -83,6 +117,10 @@ func summaryFor(input BuildInput, report *SecurityReport) string {
 	risk := fallback(report.RiskLevel, "unknown")
 	if scenario == "ssh_anomaly_check" {
 		summary := "本次任务被识别为 SSH 登录异常诊断。Agent 按计划检查系统信息、sshd 服务状态、22 端口、认证日志，并执行 SSH 登录异常分析。由于任务访问了敏感系统日志资源，TraceShield 对完整工具调用链进行了审计，最终决策为 " + decision + "。当前诊断风险等级为 " + risk + "。"
+		return withRouteSummary(summary, input.Route)
+	}
+	if scenario == "system_security_overview" {
+		summary := "本次任务被识别为系统安全巡检。Agent 按计划检查 OS 信息、系统资源使用、磁盘内存、网络连接监听、sshd 服务状态、进程状态和 journal 日志。由于任务访问了敏感系统日志资源，TraceShield 对完整工具调用链进行了审计，最终决策为 " + decision + "。当前诊断风险等级为 " + risk + "。"
 		return withRouteSummary(summary, input.Route)
 	}
 

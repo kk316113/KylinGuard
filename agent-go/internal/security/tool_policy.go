@@ -84,6 +84,58 @@ func (ToolPolicy) Evaluate(name string, metadata tools.ToolMetadata, exists bool
 		if !safeServiceName(service) {
 			return denyToolCall("service_name contains unsafe characters")
 		}
+	case "process_inspector":
+		name := stringFromInput(input, "name", "")
+		if name != "" && !tools.SafeProcessName(name) {
+			return denyToolCall("process_inspector name must only contain letters, digits, underscore, hyphen, or dot")
+		}
+		limit, _ := intFromAny(input["limit"])
+		if limit != 0 && (limit < 1 || limit > 100) {
+			return denyToolCall("process_inspector limit must be between 1 and 100")
+		}
+		if hasShellInjection(input) {
+			return denyToolCall("process_inspector input contains forbidden shell characters")
+		}
+	case "network_connection_inspector":
+		state := strings.ToUpper(strings.TrimSpace(stringFromInput(input, "state", "ALL")))
+		canonical := normalizeNetworkPolicyState(state)
+		allowed := map[string]bool{
+			"LISTEN": true, "ESTABLISHED": true,
+			"TIME-WAIT": true, "CLOSE-WAIT": true, "ALL": true,
+		}
+		if !allowed[canonical] {
+			return denyToolCall("network_connection_inspector state is not in the allowed whitelist")
+		}
+		limit, _ := intFromAny(input["limit"])
+		if limit != 0 && (limit < 1 || limit > 500) {
+			return denyToolCall("network_connection_inspector limit must be between 1 and 500")
+		}
+		if hasShellInjection(input) {
+			return denyToolCall("network_connection_inspector input contains forbidden shell characters")
+		}
+	case "journalctl_reader":
+		serviceName := stringFromInput(input, "service_name", "")
+		if serviceName == "" {
+			return denyToolCall("journalctl_reader requires a service_name")
+		}
+		if !tools.SafeJournalServiceName(serviceName) {
+			return denyToolCall("journalctl_reader service_name contains unsafe characters; only letters, digits, underscore, hyphen, dot, and @ are allowed")
+		}
+		if hasShellInjection(input) {
+			return denyToolCall("journalctl_reader input contains forbidden shell characters")
+		}
+		lines, _ := intFromAny(input["lines"])
+		if lines != 0 && (lines < 1 || lines > 500) {
+			return denyToolCall("journalctl_reader lines must be between 1 and 500")
+		}
+	case "resource_usage_checker":
+		if hasShellInjection(input) {
+			return denyToolCall("resource_usage_checker input contains forbidden shell characters")
+		}
+	case "disk_memory_checker":
+		if hasShellInjection(input) {
+			return denyToolCall("disk_memory_checker input contains forbidden shell characters")
+		}
 	}
 
 	return ToolPolicyDecision{
@@ -171,4 +223,31 @@ var serviceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 func safeServiceName(service string) bool {
 	service = strings.TrimSpace(service)
 	return service != "" && serviceNamePattern.MatchString(service)
+}
+
+// hasShellInjection checks for shell metacharacters in any string values of the input.
+func hasShellInjection(input map[string]any) bool {
+	blacklist := []string{";", "|", "&", "$", "`", ">", "<", "\n", "\r"}
+	for _, value := range input {
+		if text, ok := value.(string); ok {
+			for _, char := range blacklist {
+				if strings.Contains(text, char) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// normalizeNetworkPolicyState converts user-facing state names to canonical form.
+func normalizeNetworkPolicyState(state string) string {
+	switch state {
+	case "TIME_WAIT":
+		return "TIME-WAIT"
+	case "CLOSE_WAIT":
+		return "CLOSE-WAIT"
+	default:
+		return state
+	}
 }

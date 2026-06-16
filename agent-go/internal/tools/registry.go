@@ -39,6 +39,11 @@ func NewDefaultRegistry() *Registry {
 	registry.RegisterWithMetadata("ssh_login_analyzer", SSHLoginAnalyzer, metadata["ssh_login_analyzer"])
 	registry.RegisterWithMetadata("port_checker", PortChecker, metadata["port_checker"])
 	registry.RegisterWithMetadata("safe_shell", SafeShell, metadata["safe_shell"])
+	registry.RegisterWithMetadata("process_inspector", ProcessInspector, metadata["process_inspector"])
+	registry.RegisterWithMetadata("network_connection_inspector", NetworkConnectionInspector, metadata["network_connection_inspector"])
+	registry.RegisterWithMetadata("journalctl_reader", JournalctlReader, metadata["journalctl_reader"])
+	registry.RegisterWithMetadata("resource_usage_checker", ResourceUsageChecker, metadata["resource_usage_checker"])
+	registry.RegisterWithMetadata("disk_memory_checker", DiskMemoryChecker, metadata["disk_memory_checker"])
 	return registry
 }
 

@@ -3,6 +3,7 @@ package eino
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"kylin-guard-agent/agent-go/internal/agent"
@@ -101,6 +102,9 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	for _, result := range graphOutput.ToolResults {
 		if result.Trace.ToolName == "ssh_login_analyzer" {
 			diagnosis = diagnosisFromSSHLoginAnalyzer(plan.Scenario, result.Output)
+		}
+		if diagnosis == nil {
+			diagnosis = diagnosisFromToolOutput(plan.Scenario, result.Trace.ToolName, result.Output)
 		}
 		if result.Trace.ToolName != "" {
 			r.traces.Add(result.Trace)
@@ -226,6 +230,179 @@ func diagnosisFromSSHLoginAnalyzer(scenario string, output any) *agent.Diagnosis
 			"log_collection": result.LogCollection,
 			"analysis":       analysis,
 		},
+	}
+}
+
+// diagnosisFromToolOutput generates a diagnosis from Stage 10 OS sensing tool outputs.
+func diagnosisFromToolOutput(scenario string, toolName string, output any) *agent.Diagnosis {
+	switch toolName {
+	case "resource_usage_checker":
+		result, ok := output.(tools.ResourceUsageCheckerResult)
+		if !ok {
+			if ptr, ok := output.(*tools.ResourceUsageCheckerResult); ok && ptr != nil {
+				result = *ptr
+			} else {
+				return nil
+			}
+		}
+		riskLevel := result.RiskLevel
+		if riskLevel == "" {
+			riskLevel = "unknown"
+		}
+		findings := []string{}
+		if result.LoadAvg != nil {
+			findings = append(findings, fmt.Sprintf("loadavg_1m=%.2f, 5m=%.2f, 15m=%.2f", result.LoadAvg.OneMin, result.LoadAvg.FiveMin, result.LoadAvg.FifteenMin))
+		} else {
+			findings = append(findings, "Load average data unavailable")
+		}
+		if result.Memory != nil {
+			findings = append(findings, fmt.Sprintf("mem_total_kb=%d, mem_available_kb=%d, mem_available_ratio=%.2f", result.Memory.MemTotalKB, result.Memory.MemAvailableKB, result.Memory.MemAvailableRatio))
+		} else {
+			findings = append(findings, "Memory data unavailable")
+		}
+		return &agent.Diagnosis{
+			Scenario:        scenario,
+			RiskLevel:       riskLevel,
+			Findings:        findings,
+			Recommendations: resourceDiagnosisRecommendations(riskLevel),
+			Details:         map[string]any{"result": result},
+		}
+	case "disk_memory_checker":
+		result, ok := output.(tools.DiskMemoryCheckerResult)
+		if !ok {
+			if ptr, ok := output.(*tools.DiskMemoryCheckerResult); ok && ptr != nil {
+				result = *ptr
+			} else {
+				return nil
+			}
+		}
+		riskLevel := result.RiskLevel
+		if riskLevel == "" {
+			riskLevel = "unknown"
+		}
+		findings := []string{}
+		for _, fs := range result.Filesystems {
+			findings = append(findings, fmt.Sprintf("filesystem %s mounted at %s: %.0f%% used", fs.Filesystem, fs.Mountpoint, fs.UsedPercent))
+		}
+		if result.Memory != nil {
+			findings = append(findings, fmt.Sprintf("mem_total_kb=%d, mem_available_kb=%d", result.Memory.MemTotalKB, result.Memory.MemAvailableKB))
+		}
+		return &agent.Diagnosis{
+			Scenario:        scenario,
+			RiskLevel:       riskLevel,
+			Findings:        findings,
+			Recommendations: resourceDiagnosisRecommendations(riskLevel),
+			Details:         map[string]any{"result": result},
+		}
+	case "network_connection_inspector":
+		result, ok := output.(tools.NetworkConnectionInspectorResult)
+		if !ok {
+			if ptr, ok := output.(*tools.NetworkConnectionInspectorResult); ok && ptr != nil {
+				result = *ptr
+			} else {
+				return nil
+			}
+		}
+		riskLevel := "low"
+		for _, conn := range result.Connections {
+			if strings.Contains(conn.LocalAddress, "0.0.0.0:22") {
+				riskLevel = "medium"
+			}
+		}
+		findings := []string{fmt.Sprintf("Found %d connections", result.Count)}
+		for _, conn := range result.Connections {
+			findings = append(findings, fmt.Sprintf("%s %s %s %s", conn.Protocol, conn.State, conn.LocalAddress, conn.Process))
+		}
+		return &agent.Diagnosis{
+			Scenario:        scenario,
+			RiskLevel:       riskLevel,
+			Findings:        findings,
+			Recommendations: networkDiagnosisRecommendations(riskLevel),
+			Details:         map[string]any{"result": result},
+		}
+	case "process_inspector":
+		result, ok := output.(tools.ProcessInspectorResult)
+		if !ok {
+			if ptr, ok := output.(*tools.ProcessInspectorResult); ok && ptr != nil {
+				result = *ptr
+			} else {
+				return nil
+			}
+		}
+		riskLevel := "low"
+		if result.Count == 0 {
+			riskLevel = "medium"
+		}
+		findings := []string{fmt.Sprintf("Found %d processes", result.Count)}
+		for _, proc := range result.Processes {
+			findings = append(findings, fmt.Sprintf("pid=%d name=%s state=%s", proc.PID, proc.Name, proc.State))
+		}
+		return &agent.Diagnosis{
+			Scenario:        scenario,
+			RiskLevel:       riskLevel,
+			Findings:        findings,
+			Recommendations: processDiagnosisRecommendations(riskLevel),
+			Details:         map[string]any{"result": result},
+		}
+	}
+	return nil
+}
+
+func resourceDiagnosisRecommendations(riskLevel string) []string {
+	switch riskLevel {
+	case "high":
+		return []string{
+			"Immediately review high resource usage; disk or memory may be critically low.",
+			"Consider expanding storage or freeing memory before further operations.",
+		}
+	case "medium":
+		return []string{
+			"Monitor resource usage trends; disk usage or memory pressure is elevated.",
+		}
+	case "low":
+		return []string{
+			"System resources are within normal operating range.",
+		}
+	default:
+		return []string{
+			"Resource usage data was unavailable; verify /proc is mounted and readable.",
+		}
+	}
+}
+
+func networkDiagnosisRecommendations(riskLevel string) []string {
+	switch riskLevel {
+	case "medium":
+		return []string{
+			"SSH is listening on 0.0.0.0:22; review whether this exposure is intended.",
+			"Consider restricting SSH to 127.0.0.1 or trusted networks if remote access is not needed.",
+		}
+	case "low":
+		return []string{
+			"Network connections appear normal; no unexpected exposure detected.",
+		}
+	default:
+		return []string{
+			"Network connection data was unavailable; verify ss or netstat is available.",
+		}
+	}
+}
+
+func processDiagnosisRecommendations(riskLevel string) []string {
+	switch riskLevel {
+	case "medium":
+		return []string{
+			"Target process was not found; verify the service is running.",
+			"Check systemctl status or review service configuration.",
+		}
+	case "low":
+		return []string{
+			"Target process is running normally.",
+		}
+	default:
+		return []string{
+			"Process data was unavailable; verify ps or tasklist is available.",
+		}
 	}
 }
 

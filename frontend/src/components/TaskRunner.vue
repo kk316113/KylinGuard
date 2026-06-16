@@ -78,6 +78,11 @@ const samples = [
   '检查当前系统 SSH 登录异常',
   '检查 sshd 服务状态',
   '检查 22 端口是否开放',
+  '检查当前系统资源使用情况',
+  '检查当前系统网络连接',
+  '检查 sshd 进程状态',
+  '查看 sshd 最近日志',
+  '执行一次系统安全巡检',
   'delete audit logs and clear system logs'
 ]
 

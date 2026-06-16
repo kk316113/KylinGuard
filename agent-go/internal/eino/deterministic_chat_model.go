@@ -74,6 +74,46 @@ func (m *DeterministicChatModelStub) GenerateToolCalls(ctx context.Context, task
 				"lines": 200,
 			}, "Analyze SSH authentication failures, accepted logins, and top failed source IPs"),
 		}
+	case isDeterministicSystemSecurityOverviewTask(normalized):
+		scenario = "system_security_overview"
+		summary = "Deterministic ChatModel Stub selected system security overview tool calls"
+		calls = []ToolCall{
+			m.toolCall(1, "os_info", map[string]any{}, "Collect basic OS context"),
+			m.toolCall(2, "resource_usage_checker", map[string]any{}, "Check system load and memory usage"),
+			m.toolCall(3, "disk_memory_checker", map[string]any{"include_tmpfs": false}, "Check disk usage and memory summary"),
+			m.toolCall(4, "network_connection_inspector", map[string]any{"state": "LISTEN", "limit": 100}, "Check network listening ports"),
+			m.toolCall(5, "service_status", map[string]any{"service_name": "sshd"}, "Check sshd service status"),
+			m.toolCall(6, "process_inspector", map[string]any{"name": "sshd", "limit": 20}, "Inspect sshd process status"),
+			m.toolCall(7, "journalctl_reader", map[string]any{"service_name": "sshd", "lines": 100}, "Read recent sshd journal logs"),
+		}
+	case isDeterministicSystemResourceCheckTask(normalized):
+		scenario = "system_resource_check"
+		summary = "Deterministic ChatModel Stub selected system resource check tool calls"
+		calls = []ToolCall{
+			m.toolCall(1, "os_info", map[string]any{}, "Collect OS context before resource check"),
+			m.toolCall(2, "resource_usage_checker", map[string]any{}, "Check system load and memory usage"),
+			m.toolCall(3, "disk_memory_checker", map[string]any{"include_tmpfs": false}, "Check disk usage and memory summary"),
+		}
+	case isDeterministicNetworkConnectionCheckTask(normalized):
+		scenario = "network_connection_check"
+		summary = "Deterministic ChatModel Stub selected network connection check tool calls"
+		calls = []ToolCall{
+			m.toolCall(1, "network_connection_inspector", map[string]any{"state": "LISTEN", "limit": 100}, "Inspect listening network ports"),
+			m.toolCall(2, "port_checker", map[string]any{"host": "127.0.0.1", "port": 22}, "Check whether local SSH port is reachable"),
+		}
+	case isDeterministicProcessHealthCheckTask(normalized):
+		scenario = "process_health_check"
+		summary = "Deterministic ChatModel Stub selected process health check tool calls"
+		calls = []ToolCall{
+			m.toolCall(1, "process_inspector", map[string]any{"name": "sshd", "limit": 20}, "Inspect sshd process status"),
+			m.toolCall(2, "service_status", map[string]any{"service_name": "sshd"}, "Check sshd service status"),
+		}
+	case isDeterministicJournalLogCheckTask(normalized):
+		scenario = "journal_log_check"
+		summary = "Deterministic ChatModel Stub selected journal log check tool call"
+		calls = []ToolCall{
+			m.toolCall(1, "journalctl_reader", map[string]any{"service_name": "sshd", "lines": 100}, "Read recent sshd journal logs"),
+		}
 	case isDeterministicSSHDServiceTask(normalized):
 		scenario = "service_check"
 		summary = "Deterministic ChatModel Stub selected sshd service status tool call"
@@ -263,6 +303,45 @@ func isDeterministicSSHDServiceTask(task string) bool {
 func isDeterministicPort22Task(task string) bool {
 	return strings.Contains(task, "22") &&
 		(strings.Contains(task, "端口") || strings.Contains(task, "port"))
+}
+
+func isDeterministicSystemSecurityOverviewTask(task string) bool {
+	return strings.Contains(task, "执行一次系统安全巡检") ||
+		strings.Contains(task, "做一次系统安全巡检") ||
+		strings.Contains(task, "系统安全检查") ||
+		strings.Contains(task, "系统状态巡检") ||
+		strings.Contains(task, "system security overview") ||
+		strings.Contains(task, "system security check")
+}
+
+func isDeterministicSystemResourceCheckTask(task string) bool {
+	return strings.Contains(task, "检查当前系统资源使用情况") ||
+		strings.Contains(task, "查看系统负载") ||
+		strings.Contains(task, "查看 cpu 内存状态") ||
+		strings.Contains(task, "检查内存和负载") ||
+		strings.Contains(task, "system resource check")
+}
+
+func isDeterministicNetworkConnectionCheckTask(task string) bool {
+	return strings.Contains(task, "检查当前系统网络连接") ||
+		strings.Contains(task, "查看监听端口") ||
+		strings.Contains(task, "查看网络连接状态") ||
+		strings.Contains(task, "检查异常端口暴露") ||
+		strings.Contains(task, "network connection check")
+}
+
+func isDeterministicProcessHealthCheckTask(task string) bool {
+	return (strings.Contains(task, "检查") || strings.Contains(task, "查看")) &&
+		strings.Contains(task, "sshd") &&
+		(strings.Contains(task, "进程状态") || strings.Contains(task, "process") ||
+			strings.Contains(task, "进程"))
+}
+
+func isDeterministicJournalLogCheckTask(task string) bool {
+	return (strings.Contains(task, "查看") || strings.Contains(task, "读取")) &&
+		strings.Contains(task, "sshd") &&
+		(strings.Contains(task, "最近日志") || strings.Contains(task, "服务日志") ||
+			strings.Contains(task, "journal") || strings.Contains(task, "systemd 日志"))
 }
 
 func mustJSON(value any) string {

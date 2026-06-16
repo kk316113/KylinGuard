@@ -100,10 +100,10 @@ if tools_body.get("protocol") != "mcp-like":
 if tools_body.get("version") != "stage8-v1":
     raise SystemExit(f"unexpected tools version: {tools_body.get('version')}")
 if int(tools_body.get("count") or 0) < 6:
-    raise SystemExit(f"expected tools count >= 6, got {tools_body.get('count')}")
+    raise SystemExit(f"expected tools count >= 11, got {tools_body.get('count')}")
 
 names = [tool.get("name") for tool in tools_body.get("tools") or []]
-for required in ("os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer", "safe_shell"):
+for required in ("os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer", "safe_shell", "process_inspector", "network_connection_inspector", "journalctl_reader", "resource_usage_checker", "disk_memory_checker"):
     if required not in names:
         raise SystemExit(f"/api/tools missing {required}: {names}")
 
