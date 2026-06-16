@@ -1,0 +1,84 @@
+== Stage 5 SSH diagnosis validation ==
+2026年 06月 16日 星期二 15:45:57 CST
+
+== git commit ==
+46f18ea add SSH login anomaly diagnosis toolchain
+00d645c add Stage 4 Kylin VM validation logs
+946263b add rule-based ops planner for Kylin security tasks
+c1d3b00 update project README documentation
+9a2fa47 add Stage 3 Kylin VM validation logs
+
+== SSH log source check ==
+
+== /var/log auth files ==
+-rw------- 1 root root 18023  6月16日 15:41 /var/log/secure
+
+== journalctl sshd ==
+6月 16 15:11:23 localhost.localdomain sshd[14989]: Connection from 127.0.0.1 port 52650 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:11:23 localhost.localdomain sshd[14989]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:11:23 localhost.localdomain sshd[14989]: Connection closed by 127.0.0.1 port 52650
+6月 16 15:11:23 localhost.localdomain sshd[14994]: Connection from 127.0.0.1 port 52666 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:11:23 localhost.localdomain sshd[14994]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:11:23 localhost.localdomain sshd[14994]: Connection closed by 127.0.0.1 port 52666
+6月 16 15:11:23 localhost.localdomain sshd[14995]: Connection from 127.0.0.1 port 52670 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:11:23 localhost.localdomain sshd[14995]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:11:23 localhost.localdomain sshd[14995]: Connection closed by 127.0.0.1 port 52670
+6月 16 15:11:33 localhost.localdomain sshd[15127]: Connection from 127.0.0.1 port 47848 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:11:33 localhost.localdomain sshd[15127]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:11:33 localhost.localdomain sshd[15127]: Connection closed by 127.0.0.1 port 47848
+6月 16 15:11:34 localhost.localdomain sshd[15141]: Connection from 127.0.0.1 port 47850 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:11:34 localhost.localdomain sshd[15141]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:11:34 localhost.localdomain sshd[15141]: Connection closed by 127.0.0.1 port 47850
+6月 16 15:43:01 localhost.localdomain sshd[15696]: Connection from 127.0.0.1 port 52756 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:01 localhost.localdomain sshd[15696]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:01 localhost.localdomain sshd[15696]: Connection closed by 127.0.0.1 port 52756
+6月 16 15:43:01 localhost.localdomain sshd[15702]: Connection from 127.0.0.1 port 52758 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:01 localhost.localdomain sshd[15702]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:01 localhost.localdomain sshd[15702]: Connection closed by 127.0.0.1 port 52758
+6月 16 15:43:02 localhost.localdomain sshd[15748]: Connection from 127.0.0.1 port 52766 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:02 localhost.localdomain sshd[15748]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:02 localhost.localdomain sshd[15748]: Connection closed by 127.0.0.1 port 52766
+6月 16 15:43:12 localhost.localdomain sshd[15868]: Connection from 127.0.0.1 port 51800 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:12 localhost.localdomain sshd[15868]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:12 localhost.localdomain sshd[15868]: Connection closed by 127.0.0.1 port 51800
+6月 16 15:43:12 localhost.localdomain sshd[15882]: Connection from 127.0.0.1 port 51802 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:12 localhost.localdomain sshd[15882]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:12 localhost.localdomain sshd[15882]: Connection closed by 127.0.0.1 port 51802
+
+== journalctl ssh ==
+-- No entries --
+
+== systemctl sshd ==
+● sshd.service - OpenSSH server daemon
+     Loaded: loaded (/usr/lib/systemd/system/sshd.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2026-06-15 21:59:03 CST; 17h ago
+       Docs: man:sshd(8)
+             man:sshd_config(5)
+   Main PID: 1658 (sshd)
+      Tasks: 1 (limit: 8468)
+     Memory: 1.4M ()
+     CGroup: /system.slice/sshd.service
+             └─1658 "sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups"
+
+6月 16 15:11:33 localhost.localdomain sshd[15127]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:11:33 localhost.localdomain sshd[15127]: Connection closed by 127.0.0.1 port 47848
+6月 16 15:11:34 localhost.localdomain sshd[15141]: Connection from 127.0.0.1 port 47850 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:11:34 localhost.localdomain sshd[15141]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:11:34 localhost.localdomain sshd[15141]: Connection closed by 127.0.0.1 port 47850
+6月 16 15:43:01 localhost.localdomain sshd[15696]: Connection from 127.0.0.1 port 52756 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:01 localhost.localdomain sshd[15696]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:01 localhost.localdomain sshd[15696]: Connection closed by 127.0.0.1 port 52756
+6月 16 15:43:01 localhost.localdomain sshd[15702]: Connection from 127.0.0.1 port 52758 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:01 localhost.localdomain sshd[15702]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:01 localhost.localdomain sshd[15702]: Connection closed by 127.0.0.1 port 52758
+6月 16 15:43:02 localhost.localdomain sshd[15748]: Connection from 127.0.0.1 port 52766 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:02 localhost.localdomain sshd[15748]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:02 localhost.localdomain sshd[15748]: Connection closed by 127.0.0.1 port 52766
+6月 16 15:43:12 localhost.localdomain sshd[15868]: Connection from 127.0.0.1 port 51800 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:12 localhost.localdomain sshd[15868]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:12 localhost.localdomain sshd[15868]: Connection closed by 127.0.0.1 port 51800
+6月 16 15:43:12 localhost.localdomain sshd[15882]: Connection from 127.0.0.1 port 51802 on 127.0.0.1 port 22 rdomain ""
+6月 16 15:43:12 localhost.localdomain sshd[15882]: kex_exchange_identification: Connection closed by remote host
+6月 16 15:43:12 localhost.localdomain sshd[15882]: Connection closed by 127.0.0.1 port 51802
+
+== systemctl ssh ==
