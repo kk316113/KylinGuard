@@ -10,7 +10,7 @@ go run ./cmd/server
 
 默认监听 `:8080`。可通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。审计服务默认调用 `AUDIT_CORE_URL=http://127.0.0.1:8001`。
 
-`EINO_ENABLED` 默认 `false`。Stage 3 只提供 Eino adapter 骨架，不引入真实 Eino 依赖。Stage 5 之后，稳定 runtime 使用 Rule-based Ops Planner 和 SSH 登录异常诊断工具链，`/api/agent/run-eino` fallback 也复用同一路径。
+`EINO_ENABLED` 默认 `false`。Stage 3 只提供 Eino adapter 骨架，不引入真实 Eino 依赖。Stage 6 之后，稳定 runtime 使用 Rule-based Ops Planner、SSH 登录异常诊断工具链和 deterministic report builder，`/api/agent/run-eino` fallback 也复用同一路径。
 
 ## 接口
 
@@ -36,7 +36,7 @@ go run ./cmd/server
 }
 ```
 
-返回 agent 结果，包含 `plan`、`tool_trace`、可选 `diagnosis` 和来自 `audit-core-py` 的 `audit_result`。如果 `audit-core-py` 不可用，会回退到本地 mock 审计结果。
+返回 agent 结果，包含 `plan`、`tool_trace`、可选 `diagnosis`、`security_report` 和来自 `audit-core-py` 的 `audit_result`。如果 `audit-core-py` 不可用，会回退到本地 mock 审计结果。
 
 `POST /api/agent/run-eino`
 
@@ -66,6 +66,18 @@ go run ./cmd/server
 
 响应中的 `diagnosis` 包含 `scenario`、`risk_level`、`findings`、`recommendations` 和诊断明细。`diagnosis` 不覆盖 `audit_result`，最终 `decision` 仍来自现有审计流程。
 
+## Security Report
+
+`security_report` 由 `internal/report` 中的确定性 Report Builder 生成，包含：
+
+- `evidence_chain`
+- `risk_explanation`
+- `sensitive_resources`
+- `recommendations`
+- `audit_metadata`
+
+`security_report.overall_decision` 始终等于响应的 `decision`。报告只做解释，不负责最终裁决。
+
 `tool_trace` 已包含 Stage 2 工具语义字段：
 
 - `operation_type`
@@ -87,6 +99,7 @@ go run ./cmd/server
 - `safe_shell` 只允许极少数白名单命令。
 - `log_reader` 只允许读取白名单 `/var/log/*` 路径，最多读取 500 行。
 - `ssh_login_analyzer` 只做只读采集与分析，不封禁 IP，不修改防火墙，不删除日志。
+- `security_report` 不执行任何建议，不覆盖 `audit_result`，不改变 `decision`。
 - `service_status` 只执行只读 systemctl 查询命令。
 - `intent_guard` 只做最小危险关键词拦截。
 - `auditclient` 默认通过 HTTP 调用 `audit-core-py`，服务不可用时才 fallback mock。

@@ -4,7 +4,7 @@
 
 `agent-go/internal/tools/registry.go` 提供统一工具注册和调用入口。所有工具调用都会生成 `ToolTrace`。
 
-Stage 5 之后，Tool Registry 支持按 `PlanStep` 执行，并可沿用 `plan-001` 这类 step id，便于将 Plan、tool trace、diagnosis 和审计证据对应起来。工具执行失败时不会让 runtime panic，而是生成 `status=error` 的 trace 并继续送入 audit-core-py 审计。
+Stage 6 之后，Tool Registry 支持按 `PlanStep` 执行，并可沿用 `plan-001` 这类 step id，便于将 Plan、tool trace、diagnosis、security_report 和审计证据对应起来。工具执行失败时不会让 runtime panic，而是生成 `status=error` 的 trace 并继续送入 audit-core-py 审计。
 
 ## Tool Trace 字段
 
@@ -93,6 +93,17 @@ Planner 在 `intent_guard` 之后运行。危险任务不会进入 planner。
 - `unknown`：认证日志不可用。
 
 该工具只读分析，不自动封禁 IP，不修改防火墙，不删除或移动日志。
+
+## Security Report
+
+`agent-go/internal/report` 将现有运行结果转换为面向展示的报告结构：
+
+- 从 `tool_trace` 生成 `evidence_chain`。
+- 从敏感资源边界生成 `sensitive_resources`。
+- 从 planner、diagnosis、audit_result 和 sensitive resources 生成 `risk_explanation`。
+- 从 diagnosis 和拦截结果生成人工 `recommendations`。
+
+`security_report` 不负责最终裁决，不覆盖 `audit_result`，不改变响应中的 `decision`。
 
 ## safe_shell 白名单
 

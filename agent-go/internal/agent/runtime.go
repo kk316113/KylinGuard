@@ -7,6 +7,7 @@ import (
 
 	"kylin-guard-agent/agent-go/internal/auditclient"
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/report"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
@@ -24,13 +25,14 @@ type RunRequest struct {
 }
 
 type RunResponse struct {
-	Task        string               `json:"task"`
-	Decision    string               `json:"decision"`
-	Summary     string               `json:"summary"`
-	Plan        *Plan                `json:"plan,omitempty"`
-	Diagnosis   *Diagnosis           `json:"diagnosis,omitempty"`
-	ToolTrace   []logtrace.ToolTrace `json:"tool_trace"`
-	AuditResult auditclient.Result   `json:"audit_result"`
+	Task           string                 `json:"task"`
+	Decision       string                 `json:"decision"`
+	Summary        string                 `json:"summary"`
+	Plan           *Plan                  `json:"plan,omitempty"`
+	Diagnosis      *Diagnosis             `json:"diagnosis,omitempty"`
+	SecurityReport *report.SecurityReport `json:"security_report,omitempty"`
+	ToolTrace      []logtrace.ToolTrace   `json:"tool_trace"`
+	AuditResult    auditclient.Result     `json:"audit_result"`
 }
 
 type Diagnosis struct {
@@ -85,12 +87,21 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 			Method:        "intent_guard",
 			Message:       "dangerous task denied before tool execution",
 		}
-		return RunResponse{
+		securityReport := report.BuildSecurityReport(report.BuildInput{
 			Task:        task,
 			Decision:    string(security.DecisionDeny),
 			Summary:     "request denied by intent guard",
 			ToolTrace:   []logtrace.ToolTrace{},
 			AuditResult: audit,
+			Route:       "stable",
+		})
+		return RunResponse{
+			Task:           task,
+			Decision:       string(security.DecisionDeny),
+			Summary:        "request denied by intent guard",
+			SecurityReport: securityReport,
+			ToolTrace:      []logtrace.ToolTrace{},
+			AuditResult:    audit,
 		}, nil
 	}
 
@@ -118,15 +129,61 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		audit.Decision = string(intent.Decision)
 	}
 
-	return RunResponse{
+	securityReport := report.BuildSecurityReport(report.BuildInput{
 		Task:        task,
 		Decision:    audit.Decision,
 		Summary:     "agent run completed",
-		Plan:        &plan,
-		Diagnosis:   diagnosis,
+		Plan:        reportPlanFromAgentPlan(&plan),
 		ToolTrace:   traces,
+		Diagnosis:   reportDiagnosisFromAgentDiagnosis(diagnosis),
 		AuditResult: audit,
+		Route:       "stable",
+	})
+
+	return RunResponse{
+		Task:           task,
+		Decision:       audit.Decision,
+		Summary:        "agent run completed",
+		Plan:           &plan,
+		Diagnosis:      diagnosis,
+		SecurityReport: securityReport,
+		ToolTrace:      traces,
+		AuditResult:    audit,
 	}, nil
+}
+
+func reportPlanFromAgentPlan(plan *Plan) *report.Plan {
+	if plan == nil {
+		return nil
+	}
+	steps := make([]report.PlanStep, 0, len(plan.Steps))
+	for _, step := range plan.Steps {
+		steps = append(steps, report.PlanStep{
+			StepID:   step.StepID,
+			ToolName: step.ToolName,
+			Input:    step.Input,
+			Reason:   step.Reason,
+		})
+	}
+	return &report.Plan{
+		Task:     plan.Task,
+		Scenario: plan.Scenario,
+		Summary:  plan.Summary,
+		Steps:    steps,
+	}
+}
+
+func reportDiagnosisFromAgentDiagnosis(diagnosis *Diagnosis) *report.Diagnosis {
+	if diagnosis == nil {
+		return nil
+	}
+	return &report.Diagnosis{
+		Scenario:        diagnosis.Scenario,
+		RiskLevel:       diagnosis.RiskLevel,
+		Findings:        append([]string{}, diagnosis.Findings...),
+		Recommendations: append([]string{}, diagnosis.Recommendations...),
+		Details:         diagnosis.Details,
+	}
 }
 
 func diagnosisFromSSHLoginAnalyzer(scenario string, output any) *Diagnosis {

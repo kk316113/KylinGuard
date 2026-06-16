@@ -55,6 +55,12 @@ func TestRuntimeDeniesDangerousTaskBeforeToolsAndAudit(t *testing.T) {
 	if response.Diagnosis != nil {
 		t.Fatalf("dangerous task should not return diagnosis, got: %#v", response.Diagnosis)
 	}
+	if response.SecurityReport == nil {
+		t.Fatal("dangerous task should return security_report")
+	}
+	if response.SecurityReport.OverallDecision != response.Decision {
+		t.Fatalf("security_report changed decision: response=%q report=%q", response.Decision, response.SecurityReport.OverallDecision)
+	}
 	if auditor.called {
 		t.Fatal("audit-core client should not be called for denied dangerous task")
 	}
@@ -100,6 +106,15 @@ func TestRuntimeAllowsSafeTaskToReachToolsAndAudit(t *testing.T) {
 	}
 	if response.Diagnosis.RiskLevel == "" {
 		t.Fatal("expected diagnosis risk level")
+	}
+	if response.SecurityReport == nil {
+		t.Fatal("expected safe task to return security_report")
+	}
+	if response.SecurityReport.OverallDecision != response.Decision {
+		t.Fatalf("security_report changed decision: response=%q report=%q", response.Decision, response.SecurityReport.OverallDecision)
+	}
+	if len(response.SecurityReport.EvidenceChain) < 5 {
+		t.Fatalf("expected security_report evidence_chain length >= 5, got %d", len(response.SecurityReport.EvidenceChain))
 	}
 	for _, trace := range response.ToolTrace {
 		if trace.OperationType == "" {

@@ -61,6 +61,7 @@ audit = body.get("audit_result") or {}
 summary = body.get("summary") or ""
 plan = body.get("plan")
 diagnosis = body.get("diagnosis")
+report = body.get("security_report")
 
 decision = body.get("decision")
 method = audit.get("method")
@@ -72,6 +73,20 @@ elif decision != expected_decision:
 
 if method != expected_method:
     raise SystemExit(f"unexpected audit_result.method: {method}, expected {expected_method}")
+
+if not report:
+    raise SystemExit("expected security_report")
+if not report.get("title"):
+    raise SystemExit("expected security_report.title")
+if report.get("overall_decision") != decision:
+    raise SystemExit(f"security_report.overall_decision mismatch: {report.get('overall_decision')} vs {decision}")
+if not report.get("risk_level"):
+    raise SystemExit("expected security_report.risk_level")
+metadata = report.get("audit_metadata") or {}
+if metadata.get("report_version") != "stage6-v1":
+    raise SystemExit(f"unexpected report_version: {metadata.get('report_version')}")
+if not (report.get("recommendations") or []):
+    raise SystemExit("expected security_report.recommendations")
 
 if summary_expectation and summary_expectation not in summary:
     raise SystemExit(f"summary does not contain {summary_expectation!r}: {summary!r}")
@@ -114,6 +129,20 @@ if expectation == "ssh_plan":
     if diagnosis.get("risk_level") not in {"low", "medium", "high", "unknown"}:
         raise SystemExit(f"unexpected diagnosis.risk_level: {diagnosis.get('risk_level')}")
 
+    if len(report.get("evidence_chain") or []) < 5:
+        raise SystemExit(f"expected security_report.evidence_chain length >= 5, got {len(report.get('evidence_chain') or [])}")
+    reason_categories = [item.get("category") for item in (report.get("risk_explanation") or [])]
+    for required in ("planner", "diagnosis", "boundary_audit"):
+        if required not in reason_categories:
+            raise SystemExit(f"security_report.risk_explanation missing {required}: {reason_categories}")
+    sensitive_resources = report.get("sensitive_resources") or []
+    if sensitive_resources:
+        if "sensitive_resource" not in reason_categories:
+            raise SystemExit(f"security_report.risk_explanation missing sensitive_resource: {reason_categories}")
+        sensitive_types = [item.get("resource_type") for item in sensitive_resources]
+        if "system_log" not in sensitive_types and "ssh_auth_log" not in sensitive_types:
+            raise SystemExit(f"expected system_log or ssh_auth_log sensitive resource, got {sensitive_types}")
+
 elif expectation == "denied":
     if trace:
         raise SystemExit(f"expected empty tool_trace, got {len(trace)}")
@@ -121,6 +150,19 @@ elif expectation == "denied":
         raise SystemExit(f"denied task should not include plan: {plan}")
     if diagnosis:
         raise SystemExit(f"denied task should not include diagnosis: {diagnosis}")
+    if report.get("overall_decision") != "deny":
+        raise SystemExit(f"expected deny security_report, got {report.get('overall_decision')}")
+    reason_categories = [item.get("category") for item in (report.get("risk_explanation") or [])]
+    if "dangerous_intent" not in reason_categories:
+        raise SystemExit(f"security_report.risk_explanation missing dangerous_intent: {reason_categories}")
+    if "before tool execution" not in (report.get("summary") or ""):
+        raise SystemExit(f"expected deny report summary to mention pre-tool blocking: {report.get('summary')}")
+
+if summary_expectation:
+    if metadata.get("route") != "eino-fallback":
+        raise SystemExit(f"expected security_report route=eino-fallback, got {metadata.get('route')}")
+    if "fallback" not in (report.get("summary") or ""):
+        raise SystemExit("expected fallback detail in security_report.summary")
 
 print("task:", body.get("task"))
 print("decision:", decision)
@@ -129,6 +171,11 @@ print("plan.scenario:", (plan or {}).get("scenario"))
 print("plan.steps:", ",".join(step.get("tool_name", "") for step in ((plan or {}).get("steps") or [])))
 print("diagnosis.scenario:", (diagnosis or {}).get("scenario"))
 print("diagnosis.risk_level:", (diagnosis or {}).get("risk_level"))
+print("security_report.title:", report.get("title"))
+print("security_report.risk_level:", report.get("risk_level"))
+print("security_report.evidence_chain length:", len(report.get("evidence_chain") or []))
+print("security_report.risk_explanation:", ",".join(item.get("category", "") for item in (report.get("risk_explanation") or [])))
+print("security_report.recommendations:", len(report.get("recommendations") or []))
 print("audit_result.method:", method)
 print("audit_result.message:", audit.get("message"))
 print("tool_trace length:", len(trace))

@@ -120,6 +120,7 @@ func agentRunEinoHandler(einoAdapter agent.AgentAdapter, fallbackAdapter agent.A
 			return
 		}
 		resp.Summary = appendSummary(resp.Summary, einoFallbackSummary(einoAdapter))
+		markEinoFallbackReport(&resp, einoFallbackSummary(einoAdapter))
 		writeJSON(w, http.StatusOK, resp)
 	}
 }
@@ -139,6 +140,17 @@ func appendSummary(summary string, detail string) string {
 		return detail
 	}
 	return summary + "; " + detail
+}
+
+func markEinoFallbackReport(resp *agent.AgentRunResponse, detail string) {
+	if resp == nil || resp.SecurityReport == nil {
+		return
+	}
+	if resp.SecurityReport.AuditMetadata == nil {
+		resp.SecurityReport.AuditMetadata = map[string]any{}
+	}
+	resp.SecurityReport.AuditMetadata["route"] = "eino-fallback"
+	resp.SecurityReport.Summary = appendSummary(resp.SecurityReport.Summary, "Eino fallback detail: "+detail+". The fallback path did not bypass intent_guard, planner, semantic trace, or TraceShield audit.")
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {

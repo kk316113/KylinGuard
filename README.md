@@ -14,10 +14,11 @@ User Task
 -> audit-core-py
 -> TraceShield Adapter
 -> TraceShield Core
+-> Security Report
 -> Audit Result / Risk Graph
 ```
 
-当前阶段：Stage 5：Real Kylin Security Diagnosis Tools。
+当前阶段：Stage 6：Audit Report and Evidence Chain Enhancement。
 
 ## 当前做了什么
 
@@ -33,6 +34,7 @@ User Task
 - 增强了 `service_status` 和 `log_reader`，支持受控 systemctl 探测和白名单系统日志读取。
 - 新增 `ssh_login_analyzer`，可以采集认证日志或 journalctl，分析 SSH 登录失败、无效用户、成功登录和来源 IP。
 - `/api/agent/run` 会在 SSH 异常场景返回 `diagnosis`，但最终安全判定仍由 audit-core-py / TraceShield 给出。
+- 新增确定性 `security_report`，将 plan、tool_trace、diagnosis、audit_result 组织为 evidence chain、risk explanation、sensitive resources 和 recommendations。
 - 加固了 Linux/麒麟部署脚本和 Windows/Linux E2E 测试脚本。
 - 已在 Windows 本机和银河麒麟高级服务器版 V11 x86_64 VM 上完成预验证。
 
@@ -48,6 +50,7 @@ User Task
 - LoongArch 环境尚未完成最终验证。
 - Rule-based Planner 仍是轻量规则匹配，不等同于真实 LLM/Eino 智能规划。
 - `ssh_login_analyzer` 不会自动封禁 IP，不会修改防火墙，也不会删除或移动日志。
+- `security_report` 不负责最终裁决，不会覆盖 `decision` 或 `audit_result`。
 
 ## 目录概览
 
@@ -96,6 +99,8 @@ Python audit-core：
 `/api/agent/run` 和 `/api/agent/run-eino` 当前都会返回可选字段 `plan`。危险任务被 `intent_guard` 短路时不会返回 plan。
 
 SSH 登录异常场景还会返回可选字段 `diagnosis`。`diagnosis` 是诊断结果，不覆盖 `audit_result`。
+
+所有 Agent run 响应当前都会返回可选字段 `security_report`。它是面向展示和报告的解释结构，不改变最终 `decision`。
 
 ## 环境变量
 
@@ -248,6 +253,9 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run \
 - `plan.scenario=ssh_anomaly_check`
 - `plan.steps` 包含 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`
 - `diagnosis.risk_level` 为 `low`、`medium`、`high` 或 `unknown`
+- `security_report.overall_decision` 等于当前 `decision`
+- `security_report.evidence_chain` 覆盖计划中的工具步骤
+- `security_report.risk_explanation` 包含 `planner`、`diagnosis`、`boundary_audit`，访问敏感资源时包含 `sensitive_resource`
 - `tool_trace` 非空
 - trace 中包含 `operation_type`、`resource_type`、`boundary_level`
 - trace 中包含 `system_service`、`network_port`、`system_log`、`ssh_auth_log`
@@ -267,6 +275,8 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run \
 - `tool_trace=[]`
 - `plan` 为空或不存在
 - `diagnosis` 为空或不存在
+- `security_report.overall_decision=deny`
+- `security_report.risk_explanation` 包含 `dangerous_intent`
 
 Eino 实验接口：
 
@@ -281,6 +291,7 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run-eino \
 - 返回结构与 `/api/agent/run` 一致
 - `summary` 包含 `stable runtime fallback used`
 - 当前仍走稳定 runtime、Rule-based Ops Planner、SSH diagnosis 工具链和 TraceShield 审计
+- `security_report.audit_metadata.route=eino-fallback`
 
 ## E2E 测试
 
@@ -309,6 +320,7 @@ bash scripts/linux/test_agent_e2e.sh
 - safe task 的 `plan.scenario=ssh_anomaly_check`
 - safe task 的 plan steps 和 semantic tool trace
 - safe task 的 `diagnosis.risk_level`
+- safe/dangerous/run-eino task 的 `security_report`
 
 ## 开发测试
 
@@ -412,6 +424,23 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 - Top failed source IPs
 - `low` / `medium` / `high` / `unknown` 风险等级
 
+## Security Report
+
+`security_report` 由 Go Agent 侧的 deterministic report builder 生成，主要字段包括：
+
+- `title`
+- `scenario`
+- `overall_decision`
+- `risk_level`
+- `summary`
+- `evidence_chain`
+- `risk_explanation`
+- `recommendations`
+- `sensitive_resources`
+- `audit_metadata`
+
+它只解释现有诊断与审计结果，不负责裁决。最终 `decision` 仍来自 intent_guard / TraceShield / 现有 decision flow。
+
 ## Eino Adapter 状态
 
 当前没有引入真实 Eino 依赖。
@@ -435,6 +464,7 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 - `docs/stage3_eino_adapter.md`：Eino Adapter 接入说明
 - `docs/stage4_rule_based_planner.md`：Rule-based Ops Planner 说明
 - `docs/stage5_real_kylin_diagnosis_tools.md`：真实 SSH 登录异常诊断工具链说明
+- `docs/stage6_audit_report_evidence_chain.md`：审计报告与证据链说明
 - `docs/todo.md`：后续计划
 
 ## 后续 TODO
@@ -443,6 +473,7 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 - 增加 systemd service 文件。
 - 扩展 Rule-based Ops Planner，让更多安全运维任务可以选择真实工具链。
 - 扩展 SSH 日志格式、时间窗口和用户名/IP 维度诊断。
+- 将 `security_report` 导出为前端页面或报告文件。
 - 将更多 TraceShield evidence 映射为用户可解释报告。
 - 接入真实 Eino runtime。
 - 接入远程 LLM API。

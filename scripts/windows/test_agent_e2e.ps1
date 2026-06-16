@@ -35,6 +35,7 @@ function Assert-AgentResponse {
 
     $trace = @($Json.tool_trace)
     $method = $Json.audit_result.method
+    $report = $Json.security_report
 
     if ($Case.ExpectedDecision -eq "allow_or_review") {
         if (@("allow", "review") -notcontains $Json.decision) {
@@ -46,6 +47,25 @@ function Assert-AgentResponse {
 
     if ($method -ne $Case.ExpectedMethod) {
         throw "$($Case.Name): unexpected audit_result.method $method, expected $($Case.ExpectedMethod)"
+    }
+
+    if ($null -eq $report) {
+        throw "$($Case.Name): expected security_report"
+    }
+    if ([string]::IsNullOrWhiteSpace($report.title)) {
+        throw "$($Case.Name): expected security_report.title"
+    }
+    if ($report.overall_decision -ne $Json.decision) {
+        throw "$($Case.Name): security_report.overall_decision mismatch: $($report.overall_decision) vs $($Json.decision)"
+    }
+    if ([string]::IsNullOrWhiteSpace($report.risk_level)) {
+        throw "$($Case.Name): expected security_report.risk_level"
+    }
+    if ($report.audit_metadata.report_version -ne "stage6-v1") {
+        throw "$($Case.Name): unexpected report_version $($report.audit_metadata.report_version)"
+    }
+    if ($null -eq $report.recommendations -or @($report.recommendations).Count -eq 0) {
+        throw "$($Case.Name): expected security_report.recommendations"
     }
 
     if ($Case.ExpectFallback -and ($Json.summary -notlike "*stable runtime fallback*")) {
@@ -86,6 +106,20 @@ function Assert-AgentResponse {
         if (@("low", "medium", "high", "unknown") -notcontains $Json.diagnosis.risk_level) {
             throw "$($Case.Name): unexpected diagnosis.risk_level $($Json.diagnosis.risk_level)"
         }
+
+        if (@($report.evidence_chain).Count -lt 5) {
+            throw "$($Case.Name): expected security_report.evidence_chain length >= 5, got $(@($report.evidence_chain).Count)"
+        }
+        $reasonCategories = @($report.risk_explanation | ForEach-Object { $_.category })
+        Assert-ContainsAll -Actual $reasonCategories -Expected @("planner", "diagnosis", "boundary_audit") -Label "$($Case.Name) security_report.risk_explanation"
+        $sensitiveResources = @($report.sensitive_resources)
+        if ($sensitiveResources.Count -gt 0) {
+            Assert-ContainsAll -Actual $reasonCategories -Expected @("sensitive_resource") -Label "$($Case.Name) security_report.risk_explanation"
+            $sensitiveTypes = @($sensitiveResources | ForEach-Object { $_.resource_type })
+            if (($sensitiveTypes -notcontains "system_log") -and ($sensitiveTypes -notcontains "ssh_auth_log")) {
+                throw "$($Case.Name): expected system_log or ssh_auth_log sensitive resource, got $($sensitiveTypes -join ',')"
+            }
+        }
     }
 
     if ($Case.ExpectDenied) {
@@ -97,6 +131,23 @@ function Assert-AgentResponse {
         }
         if ($null -ne $Json.diagnosis) {
             throw "$($Case.Name): denied task should not include diagnosis"
+        }
+        if ($report.overall_decision -ne "deny") {
+            throw "$($Case.Name): expected deny security_report, got $($report.overall_decision)"
+        }
+        $reasonCategories = @($report.risk_explanation | ForEach-Object { $_.category })
+        Assert-ContainsAll -Actual $reasonCategories -Expected @("dangerous_intent") -Label "$($Case.Name) security_report.risk_explanation"
+        if ($report.summary -notlike "*before tool execution*") {
+            throw "$($Case.Name): expected deny report summary to mention pre-tool blocking, got $($report.summary)"
+        }
+    }
+
+    if ($Case.ExpectFallback) {
+        if ($report.audit_metadata.route -ne "eino-fallback") {
+            throw "$($Case.Name): expected security_report route=eino-fallback, got $($report.audit_metadata.route)"
+        }
+        if ($report.summary -notlike "*fallback*") {
+            throw "$($Case.Name): expected fallback detail in security_report.summary"
         }
     }
 }
@@ -159,6 +210,11 @@ foreach ($case in $cases) {
         plan_steps = ($planSteps -join ",")
         diagnosis_scenario = $json.diagnosis.scenario
         diagnosis_risk_level = $json.diagnosis.risk_level
+        report_title = $json.security_report.title
+        report_risk_level = $json.security_report.risk_level
+        report_evidence_length = @($json.security_report.evidence_chain).Count
+        report_reason_categories = ((@($json.security_report.risk_explanation) | ForEach-Object { $_.category }) -join ",")
+        report_recommendations = @($json.security_report.recommendations).Count
         audit_result_method = $json.audit_result.method
         audit_result_message = $json.audit_result.message
         tool_trace_length = $trace.Count

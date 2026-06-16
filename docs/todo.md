@@ -8,6 +8,7 @@
 - 扩展 Rule-based Ops Planner 的场景覆盖，例如磁盘容量、CPU/内存、进程异常、网络连接、审计日志异常。
 - 为 planner 增加更严格的服务名、端口和日志意图解析测试集。
 - 扩展 SSH 登录异常诊断的日志格式样例、时间窗口分析、用户名维度和 IP 维度统计。
+- 将 `security_report` 支持导出为 Markdown/HTML/PDF 等报告文件。
 - 接入远程模型 API provider。
 - 增加工具权限策略和审批流。
 
@@ -18,6 +19,7 @@
 - 为 TraceShield fallback 场景增加可观测日志和告警。
 - 明确生产环境 `TRACESHIELD_CORE_PATH` 管理方式。
 - 将更多 TraceShield 原生 evidence 信息映射为用户可解释证据链。
+- 将 TraceShield 原生 violations/evidence 与 `security_report.evidence_chain` 做更细粒度关联。
 
 ## Kylin
 
@@ -34,6 +36,7 @@
 
 - 设计 Agent 控制台。
 - 展示任务、plan、diagnosis、trace、审计结果和最终报告。
+- 展示 `security_report.evidence_chain`、`risk_explanation` 和 `sensitive_resources`。
 
 ## Tests
 
@@ -41,6 +44,7 @@
 - 增加更多 SSH 认证日志样例测试，覆盖 Kylin/OpenSSH 常见格式。
 - 扩展 Python FastAPI endpoint 测试，覆盖 risky samples 和 fallback 行为。
 - 增加 Linux E2E 脚本在 Kylin V11 上的实机验证记录。
+- 增加 report builder 的更多场景测试，例如 service_check、port_check 和 fallback mock。
 - 增加最小 CI。
 
 ## Current Fallback Note

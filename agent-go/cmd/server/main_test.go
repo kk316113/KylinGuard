@@ -58,6 +58,9 @@ func TestAgentRunHandlerKeepsStableRuntimeBehavior(t *testing.T) {
 	if response.Diagnosis == nil || response.Diagnosis.Scenario != "ssh_anomaly_check" {
 		t.Fatalf("expected ssh anomaly diagnosis, got %#v", response.Diagnosis)
 	}
+	if response.SecurityReport == nil || response.SecurityReport.OverallDecision != response.Decision {
+		t.Fatalf("expected security_report to preserve decision, got %#v", response.SecurityReport)
+	}
 	if !auditor.called {
 		t.Fatal("expected audit client to be called")
 	}
@@ -89,6 +92,12 @@ func TestAgentRunEinoSafeTaskFallsBackToStableRuntime(t *testing.T) {
 	if response.Diagnosis == nil || response.Diagnosis.Scenario != "ssh_anomaly_check" {
 		t.Fatalf("expected run-eino fallback to return diagnosis, got %#v", response.Diagnosis)
 	}
+	if response.SecurityReport == nil {
+		t.Fatal("expected run-eino fallback to return security_report")
+	}
+	if response.SecurityReport.AuditMetadata["route"] != "eino-fallback" {
+		t.Fatalf("expected eino-fallback route, got %#v", response.SecurityReport.AuditMetadata["route"])
+	}
 	if !auditor.called {
 		t.Fatal("expected stable runtime fallback to call audit client")
 	}
@@ -116,6 +125,15 @@ func TestAgentRunEinoDangerousTaskFallsBackAndDeniesBeforeAudit(t *testing.T) {
 	}
 	if response.Diagnosis != nil {
 		t.Fatalf("dangerous run-eino task should not return diagnosis, got %#v", response.Diagnosis)
+	}
+	if response.SecurityReport == nil {
+		t.Fatal("expected dangerous run-eino task to return security_report")
+	}
+	if response.SecurityReport.OverallDecision != "deny" {
+		t.Fatalf("expected deny report, got %q", response.SecurityReport.OverallDecision)
+	}
+	if response.SecurityReport.AuditMetadata["route"] != "eino-fallback" {
+		t.Fatalf("expected eino-fallback route, got %#v", response.SecurityReport.AuditMetadata["route"])
 	}
 	if auditor.called {
 		t.Fatal("audit client should not be called for dangerous task")
