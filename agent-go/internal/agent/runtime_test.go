@@ -116,6 +116,25 @@ func TestRuntimeAllowsSafeTaskToReachToolsAndAudit(t *testing.T) {
 	if len(response.SecurityReport.EvidenceChain) < 5 {
 		t.Fatalf("expected security_report evidence_chain length >= 5, got %d", len(response.SecurityReport.EvidenceChain))
 	}
+
+	// Stage 11: verify execution_context on every trace that uses execproxy.
+	// ssh_login_analyzer is a composite tool whose results don't carry execution_context directly.
+	for _, trace := range response.ToolTrace {
+		if trace.ToolName == "ssh_login_analyzer" {
+			continue // composite tool, not directly execproxied
+		}
+		if trace.ExecutionContext == nil {
+			t.Fatalf("trace %s (%s): expected execution_context", trace.StepID, trace.ToolName)
+		}
+		if trace.ExecutionContext.ShellUsed {
+			t.Fatalf("trace %s: expected shell_used=false", trace.StepID)
+		}
+		if trace.ExecutionContext.SudoUsed {
+			t.Fatalf("trace %s: expected sudo_used=false", trace.StepID)
+		}
+	}
+
+	// Verify semantic fields on all traces.
 	for _, trace := range response.ToolTrace {
 		if trace.OperationType == "" {
 			t.Fatalf("trace %s missing operation_type", trace.StepID)
@@ -138,6 +157,51 @@ func TestRuntimeAllowsSafeTaskToReachToolsAndAudit(t *testing.T) {
 	}
 	if response.AuditResult.Method != "traceshield" {
 		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)
+	}
+}
+
+// TestRuntimeSystemResourceCheckVerifiesExecutionContext checks Stage 11 execution_context
+// on the stable runtime system_resource_check task.
+func TestRuntimeSystemResourceCheckVerifiesExecutionContext(t *testing.T) {
+	auditor := &recordingAuditor{}
+	runtime := agent.NewRuntime(nil, auditor, nil)
+
+	response, err := runtime.Run(context.Background(), agent.RunRequest{
+		Task: "检查当前系统资源使用情况",
+	})
+	if err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	if response.Decision == "deny" {
+		t.Fatalf("system resource check should not be denied: %+v", response)
+	}
+	if response.Plan == nil {
+		t.Fatal("expected plan")
+	}
+	if response.Plan.Scenario != "system_resource_check" {
+		t.Fatalf("expected system_resource_check, got %q", response.Plan.Scenario)
+	}
+	if len(response.ToolTrace) < 3 {
+		t.Fatalf("expected tool_trace >= 3, got %d", len(response.ToolTrace))
+	}
+
+	// Stage 11: every trace must have execution_context with shell_used=false.
+	assertAllTracesHaveExecContext(t, response.ToolTrace)
+}
+
+func assertAllTracesHaveExecContext(t *testing.T, traces []logtrace.ToolTrace) {
+	t.Helper()
+	for _, trace := range traces {
+		if trace.ExecutionContext == nil {
+			t.Fatalf("trace %s (%s): expected execution_context, got nil", trace.StepID, trace.ToolName)
+		}
+		if trace.ExecutionContext.ShellUsed {
+			t.Fatalf("trace %s (%s): expected shell_used=false", trace.StepID, trace.ToolName)
+		}
+		if trace.ExecutionContext.SudoUsed {
+			t.Fatalf("trace %s (%s): expected sudo_used=false", trace.StepID, trace.ToolName)
+		}
 	}
 }
 

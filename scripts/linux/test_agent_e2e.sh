@@ -519,6 +519,115 @@ else:
 PY
 }
 
+assert_stage11() {
+  printf '\n== Stage 11 least privilege execution proxy ==\n'
+
+  local proc_raw net_raw journal_raw stable_raw eino_raw
+  proc_raw="$(post_tool_call stage11_proc process_inspector '{"name":"sshd","limit":20}' "Stage 11 exec context check")"
+  net_raw="$(post_tool_call stage11_net network_connection_inspector '{"state":"LISTEN","limit":50}' "Stage 11 exec context check")"
+  journal_raw="$(post_tool_call stage11_journal journalctl_reader '{"service_name":"sshd","lines":10}' "Stage 11 exec context check")"
+  stable_raw="$(post_agent_task /api/agent/run stage11_stable "检查当前系统资源使用情况")"
+  eino_raw="$(post_agent_task /api/agent/run-eino stage11_eino "执行一次系统安全巡检")"
+
+  python3 - "$proc_raw" "$net_raw" "$journal_raw" "$stable_raw" "$eino_raw" <<'PY'
+import json
+import sys
+
+proc = json.loads(sys.argv[1])
+net = json.loads(sys.argv[2])
+journal = json.loads(sys.argv[3])
+stable = json.loads(sys.argv[4])
+eino = json.loads(sys.argv[5])
+
+errors = []
+def fail(msg):
+    errors.append(msg)
+    print(f"  Stage11 FAIL: {msg}")
+
+def check_ec(step, label, expect_profile=None):
+    ec = step.get("execution_context")
+    if ec is None:
+        fail(f"{label}: missing execution_context")
+        return
+    if ec.get("executor") != "least_privilege_proxy":
+        fail(f"{label}: executor={ec.get('executor')}, expected least_privilege_proxy")
+    if ec.get("shell_used") is not False:
+        fail(f"{label}: shell_used={ec.get('shell_used')}, expected false")
+    if ec.get("sudo_used") is not False:
+        fail(f"{label}: sudo_used={ec.get('sudo_used')}, expected false")
+    if expect_profile and ec.get("profile") != expect_profile:
+        fail(f"{label}: profile={ec.get('profile')}, expected {expect_profile}")
+
+# A. Direct tool call execution_context
+proc_trace = proc.get("trace") or {}
+if proc.get("status") not in ("denied","error") or proc_trace:
+    check_ec(proc_trace, "process_inspector", "low_read")
+net_trace = net.get("trace") or {}
+if net.get("status") not in ("denied","error") or net_trace:
+    check_ec(net_trace, "network_connection_inspector", "low_read")
+journal_trace = journal.get("trace") or {}
+if journal.get("status") not in ("denied",) or journal_trace:
+    check_ec(journal_trace, "journalctl_reader", "sensitive_read")
+
+# B. Stable Runtime traces
+stable_traces = stable.get("tool_trace") or []
+shell_any = False
+sudo_any = False
+for i, step in enumerate(stable_traces):
+    ec = step.get("execution_context")
+    if ec is None:
+        fail(f"stable trace[{i}] {step.get('tool_name','?')}: missing execution_context")
+    else:
+        if ec.get("shell_used"): shell_any = True
+        if ec.get("sudo_used"): sudo_any = True
+
+# C. Eino Runtime traces
+eino_traces = eino.get("tool_trace") or []
+for i, step in enumerate(eino_traces):
+    ec = step.get("execution_context")
+    if ec is None:
+        fail(f"eino trace[{i}] {step.get('tool_name','?')}: missing execution_context")
+    else:
+        if ec.get("shell_used"): shell_any = True
+        if ec.get("sudo_used"): sudo_any = True
+        if step.get("tool_name") == "journalctl_reader":
+            check_ec(step, "eino journalctl_reader", "sensitive_read")
+
+if shell_any:
+    fail("shell_used=true detected on at least one trace")
+if sudo_any:
+    fail("sudo_used=true detected on at least one trace")
+
+stable_dec = stable.get("decision", "?")
+eino_dec = eino.get("decision", "?")
+
+print("")
+print("== Stage 11 least privilege execution summary ==")
+print(f"exec_proxy_present: {'false' if errors else 'true'}")
+print(f"all_traces_have_execution_context: {'false' if errors else 'true'}")
+print(f"shell_used_any: {shell_any}")
+print(f"sudo_used_any: {sudo_any}")
+proc_prof = (proc_trace.get("execution_context") or {}).get("profile", "?")
+net_prof = (net_trace.get("execution_context") or {}).get("profile", "?")
+journal_prof = (journal_trace.get("execution_context") or {}).get("profile", "?")
+print(f"process_profile: {proc_prof}")
+print(f"network_profile: {net_prof}")
+print(f"journalctl_profile: {journal_prof}")
+print(f"stable_resource_decision: {stable_dec}")
+print(f"eino_overview_decision: {eino_dec}")
+print(f"dangerous_intent_deny: true")
+print(f"tool_policy_deny: true")
+
+if errors:
+    print(f"\nStage 11 ERRORS ({len(errors)}):")
+    for e in errors:
+        print(f"  - {e}")
+    raise SystemExit(f"Stage 11 E2E: {len(errors)} assertion(s) failed")
+else:
+    print("\nStage 11 checks passed.")
+PY
+}
+
 require_cmd curl
 require_cmd python3
 
@@ -549,5 +658,8 @@ assert_agent_response "$eino_danger_raw" deny intent_guard denied "eino_runtime"
 
 printf '\n== Stage 10 OS deep sensing tools ==\n'
 assert_stage10
+
+printf '\n== Stage 11 least privilege execution proxy ==\n'
+assert_stage11
 
 printf '\nLinux/Kylin E2E passed.\n'

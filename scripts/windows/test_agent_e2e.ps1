@@ -594,4 +594,98 @@ foreach ($case in $cases) {
 
 Assert-Stage10
 
+# ============================================================================
+# Stage 11: Least-Privilege Execution Proxy validation
+# ============================================================================
+function Assert-Stage11LeastPrivilege {
+    Write-Host "`n== Stage 11 least privilege execution proxy =="
+
+    # A. Direct tool call execution_context checks.
+    function Assert-ExecContext {
+        param($Result, [string]$Label, [string]$ExpectProfile)
+        $trace = $Result.trace
+        if (-not $trace) {
+            throw "$Label`: no trace in response"
+        }
+        $ec = $trace.execution_context
+        if (-not $ec) {
+            throw "$Label`: execution_context is missing"
+        }
+        if ($ec.executor -ne "least_privilege_proxy") {
+            throw "$Label`: expected executor=least_privilege_proxy, got $($ec.executor)"
+        }
+        if ($ec.shell_used -ne $false) {
+            throw "$Label`: expected shell_used=false, got $($ec.shell_used)"
+        }
+        if ($ec.sudo_used -ne $false) {
+            throw "$Label`: expected sudo_used=false, got $($ec.sudo_used)"
+        }
+        if ($ExpectProfile -and $ec.profile -ne $ExpectProfile) {
+            throw "$Label`: expected profile=$ExpectProfile, got $($ec.profile)"
+        }
+    }
+
+    $procCall    = Invoke-ToolCall -ToolName "process_inspector"           -InputMap @{ name = "sshd"; limit = 20 }            -Reason "Stage 11 exec context check"
+    $netCall     = Invoke-ToolCall -ToolName "network_connection_inspector" -InputMap @{ state = "LISTEN"; limit = 50 }        -Reason "Stage 11 exec context check"
+    $journalCall = Invoke-ToolCall -ToolName "journalctl_reader"           -InputMap @{ service_name = "sshd"; lines = 10 }   -Reason "Stage 11 exec context check"
+
+    Assert-ExecContext -Result $procCall    -Label "process_inspector"           -ExpectProfile "low_read"
+    Assert-ExecContext -Result $netCall     -Label "network_connection_inspector" -ExpectProfile "low_read"
+    Assert-ExecContext -Result $journalCall -Label "journalctl_reader"            -ExpectProfile "sensitive_read"
+
+    # B. Stable Runtime traces.
+    $stableJson = Invoke-AgentTask -Path "/api/agent/run" -Task "检查当前系统资源使用情况" -Label "stage11_stable"
+    $shellAny = $false
+    $sudoAny = $false
+    $stableTraces = @($stableJson.tool_trace)
+    for ($i = 0; $i -lt $stableTraces.Count; $i++) {
+        $ec = $stableTraces[$i].execution_context
+        if (-not $ec) {
+            throw "stable trace[$i] $($stableTraces[$i].tool_name): missing execution_context"
+        }
+        if ($ec.shell_used) { $shellAny = $true }
+        if ($ec.sudo_used) { $sudoAny = $true }
+    }
+
+    # C. Eino Runtime traces.
+    $einoJson = Invoke-AgentTask -Path "/api/agent/run-eino" -Task "执行一次系统安全巡检" -Label "stage11_eino"
+    $einoTraces = @($einoJson.tool_trace)
+    for ($i = 0; $i -lt $einoTraces.Count; $i++) {
+        $ec = $einoTraces[$i].execution_context
+        if (-not $ec) {
+            throw "eino trace[$i] $($einoTraces[$i].tool_name): missing execution_context"
+        }
+        if ($ec.shell_used) { $shellAny = $true }
+        if ($ec.sudo_used) { $sudoAny = $true }
+        if ($einoTraces[$i].tool_name -eq "journalctl_reader") {
+            if ($ec.profile -ne "sensitive_read") {
+                throw "eino journalctl_reader: expected profile=sensitive_read, got $($ec.profile)"
+            }
+        }
+    }
+
+    if ($shellAny) { throw "shell_used=true detected on at least one trace" }
+    if ($sudoAny) { throw "sudo_used=true detected on at least one trace" }
+
+    # D. Compact summary.
+    Write-Host "`n== Stage 11 least privilege execution summary =="
+    [PSCustomObject]@{
+        exec_proxy_present   = $true
+        all_traces_have_execution_context = $true
+        shell_used_any       = $shellAny
+        sudo_used_any        = $sudoAny
+        process_profile      = $procCall.trace.execution_context.profile
+        network_profile      = $netCall.trace.execution_context.profile
+        journalctl_profile   = $journalCall.trace.execution_context.profile
+        stable_resource_decision = $stableJson.decision
+        eino_overview_decision   = $einoJson.decision
+        dangerous_intent_deny    = $true
+        tool_policy_deny         = $true
+    } | Format-List
+
+    Write-Host "Stage 11 checks passed."
+}
+
+Assert-Stage11LeastPrivilege
+
 Write-Host "`nWindows E2E passed."
