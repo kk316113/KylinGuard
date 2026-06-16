@@ -77,10 +77,13 @@ type Plan struct {
 }
 
 type PlanStep struct {
-	StepID   string
-	ToolName string
-	Input    map[string]any
-	Reason   string
+	StepID          string
+	ToolName        string
+	Input           map[string]any
+	Reason          string
+	ToolCategory    string
+	RiskLevel       string
+	PermissionScope string
 }
 
 type Diagnosis struct {

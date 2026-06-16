@@ -10,7 +10,7 @@ go run ./cmd/server
 
 默认监听 `:8080`。可通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。审计服务默认调用 `AUDIT_CORE_URL=http://127.0.0.1:8001`。
 
-`EINO_ENABLED` 默认 `false`。Stage 3 只提供 Eino adapter 骨架，不引入真实 Eino 依赖。Stage 6 之后，稳定 runtime 使用 Rule-based Ops Planner、SSH 登录异常诊断工具链和 deterministic report builder，`/api/agent/run-eino` fallback 也复用同一路径。
+`EINO_ENABLED` 默认 `false`。Stage 3 只提供 Eino adapter 骨架，不引入真实 Eino 依赖。Stage 8 之后，稳定 runtime 使用 Rule-based Ops Planner、SSH 登录异常诊断工具链、MCP-like Tool Registry 和 deterministic report builder，`/api/agent/run-eino` fallback 也复用同一路径。
 
 ## 接口
 
@@ -42,6 +42,29 @@ go run ./cmd/server
 
 实验接口。当前 Eino adapter 未启用时 fallback 到稳定 runtime，返回结构与 `/api/agent/run` 相同，并在 `summary` 中标记 `eino adapter disabled, stable runtime fallback used`。
 
+`GET /api/tools`
+
+返回 MCP-like 工具发现结果，只包含 metadata，不执行工具：
+
+```json
+{
+  "protocol": "mcp-like",
+  "version": "stage8-v1",
+  "count": 6,
+  "tools": []
+}
+```
+
+`GET /api/tools/{name}`
+
+返回单个工具的 `ToolMetadata`，包含 `input_schema`、`output_schema`、`permission_scope`、`operation_type`、`resource_type`、`boundary_level` 等字段。未知工具返回 HTTP 404。
+
+`POST /api/tools/call`
+
+受 Tool Policy 控制的单工具调用入口。允许时复用现有 `Tool Registry` 执行工具、生成 semantic trace，并以 `Manual MCP-like tool call: <tool>` 作为 synthetic task 调用 audit-core-py / TraceShield。拒绝时返回 `status=denied` 和 `audit_result.method=tool_policy`，不会执行工具。
+
+`safe_shell` 默认 `enabled=false` 且 `direct_call_allowed=false`，不能通过 `/api/tools/call` 直连。
+
 ## Rule-based Ops Planner
 
 当前支持：
@@ -52,6 +75,7 @@ go run ./cmd/server
 - `system_overview`：`os_info -> port_checker(8080)`。
 
 `intent_guard` 永远在 planner 之前运行。危险任务会直接返回 `decision=deny`，不会生成 plan，不会执行工具，也不会调用 audit-core-py。
+Planner 生成计划时会查询 Tool Registry，并把工具的 `tool_category`、`risk_level`、`permission_scope` 补充到每个 plan step。
 
 ## SSH Diagnosis
 
@@ -77,6 +101,7 @@ go run ./cmd/server
 - `audit_metadata`
 
 `security_report.overall_decision` 始终等于响应的 `decision`。报告只做解释，不负责最终裁决。
+`security_report.audit_metadata` 会记录 `tool_protocol=mcp-like`、`tool_protocol_version=stage8-v1`、`registered_tool_count` 和 `tools_used`。
 
 `tool_trace` 已包含 Stage 2 工具语义字段：
 

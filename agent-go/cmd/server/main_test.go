@@ -12,6 +12,8 @@ import (
 	"kylin-guard-agent/agent-go/internal/agent"
 	"kylin-guard-agent/agent-go/internal/auditclient"
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/security"
+	"kylin-guard-agent/agent-go/internal/tools"
 )
 
 type testAuditor struct {
@@ -140,6 +142,137 @@ func TestAgentRunEinoDangerousTaskFallsBackAndDeniesBeforeAudit(t *testing.T) {
 	}
 }
 
+func TestToolsListHandler(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	request := httptest.NewRequest(http.MethodGet, "/api/tools", nil)
+	recorder := httptest.NewRecorder()
+
+	toolsListHandler(registry).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response toolsListResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Protocol != tools.ToolProtocol {
+		t.Fatalf("expected protocol %q, got %q", tools.ToolProtocol, response.Protocol)
+	}
+	if response.Version != tools.ToolProtocolVersion {
+		t.Fatalf("expected version %q, got %q", tools.ToolProtocolVersion, response.Version)
+	}
+	if response.Count < 6 {
+		t.Fatalf("expected at least 6 tools, got %d", response.Count)
+	}
+}
+
+func TestToolDetailHandler(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	request := httptest.NewRequest(http.MethodGet, "/api/tools/ssh_login_analyzer", nil)
+	recorder := httptest.NewRecorder()
+
+	toolDetailHandler(registry).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response tools.ToolMetadata
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Name != "ssh_login_analyzer" {
+		t.Fatalf("expected ssh_login_analyzer, got %q", response.Name)
+	}
+	if response.BoundaryLevel != "sensitive_system_resource" {
+		t.Fatalf("unexpected boundary_level: %q", response.BoundaryLevel)
+	}
+	if response.InputSchema == nil || response.OutputSchema == nil {
+		t.Fatalf("expected input_schema and output_schema, got %#v", response)
+	}
+}
+
+func TestToolDetailHandlerNotFound(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	request := httptest.NewRequest(http.MethodGet, "/api/tools/unknown", nil)
+	recorder := httptest.NewRecorder()
+
+	toolDetailHandler(registry).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected HTTP 404, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestToolCallHandlerUnknownToolDenied(t *testing.T) {
+	auditor := &testAuditor{}
+	response := postToolCallRequest(t, auditor, toolCallRequest{
+		ToolName: "unknown_tool",
+		Input:    map[string]any{},
+		Reason:   "test unknown tool",
+	})
+
+	if response.Status != "denied" {
+		t.Fatalf("expected denied, got %q", response.Status)
+	}
+	if response.AuditResult.Method != security.ToolPolicyMethod {
+		t.Fatalf("expected tool_policy method, got %q", response.AuditResult.Method)
+	}
+	if response.AuditResult.Decision != "deny" {
+		t.Fatalf("expected deny audit decision, got %q", response.AuditResult.Decision)
+	}
+	if auditor.called {
+		t.Fatal("audit client should not be called for denied unknown tool")
+	}
+}
+
+func TestToolCallHandlerPortCheckerAudited(t *testing.T) {
+	auditor := &testAuditor{}
+	response := postToolCallRequest(t, auditor, toolCallRequest{
+		ToolName: "port_checker",
+		Input:    map[string]any{"host": "127.0.0.1", "port": 22},
+		Reason:   "test direct tool call",
+	})
+
+	if response.Status != "ok" {
+		t.Fatalf("expected ok, got %q: %s", response.Status, response.Message)
+	}
+	if response.Trace == nil {
+		t.Fatal("expected trace")
+	}
+	if response.Trace.ResourceType != "network_port" {
+		t.Fatalf("expected trace.resource_type=network_port, got %q", response.Trace.ResourceType)
+	}
+	if response.AuditResult.Method != "traceshield" {
+		t.Fatalf("expected traceshield audit result, got %q", response.AuditResult.Method)
+	}
+	if !auditor.called {
+		t.Fatal("expected audit client to be called")
+	}
+}
+
+func TestToolCallHandlerSafeShellDangerousCommandDenied(t *testing.T) {
+	auditor := &testAuditor{}
+	response := postToolCallRequest(t, auditor, toolCallRequest{
+		ToolName: "safe_shell",
+		Input:    map[string]any{"command": "rm -rf /"},
+		Reason:   "must be denied",
+	})
+
+	if response.Status != "denied" {
+		t.Fatalf("expected denied, got %q", response.Status)
+	}
+	if response.Trace != nil {
+		t.Fatalf("denied safe_shell should not return trace, got %#v", response.Trace)
+	}
+	if response.AuditResult.Method != security.ToolPolicyMethod {
+		t.Fatalf("expected tool_policy method, got %q", response.AuditResult.Method)
+	}
+	if auditor.called {
+		t.Fatal("audit client should not be called for denied safe_shell")
+	}
+}
+
 func postAgentRequest(t *testing.T, handler http.HandlerFunc, path string, task string) agent.AgentRunResponse {
 	t.Helper()
 	body, err := json.Marshal(agent.AgentRunRequest{Task: task})
@@ -156,6 +289,29 @@ func postAgentRequest(t *testing.T, handler http.HandlerFunc, path string, task 
 	}
 
 	var response agent.AgentRunResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return response
+}
+
+func postToolCallRequest(t *testing.T, auditor *testAuditor, req toolCallRequest) toolCallResponse {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/tools/call", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	recorder := httptest.NewRecorder()
+
+	handler := toolCallHandler(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), security.NewToolPolicy())
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response toolCallResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}

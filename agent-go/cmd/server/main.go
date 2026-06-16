@@ -10,6 +10,7 @@ import (
 	"kylin-guard-agent/agent-go/internal/auditclient"
 	"kylin-guard-agent/agent-go/internal/config"
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
@@ -19,15 +20,20 @@ func main() {
 	cfg := config.Load()
 	registry := tools.NewDefaultRegistry()
 	traceStore := logtrace.NewStore()
-	runtime := agent.NewRuntime(registry, auditclient.NewHTTPClient(cfg.AuditCoreURL), traceStore)
+	auditor := auditclient.NewHTTPClient(cfg.AuditCoreURL)
+	runtime := agent.NewRuntime(registry, auditor, traceStore)
 	stableAdapter := agent.NewStableRuntimeAdapter(runtime)
 	einoAdapter := agent.NewEinoAdapter(cfg.EinoEnabled)
+	toolPolicy := security.NewToolPolicy()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/os/info", osInfoHandler(registry, traceStore))
 	mux.HandleFunc("/api/agent/run", agentRunHandler(runtime))
 	mux.HandleFunc("/api/agent/run-eino", agentRunEinoHandler(einoAdapter, stableAdapter))
+	mux.HandleFunc("/api/tools", toolsListHandler(registry))
+	mux.HandleFunc("/api/tools/call", toolCallHandler(registry, auditor, traceStore, toolPolicy))
+	mux.HandleFunc("/api/tools/", toolDetailHandler(registry))
 
 	server := &http.Server{
 		Addr:              cfg.Addr,

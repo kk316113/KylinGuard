@@ -6,6 +6,49 @@
 
 Stage 6 之后，Tool Registry 支持按 `PlanStep` 执行，并可沿用 `plan-001` 这类 step id，便于将 Plan、tool trace、diagnosis、security_report 和审计证据对应起来。工具执行失败时不会让 runtime panic，而是生成 `status=error` 的 trace 并继续送入 audit-core-py 审计。
 
+Stage 8 之后，Tool Registry 同时维护 executor 和 MCP-like metadata。metadata 用于 `/api/tools`、`/api/tools/{name}`、planner step 补充字段，以及后续 Eino runtime 工具发现。
+
+## MCP-like Tool Metadata
+
+`agent-go/internal/tools/metadata.go` 定义 `ToolMetadata`，协议名为 `mcp-like`，版本为 `stage8-v1`。核心字段包括：
+
+- `name`
+- `description`
+- `category`
+- `version`
+- `input_schema`
+- `output_schema`
+- `risk_level`
+- `permission_scope`
+- `operation_type`
+- `resource_type`
+- `boundary_level`
+- `requires_privilege`
+- `allowed_by_policy`
+- `dangerous`
+- `enabled`
+- `direct_call_allowed`
+
+当前已注册 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`、`safe_shell`。
+
+`safe_shell` 会保留 metadata 以便展示边界，但默认 `enabled=false` 且 `direct_call_allowed=false`，不能通过 `/api/tools/call` 直连。
+
+## Direct Tool Call Policy
+
+`agent-go/internal/security/tool_policy.go` 控制 `/api/tools/call`：
+
+- unknown tool deny。
+- metadata disabled deny。
+- dangerous tool deny。
+- `allowed_by_policy=false` deny。
+- `safe_shell` 默认 deny direct call。
+- `port_checker` 端口必须在 `1-65535`。
+- `service_status` 的 `service_name` 只允许字母、数字、下划线、短横线和点号。
+- `log_reader` 只能读取白名单路径。
+- `ssh_login_analyzer` 只能读取白名单路径或 `journalctl:sshd` 语义。
+
+允许调用时仍会复用现有 Registry 执行工具、生成 semantic trace，并通过 auditclient 进入 audit-core-py / TraceShield 审计。
+
 ## Tool Trace 字段
 
 - `step_id`

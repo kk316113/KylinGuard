@@ -44,6 +44,110 @@ post_agent_task() {
     --data-binary "@$payload_path"
 }
 
+write_tool_payload() {
+  local name="$1"
+  local tool_name="$2"
+  local input_json="$3"
+  local reason="$4"
+  local path="$TMP_DIR/$name.json"
+  python3 - "$path" "$tool_name" "$input_json" "$reason" <<'PY'
+import json
+import sys
+
+path, tool_name, input_json, reason = sys.argv[1:5]
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(
+        {
+            "tool_name": tool_name,
+            "input": json.loads(input_json),
+            "reason": reason,
+        },
+        handle,
+        ensure_ascii=False,
+    )
+PY
+  printf '%s\n' "$path"
+}
+
+post_tool_call() {
+  local name="$1"
+  local tool_name="$2"
+  local input_json="$3"
+  local reason="$4"
+  local payload_path
+  payload_path="$(write_tool_payload "$name" "$tool_name" "$input_json" "$reason")"
+  curl -fsS -X POST "$KYLIN_GUARD_AGENT_URL/api/tools/call" \
+    -H "Content-Type: application/json; charset=utf-8" \
+    --data-binary "@$payload_path"
+}
+
+assert_tools_protocol() {
+  local tools_raw detail_raw port_raw unknown_raw shell_raw
+  tools_raw="$(http_get "$KYLIN_GUARD_AGENT_URL/api/tools")"
+  detail_raw="$(http_get "$KYLIN_GUARD_AGENT_URL/api/tools/ssh_login_analyzer")"
+  port_raw="$(post_tool_call port_checker_direct port_checker '{"host":"127.0.0.1","port":22}' "Stage 8 E2E direct MCP-like tool call")"
+  unknown_raw="$(post_tool_call unknown_tool unknown_tool '{}' "must be denied")"
+  shell_raw="$(post_tool_call safe_shell_danger safe_shell '{"command":"rm -rf /"}' "must be denied")"
+
+  python3 - "$tools_raw" "$detail_raw" "$port_raw" "$unknown_raw" "$shell_raw" <<'PY'
+import json
+import sys
+
+tools_body, detail, port, unknown, shell = [json.loads(value) for value in sys.argv[1:6]]
+
+if tools_body.get("protocol") != "mcp-like":
+    raise SystemExit(f"unexpected tools protocol: {tools_body.get('protocol')}")
+if tools_body.get("version") != "stage8-v1":
+    raise SystemExit(f"unexpected tools version: {tools_body.get('version')}")
+if int(tools_body.get("count") or 0) < 6:
+    raise SystemExit(f"expected tools count >= 6, got {tools_body.get('count')}")
+
+names = [tool.get("name") for tool in tools_body.get("tools") or []]
+for required in ("os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer", "safe_shell"):
+    if required not in names:
+        raise SystemExit(f"/api/tools missing {required}: {names}")
+
+if detail.get("boundary_level") != "sensitive_system_resource":
+    raise SystemExit(f"unexpected ssh_login_analyzer boundary_level: {detail.get('boundary_level')}")
+if detail.get("permission_scope") != "ssh_auth_log_analyze":
+    raise SystemExit(f"unexpected ssh_login_analyzer permission_scope: {detail.get('permission_scope')}")
+if not detail.get("input_schema") or not detail.get("output_schema"):
+    raise SystemExit("expected ssh_login_analyzer input_schema and output_schema")
+
+if port.get("status") == "denied":
+    raise SystemExit(f"port_checker direct call should not be denied: {port.get('message')}")
+if (port.get("trace") or {}).get("resource_type") != "network_port":
+    raise SystemExit(f"expected port_checker trace.resource_type=network_port, got {(port.get('trace') or {}).get('resource_type')}")
+if not port.get("audit_result"):
+    raise SystemExit("expected port_checker audit_result")
+
+if unknown.get("status") != "denied":
+    raise SystemExit(f"unknown_tool should be denied, got {unknown.get('status')}")
+if (unknown.get("audit_result") or {}).get("method") != "tool_policy":
+    raise SystemExit(f"unknown_tool expected tool_policy, got {(unknown.get('audit_result') or {}).get('method')}")
+if (unknown.get("audit_result") or {}).get("decision") != "deny":
+    raise SystemExit(f"unknown_tool expected deny, got {(unknown.get('audit_result') or {}).get('decision')}")
+
+if shell.get("status") != "denied":
+    raise SystemExit(f"safe_shell dangerous command should be denied, got {shell.get('status')}")
+if (shell.get("audit_result") or {}).get("method") != "tool_policy":
+    raise SystemExit(f"safe_shell expected tool_policy, got {(shell.get('audit_result') or {}).get('method')}")
+
+print("tools_protocol:", tools_body.get("protocol"))
+print("tools_version:", tools_body.get("version"))
+print("tools_count:", tools_body.get("count"))
+print("ssh_login_analyzer_boundary:", detail.get("boundary_level"))
+print("port_checker_status:", port.get("status"))
+print("port_checker_trace_resource:", (port.get("trace") or {}).get("resource_type"))
+print("port_checker_audit_method:", (port.get("audit_result") or {}).get("method"))
+print("unknown_tool_status:", unknown.get("status"))
+print("unknown_tool_method:", (unknown.get("audit_result") or {}).get("method"))
+print("safe_shell_status:", shell.get("status"))
+print("safe_shell_method:", (shell.get("audit_result") or {}).get("method"))
+print("")
+PY
+}
+
 assert_agent_response() {
   local raw="$1"
   local expected_decision="$2"
@@ -195,6 +299,9 @@ http_get "$AUDIT_CORE_URL/health" | python3 -m json.tool
 
 printf '\n== Go Agent /health ==\n'
 http_get "$KYLIN_GUARD_AGENT_URL/health" | python3 -m json.tool
+
+printf '\n== MCP-like tools protocol ==\n'
+assert_tools_protocol
 
 printf '\n== safe SSH anomaly task ==\n'
 safe_raw="$(post_agent_task /api/agent/run safe_cn "检查当前系统 SSH 登录异常")"

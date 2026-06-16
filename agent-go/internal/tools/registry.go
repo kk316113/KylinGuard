@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +14,8 @@ import (
 type Handler func(ctx context.Context, input map[string]any) (output any, outputSummary string, riskHint string, err error)
 
 type Registry struct {
-	tools map[string]Handler
+	tools    map[string]Handler
+	metadata map[string]ToolMetadata
 }
 
 type Result struct {
@@ -22,22 +24,71 @@ type Result struct {
 }
 
 func NewRegistry() *Registry {
-	return &Registry{tools: make(map[string]Handler)}
+	return &Registry{
+		tools:    make(map[string]Handler),
+		metadata: make(map[string]ToolMetadata),
+	}
 }
 
 func NewDefaultRegistry() *Registry {
 	registry := NewRegistry()
-	registry.Register("os_info", OSInfo)
-	registry.Register("service_status", ServiceStatus)
-	registry.Register("log_reader", LogReader)
-	registry.Register("ssh_login_analyzer", SSHLoginAnalyzer)
-	registry.Register("port_checker", PortChecker)
-	registry.Register("safe_shell", SafeShell)
+	metadata := DefaultToolMetadata()
+	registry.RegisterWithMetadata("os_info", OSInfo, metadata["os_info"])
+	registry.RegisterWithMetadata("service_status", ServiceStatus, metadata["service_status"])
+	registry.RegisterWithMetadata("log_reader", LogReader, metadata["log_reader"])
+	registry.RegisterWithMetadata("ssh_login_analyzer", SSHLoginAnalyzer, metadata["ssh_login_analyzer"])
+	registry.RegisterWithMetadata("port_checker", PortChecker, metadata["port_checker"])
+	registry.RegisterWithMetadata("safe_shell", SafeShell, metadata["safe_shell"])
 	return registry
 }
 
 func (r *Registry) Register(name string, handler Handler) {
 	r.tools[name] = handler
+}
+
+func (r *Registry) RegisterWithMetadata(name string, handler Handler, metadata ToolMetadata) {
+	r.Register(name, handler)
+	if metadata.Name == "" {
+		metadata.Name = name
+	}
+	r.metadata[name] = metadata
+}
+
+func (r *Registry) ListTools() []ToolMetadata {
+	if r == nil {
+		return []ToolMetadata{}
+	}
+	names := make([]string, 0, len(r.metadata))
+	for name := range r.metadata {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	result := make([]ToolMetadata, 0, len(names))
+	for _, name := range names {
+		result = append(result, r.metadata[name])
+	}
+	return result
+}
+
+func (r *Registry) GetTool(name string) (ToolMetadata, bool) {
+	if r == nil {
+		return ToolMetadata{}, false
+	}
+	metadata, ok := r.metadata[name]
+	return metadata, ok
+}
+
+func (r *Registry) IsToolEnabledForDirectCall(name string) bool {
+	metadata, ok := r.GetTool(name)
+	if !ok {
+		return false
+	}
+	return metadata.Enabled && metadata.DirectCallAllowed && metadata.AllowedByPolicy && !metadata.Dangerous
+}
+
+func (r *Registry) CallTool(ctx context.Context, name string, input map[string]any) (Result, error) {
+	return r.Invoke(ctx, name, input)
 }
 
 func (r *Registry) Invoke(ctx context.Context, name string, input map[string]any) (Result, error) {

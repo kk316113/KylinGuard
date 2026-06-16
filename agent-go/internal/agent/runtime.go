@@ -56,7 +56,7 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 
 	return &Runtime{
 		registry: registry,
-		planner:  NewRuleBasedPlanner(),
+		planner:  NewRuleBasedPlannerWithRegistry(registry),
 		guard:    security.NewIntentGuard(),
 		auditor:  auditor,
 		traces:   traceStore,
@@ -159,10 +159,13 @@ func reportPlanFromAgentPlan(plan *Plan) *report.Plan {
 	steps := make([]report.PlanStep, 0, len(plan.Steps))
 	for _, step := range plan.Steps {
 		steps = append(steps, report.PlanStep{
-			StepID:   step.StepID,
-			ToolName: step.ToolName,
-			Input:    step.Input,
-			Reason:   step.Reason,
+			StepID:          step.StepID,
+			ToolName:        step.ToolName,
+			Input:           step.Input,
+			Reason:          step.Reason,
+			ToolCategory:    step.ToolCategory,
+			RiskLevel:       step.RiskLevel,
+			PermissionScope: step.PermissionScope,
 		})
 	}
 	return &report.Plan{

@@ -6,13 +6,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"kylin-guard-agent/agent-go/internal/tools"
 )
 
 type PlanStep struct {
-	StepID   string         `json:"step_id"`
-	ToolName string         `json:"tool_name"`
-	Input    map[string]any `json:"input"`
-	Reason   string         `json:"reason"`
+	StepID          string         `json:"step_id"`
+	ToolName        string         `json:"tool_name"`
+	Input           map[string]any `json:"input"`
+	Reason          string         `json:"reason"`
+	ToolCategory    string         `json:"tool_category,omitempty"`
+	RiskLevel       string         `json:"risk_level,omitempty"`
+	PermissionScope string         `json:"permission_scope,omitempty"`
 }
 
 type Plan struct {
@@ -26,13 +31,22 @@ type Planner interface {
 	Plan(ctx context.Context, task string) (Plan, error)
 }
 
-type RuleBasedPlanner struct{}
-
-func NewRuleBasedPlanner() RuleBasedPlanner {
-	return RuleBasedPlanner{}
+type RuleBasedPlanner struct {
+	registry *tools.Registry
 }
 
-func (RuleBasedPlanner) Plan(ctx context.Context, task string) (Plan, error) {
+func NewRuleBasedPlanner() RuleBasedPlanner {
+	return NewRuleBasedPlannerWithRegistry(tools.NewDefaultRegistry())
+}
+
+func NewRuleBasedPlannerWithRegistry(registry *tools.Registry) RuleBasedPlanner {
+	if registry == nil {
+		registry = tools.NewDefaultRegistry()
+	}
+	return RuleBasedPlanner{registry: registry}
+}
+
+func (p RuleBasedPlanner) Plan(ctx context.Context, task string) (Plan, error) {
 	_ = ctx
 
 	trimmed := strings.TrimSpace(task)
@@ -43,7 +57,7 @@ func (RuleBasedPlanner) Plan(ctx context.Context, task string) (Plan, error) {
 	normalized := normalizeTaskText(trimmed)
 	switch {
 	case isSSHAnomalyTask(normalized):
-		return newPlan(trimmed, "ssh_anomaly_check", "Rule-based planner selected SSH anomaly diagnosis workflow", []PlanStep{
+		return p.newPlan(trimmed, "ssh_anomaly_check", "Rule-based planner selected SSH anomaly diagnosis workflow", []PlanStep{
 			planStep("os_info", map[string]any{}, "Collect OS context before diagnosis"),
 			planStep("service_status", map[string]any{"service_name": "sshd"}, "Check sshd service status"),
 			planStep("port_checker", map[string]any{"host": "127.0.0.1", "port": 22}, "Check whether local SSH port is reachable"),
@@ -59,29 +73,38 @@ func (RuleBasedPlanner) Plan(ctx context.Context, task string) (Plan, error) {
 		}), nil
 	case isServiceCheckTask(normalized):
 		service := extractServiceName(normalized)
-		return newPlan(trimmed, "service_check", "Rule-based planner selected service status workflow", []PlanStep{
+		return p.newPlan(trimmed, "service_check", "Rule-based planner selected service status workflow", []PlanStep{
 			planStep("os_info", map[string]any{}, "Collect OS context before service diagnosis"),
 			planStep("service_status", map[string]any{"service_name": service}, "Check target service status"),
 		}), nil
 	case isPortCheckTask(normalized):
 		port := extractPort(normalized, 8080)
-		return newPlan(trimmed, "port_check", "Rule-based planner selected port inspection workflow", []PlanStep{
+		return p.newPlan(trimmed, "port_check", "Rule-based planner selected port inspection workflow", []PlanStep{
 			planStep("os_info", map[string]any{}, "Collect OS context before port inspection"),
 			planStep("port_checker", map[string]any{"host": "127.0.0.1", "port": port}, "Check target local port"),
 		}), nil
 	default:
-		return newPlan(trimmed, "system_overview", "Rule-based planner selected system overview workflow", []PlanStep{
+		return p.newPlan(trimmed, "system_overview", "Rule-based planner selected system overview workflow", []PlanStep{
 			planStep("os_info", map[string]any{}, "Collect basic OS context"),
 			planStep("port_checker", map[string]any{"host": "127.0.0.1", "port": 8080}, "Check default Go Agent port"),
 		}), nil
 	}
 }
 
-func newPlan(task string, scenario string, summary string, steps []PlanStep) Plan {
+func (p RuleBasedPlanner) newPlan(task string, scenario string, summary string, steps []PlanStep) Plan {
 	for index := range steps {
 		steps[index].StepID = fmt.Sprintf("plan-%03d", index+1)
 		if steps[index].Input == nil {
 			steps[index].Input = map[string]any{}
+		}
+		if p.registry != nil {
+			if metadata, ok := p.registry.GetTool(steps[index].ToolName); ok && metadata.Enabled {
+				steps[index].ToolCategory = metadata.Category
+				steps[index].RiskLevel = metadata.RiskLevel
+				steps[index].PermissionScope = metadata.PermissionScope
+			} else {
+				steps[index].Reason = steps[index].Reason + "; tool metadata unavailable or disabled"
+			}
 		}
 	}
 	return Plan{

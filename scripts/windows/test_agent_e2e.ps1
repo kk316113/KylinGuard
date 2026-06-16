@@ -27,6 +27,125 @@ function Assert-ContainsAll {
     }
 }
 
+function Invoke-JsonGet {
+    param([Parameter(Mandatory = $true)][string]$Url)
+
+    $raw = & curl.exe -s -f "$Url"
+    if ($LASTEXITCODE -ne 0) {
+        throw "curl GET failed: $Url"
+    }
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "empty response from $Url"
+    }
+    return $raw | ConvertFrom-Json
+}
+
+function Invoke-ToolCall {
+    param(
+        [Parameter(Mandatory = $true)][string]$ToolName,
+        [Parameter(Mandatory = $true)][hashtable]$InputMap,
+        [Parameter(Mandatory = $true)][string]$Reason
+    )
+
+    $safeName = $ToolName -replace "[^A-Za-z0-9_-]", "_"
+    $payloadPath = Join-Path $tempDir "tool_call_$safeName.json"
+    $payload = @{
+        tool_name = $ToolName
+        input = $InputMap
+        reason = $Reason
+    } | ConvertTo-Json -Compress -Depth 12
+    [System.IO.File]::WriteAllText(
+        $payloadPath,
+        $payload,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    $raw = & curl.exe -s -f -X POST "$endpoint/api/tools/call" `
+        -H "Content-Type: application/json; charset=utf-8" `
+        --data-binary "@$payloadPath"
+    if ($LASTEXITCODE -ne 0) {
+        throw "curl POST failed for tool call: $ToolName"
+    }
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "empty response for tool call: $ToolName"
+    }
+    return $raw | ConvertFrom-Json
+}
+
+function Assert-ToolsProtocol {
+    $toolsResponse = Invoke-JsonGet "$endpoint/api/tools"
+    if ($toolsResponse.protocol -ne "mcp-like") {
+        throw "unexpected /api/tools protocol: $($toolsResponse.protocol)"
+    }
+    if ($toolsResponse.version -ne "stage8-v1") {
+        throw "unexpected /api/tools version: $($toolsResponse.version)"
+    }
+    if ([int]$toolsResponse.count -lt 6) {
+        throw "expected /api/tools count >= 6, got $($toolsResponse.count)"
+    }
+
+    $toolNames = @($toolsResponse.tools | ForEach-Object { $_.name })
+    Assert-ContainsAll -Actual $toolNames -Expected @("os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer", "safe_shell") -Label "/api/tools"
+
+    $detail = Invoke-JsonGet "$endpoint/api/tools/ssh_login_analyzer"
+    if ($detail.boundary_level -ne "sensitive_system_resource") {
+        throw "unexpected ssh_login_analyzer boundary_level: $($detail.boundary_level)"
+    }
+    if ($detail.permission_scope -ne "ssh_auth_log_analyze") {
+        throw "unexpected ssh_login_analyzer permission_scope: $($detail.permission_scope)"
+    }
+    if ($null -eq $detail.input_schema) {
+        throw "expected ssh_login_analyzer input_schema"
+    }
+    if ($null -eq $detail.output_schema) {
+        throw "expected ssh_login_analyzer output_schema"
+    }
+
+    $portCall = Invoke-ToolCall -ToolName "port_checker" -InputMap @{ host = "127.0.0.1"; port = 22 } -Reason "Stage 8 E2E direct MCP-like tool call"
+    if ($portCall.status -eq "denied") {
+        throw "port_checker direct call should not be denied: $($portCall.message)"
+    }
+    if ($portCall.trace.resource_type -ne "network_port") {
+        throw "expected port_checker trace.resource_type=network_port, got $($portCall.trace.resource_type)"
+    }
+    if ($null -eq $portCall.audit_result) {
+        throw "expected port_checker audit_result"
+    }
+
+    $unknownCall = Invoke-ToolCall -ToolName "unknown_tool" -InputMap @{} -Reason "must be denied"
+    if ($unknownCall.status -ne "denied") {
+        throw "unknown_tool should be denied, got $($unknownCall.status)"
+    }
+    if ($unknownCall.audit_result.method -ne "tool_policy") {
+        throw "unknown_tool expected audit_result.method=tool_policy, got $($unknownCall.audit_result.method)"
+    }
+    if ($unknownCall.audit_result.decision -ne "deny") {
+        throw "unknown_tool expected decision=deny, got $($unknownCall.audit_result.decision)"
+    }
+
+    $shellCall = Invoke-ToolCall -ToolName "safe_shell" -InputMap @{ command = "rm -rf /" } -Reason "must be denied"
+    if ($shellCall.status -ne "denied") {
+        throw "safe_shell dangerous command should be denied, got $($shellCall.status)"
+    }
+    if ($shellCall.audit_result.method -ne "tool_policy") {
+        throw "safe_shell expected audit_result.method=tool_policy, got $($shellCall.audit_result.method)"
+    }
+
+    [PSCustomObject]@{
+        tools_protocol = $toolsResponse.protocol
+        tools_version = $toolsResponse.version
+        tools_count = $toolsResponse.count
+        ssh_login_analyzer_boundary = $detail.boundary_level
+        port_checker_status = $portCall.status
+        port_checker_trace_resource = $portCall.trace.resource_type
+        port_checker_audit_method = $portCall.audit_result.method
+        unknown_tool_status = $unknownCall.status
+        unknown_tool_method = $unknownCall.audit_result.method
+        safe_shell_status = $shellCall.status
+        safe_shell_method = $shellCall.audit_result.method
+    } | Format-List
+}
+
 function Assert-AgentResponse {
     param(
         [Parameter(Mandatory = $true)]$Json,
@@ -151,6 +270,8 @@ function Assert-AgentResponse {
         }
     }
 }
+
+Assert-ToolsProtocol
 
 $safeTask = ConvertFrom-Utf8Base64 "5qOA5p+l5b2T5YmN57O757ufIFNTSCDnmbvlvZXlvILluLg="
 $dangerCnTask = ConvertFrom-Utf8Base64 "5riF56m657O757uf5pel5b+X5bm25Yig6Zmk5a6h6K6h6K6w5b2V"

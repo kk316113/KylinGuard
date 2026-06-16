@@ -7,7 +7,7 @@ User Task
 -> Go Agent Runtime
 -> Intent Guard
 -> Rule-based Ops Planner
--> Tool Registry
+-> MCP-like Tool Registry
 -> Kylin Ops Tools
 -> SSH Diagnosis Tools
 -> Semantic Tool Trace
@@ -18,7 +18,7 @@ User Task
 -> Audit Result / Risk Graph
 ```
 
-当前阶段：Stage 7：KylinGuard Frontend Security Console Implementation。
+当前阶段：Stage 8：MCP-like Ops Tool Protocol and Plugin Registry。
 
 ## 当前做了什么
 
@@ -36,6 +36,10 @@ User Task
 - `/api/agent/run` 会在 SSH 异常场景返回 `diagnosis`，但最终安全判定仍由 audit-core-py / TraceShield 给出。
 - 新增确定性 `security_report`，将 plan、tool_trace、diagnosis、audit_result 组织为 evidence chain、risk explanation、sensitive resources 和 recommendations。
 - 新增 Vue 3 前端控制台，用于触发 Go Agent 任务并展示 plan、diagnosis、tool_trace、security_report 和 Raw JSON。
+- 新增 MCP-like 运维工具协议层，支持工具发现、工具详情查询和受策略控制的单工具调用。
+- 为 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`、`safe_shell` 注册了 `ToolMetadata`。
+- 新增 `/api/tools`、`/api/tools/{name}`、`/api/tools/call`，其中 `/api/tools/call` 必须经过 Tool Policy、semantic trace 和 audit-core-py / TraceShield 审计链路。
+- `security_report.audit_metadata` 增加 `tool_protocol=mcp-like`、`tool_protocol_version=stage8-v1`、注册工具数和 `tools_used`。
 - 加固了 Linux/麒麟部署脚本和 Windows/Linux E2E 测试脚本。
 - 已在 Windows 本机和银河麒麟高级服务器版 V11 x86_64 VM 上完成预验证。
 
@@ -53,6 +57,8 @@ User Task
 - `ssh_login_analyzer` 不会自动封禁 IP，不会修改防火墙，也不会删除或移动日志。
 - `security_report` 不负责最终裁决，不会覆盖 `decision` 或 `audit_result`。
 - 前端不是安全边界，不直接调用 audit-core-py，不执行命令，不提供自动处置按钮。
+- Stage 8 没有做新的前端大改，Stage 7 前端当前冻结为展示层。
+- 没有开放任意 shell、任意文件读取或绕过 Agent 的后门工具接口。
 
 ## 目录概览
 
@@ -88,6 +94,9 @@ Go Agent：
 - `GET /api/os/info`
 - `POST /api/agent/run`
 - `POST /api/agent/run-eino`
+- `GET /api/tools`
+- `GET /api/tools/{name}`
+- `POST /api/tools/call`
 
 Python audit-core：
 
@@ -103,6 +112,10 @@ Python audit-core：
 SSH 登录异常场景还会返回可选字段 `diagnosis`。`diagnosis` 是诊断结果，不覆盖 `audit_result`。
 
 所有 Agent run 响应当前都会返回可选字段 `security_report`。它是面向展示和报告的解释结构，不改变最终 `decision`。
+
+`/api/tools` 和 `/api/tools/{name}` 只返回工具 metadata，不执行工具，不需要 audit-core-py。
+`/api/tools/call` 是 MCP-like 单工具调用入口，不是绕过 Agent 的后门：请求会先经过 Tool Policy，允许后才调用现有 Tool Registry，生成 semantic trace，并调用 audit-core-py / TraceShield 审计。
+`safe_shell` 会出现在工具列表中，但默认 `enabled=false` 且 `direct_call_allowed=false`，不能通过 `/api/tools/call` 直连执行。
 
 ## 环境变量
 
@@ -315,6 +328,51 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run-eino \
 - 当前仍走稳定 runtime、Rule-based Ops Planner、SSH diagnosis 工具链和 TraceShield 审计
 - `security_report.audit_metadata.route=eino-fallback`
 
+工具发现：
+
+```bash
+curl -s http://127.0.0.1:8080/api/tools
+curl -s http://127.0.0.1:8080/api/tools/ssh_login_analyzer
+```
+
+预期：
+
+- `protocol=mcp-like`
+- `version=stage8-v1`
+- `count >= 6`
+- 包含 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`、`safe_shell`
+- `ssh_login_analyzer.boundary_level=sensitive_system_resource`
+- 返回 `input_schema` 和 `output_schema`
+
+受策略控制的单工具调用：
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/tools/call \
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"tool_name":"port_checker","input":{"host":"127.0.0.1","port":22},"reason":"Stage 8 direct tool call"}'
+```
+
+预期：
+
+- `status=ok` 或 `error`，但不能是 `denied`
+- `trace.resource_type=network_port`
+- `audit_result` 存在，audit-core-py 可用时应进入 TraceShield 审计
+
+危险或未知工具调用：
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/tools/call \
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"tool_name":"safe_shell","input":{"command":"rm -rf /"},"reason":"must be denied"}'
+```
+
+预期：
+
+- `status=denied`
+- 不执行工具
+- `audit_result.method=tool_policy`
+- `audit_result.decision=deny`
+
 ## E2E 测试
 
 Windows：
@@ -339,6 +397,11 @@ bash scripts/linux/test_agent_e2e.sh
 - `/api/agent/run` dangerous task
 - `/api/agent/run-eino` safe task
 - `/api/agent/run-eino` dangerous task
+- `/api/tools` tools discovery
+- `/api/tools/ssh_login_analyzer` tool detail
+- `/api/tools/call` port_checker direct call
+- `/api/tools/call` unknown_tool deny
+- `/api/tools/call` safe_shell dangerous command deny
 - safe task 的 `plan.scenario=ssh_anomaly_check`
 - safe task 的 plan steps 和 semantic tool trace
 - safe task 的 `diagnosis.risk_level`
@@ -487,6 +550,7 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 - `docs/stage4_rule_based_planner.md`：Rule-based Ops Planner 说明
 - `docs/stage5_real_kylin_diagnosis_tools.md`：真实 SSH 登录异常诊断工具链说明
 - `docs/stage6_audit_report_evidence_chain.md`：审计报告与证据链说明
+- `docs/stage8_mcp_like_tool_protocol.md`：MCP-like 工具协议与插件注册说明
 - `docs/todo.md`：后续计划
 - `frontend/README.md`：前端控制台启动与安全边界说明
 
@@ -494,6 +558,7 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 
 - 在 LoongArch 环境完成最终验证。
 - 增加 systemd service 文件。
+- 在银河麒麟 V11 VM 上验证 Stage 8 `/api/tools`、`/api/tools/call` 和原 SSH anomaly 链路。
 - 扩展 Rule-based Ops Planner，让更多安全运维任务可以选择真实工具链。
 - 扩展 SSH 日志格式、时间窗口和用户名/IP 维度诊断。
 - 将 `security_report` 导出为前端页面或报告文件。
@@ -501,4 +566,4 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 - 将更多 TraceShield evidence 映射为用户可解释报告。
 - 接入真实 Eino runtime。
 - 接入远程 LLM API。
-- 实现前端控制台和报告页面。
+- 增强前端报告导出和演示视图。

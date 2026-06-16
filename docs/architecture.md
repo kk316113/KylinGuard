@@ -7,7 +7,7 @@ User Task
 -> Go/Eino Agent Runtime
 -> Intent Guard
 -> Rule-based Ops Planner
--> Tool Registry
+-> MCP-like Tool Registry
 -> Kylin Ops Tools
 -> SSH Diagnosis Tools
 -> Semantic Tool Trace
@@ -17,12 +17,13 @@ User Task
 -> Frontend Security Console
 ```
 
-## 当前 Stage 7 状态
+## 当前 Stage 8 状态
 
 - `Go/Eino Agent Runtime`：稳定主链路为 Go runtime + Rule-based Ops Planner + SSH diagnosis tools + Report Builder；默认禁用的 Eino adapter 仍 fallback 到稳定 runtime。
 - `Intent Guard`：当前为关键词规则占位。
 - `Rule-based Ops Planner`：根据任务选择 `ssh_anomaly_check`、`service_check`、`port_check`、`system_overview` 等工具计划。
-- `Tool Registry`：当前已注册基础工具接口，并按 Plan 步骤执行。
+- `MCP-like Tool Registry`：当前已注册基础工具 metadata 和 executor，并提供 `/api/tools`、`/api/tools/{name}`、`/api/tools/call`。
+- `Tool Policy`：控制 direct tool call，禁止 unknown tool、`safe_shell` direct call、越界端口、非白名单日志和恶意 service name。
 - `Kylin Ops Tools`：当前提供保守实现，不允许任意 shell 执行或任意文件读取。
 - `SSH Diagnosis Tools`：`auth_log_collector` 和 `ssh_login_analyzer` 只读采集并分析 SSH 认证日志，输出 `diagnosis`。
 - `Tool Trace`：当前已定义统一 trace 字段，并携带工具语义、资源语义、权限范围和边界级别。
@@ -51,7 +52,8 @@ Go Agent
 ```text
 Rule-based Plan
 -> PlanStep
--> Tool Registry
+-> MCP-like Tool Registry
+-> Tool Policy for direct calls
 Kylin Ops Tool
 -> SSH Diagnosis Tool
 -> tools.SemanticForTool(...)
@@ -61,9 +63,20 @@ Kylin Ops Tool
 -> TraceShieldAdapter normalized ToolEvent args
 -> risk_graph semantic nodes
 -> report.BuildSecurityReport(...)
+-> security_report.audit_metadata tool_protocol metadata
 -> security_report.evidence_chain / risk_explanation / recommendations
 -> frontend security console
 ```
+
+## MCP-like Tool Protocol 边界
+
+Stage 8 的工具协议提供：
+
+- `GET /api/tools`：只列出工具 metadata，不执行工具。
+- `GET /api/tools/{name}`：只返回单个工具 schema 和权限边界。
+- `POST /api/tools/call`：受 Tool Policy 控制的单工具调用，允许后仍会生成 semantic trace 并进入 audit-core-py / TraceShield 审计。
+
+它不是绕过 Agent 的后门。`safe_shell` 默认禁止 direct call，`log_reader` 和 `ssh_login_analyzer` 仍只能访问白名单日志路径。前端即使展示这些接口，也不构成安全边界。
 
 ## Frontend 边界
 

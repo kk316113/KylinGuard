@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/tools"
 )
 
 type anyToolTrace struct {
@@ -207,7 +208,24 @@ func buildAuditMetadata(input BuildInput, report *SecurityReport) map[string]any
 		"route":                    route,
 		"generated_by":             "kylin-guard-report-builder",
 		"report_version":           ReportVersion,
+		"tool_protocol":            tools.ToolProtocol,
+		"tool_protocol_version":    tools.ToolProtocolVersion,
+		"registered_tool_count":    tools.RegisteredToolCount(),
+		"tools_used":               toolsUsed(input.ToolTrace),
 	}
+}
+
+func toolsUsed(traces []logtrace.ToolTrace) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, trace := range traces {
+		if trace.ToolName == "" || seen[trace.ToolName] {
+			continue
+		}
+		seen[trace.ToolName] = true
+		result = append(result, trace.ToolName)
+	}
+	return result
 }
 
 func riskLevelFromInput(input BuildInput) string {

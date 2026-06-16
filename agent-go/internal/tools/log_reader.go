@@ -136,8 +136,16 @@ func normalizeLogPath(path string) string {
 	return strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
 }
 
+func NormalizeLogPath(path string) string {
+	return normalizeLogPath(path)
+}
+
 func isAllowedLogReadPath(path string) bool {
 	return allowedLogPaths[normalizeLogPath(path)]
+}
+
+func IsAllowedLogReadPath(path string) bool {
+	return isAllowedLogReadPath(path)
 }
 
 func readLastLines(path string, limit int) ([]string, error) {

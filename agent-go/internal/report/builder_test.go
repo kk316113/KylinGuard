@@ -56,6 +56,16 @@ func TestBuildSecurityReportSSHReview(t *testing.T) {
 	if len(report.Recommendations) == 0 {
 		t.Fatal("expected recommendations")
 	}
+	if report.AuditMetadata["tool_protocol"] != "mcp-like" {
+		t.Fatalf("expected tool_protocol metadata, got %#v", report.AuditMetadata["tool_protocol"])
+	}
+	if report.AuditMetadata["tool_protocol_version"] != "stage8-v1" {
+		t.Fatalf("expected stage8-v1 protocol version, got %#v", report.AuditMetadata["tool_protocol_version"])
+	}
+	toolsUsed, ok := report.AuditMetadata["tools_used"].([]string)
+	if !ok || len(toolsUsed) != 5 {
+		t.Fatalf("expected tools_used metadata, got %#v", report.AuditMetadata["tools_used"])
+	}
 }
 
 func TestBuildSecurityReportDangerousIntent(t *testing.T) {

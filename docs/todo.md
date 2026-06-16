@@ -7,6 +7,8 @@
 - 为 `/api/agent/run-eino` 增加真实 Eino 编排路径并保持 intent_guard/audit-core-py 不可绕过。
 - 扩展 Rule-based Ops Planner 的场景覆盖，例如磁盘容量、CPU/内存、进程异常、网络连接、审计日志异常。
 - 为 planner 增加更严格的服务名、端口和日志意图解析测试集。
+- Stage 8 已实现 MCP-like Tool Registry、ToolMetadata、Tool Policy 和 `/api/tools*` 接口。
+- 后续可扩展动态插件加载、工具 marketplace 和更细的 schema 校验。
 - 扩展 SSH 登录异常诊断的日志格式样例、时间窗口分析、用户名维度和 IP 维度统计。
 - 将 `security_report` 支持导出为 Markdown/HTML/PDF 等报告文件。
 - 接入远程模型 API provider。
@@ -23,7 +25,7 @@
 
 ## Kylin
 
-- 在银河麒麟高级服务器版 V11 上重新验证 Stage 7 前端控制台与后端联调。
+- 在银河麒麟高级服务器版 V11 上验证 Stage 8 `/api/tools`、`/api/tools/call` 与原 SSH anomaly 链路。
 - 验证 LoongArch 构建与运行。
 - 补充 systemd service 文件。
 - 验证 TraceShield-Core 在 LoongArch Python 环境中的 `pydantic` 和 `PyYAML` 安装。
@@ -35,12 +37,14 @@
 ## Frontend
 
 - Stage 7 已实现单页 Agent 控制台。
+- Stage 8 不做前端大改，前端暂时冻结为展示层。
 - 后续可增加 risk graph 可视化。
 - 后续可增加 security_report Markdown/HTML/PDF 导出。
 - 后续可增加 Kylin VM 演示截图和部署说明。
 
 ## Tests
 
+- Stage 8 已补充 ToolMetadata、Tool Policy、tools API handler 和 planner metadata 测试。
 - 增加更多 Go 单元测试和 HTTP handler 测试，覆盖 planner edge cases。
 - 增加更多 SSH 认证日志样例测试，覆盖 Kylin/OpenSSH 常见格式。
 - 扩展 Python FastAPI endpoint 测试，覆盖 risky samples 和 fallback 行为。

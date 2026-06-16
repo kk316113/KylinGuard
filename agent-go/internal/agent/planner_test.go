@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"testing"
+
+	"kylin-guard-agent/agent-go/internal/tools"
 )
 
 func TestRuleBasedPlannerSSHAnomaly(t *testing.T) {
@@ -79,6 +81,7 @@ func TestRuleBasedPlannerDefaultSystemOverview(t *testing.T) {
 
 func assertPlanTools(t *testing.T, plan Plan, expected []string) {
 	t.Helper()
+	registry := tools.NewDefaultRegistry()
 	if len(plan.Steps) != len(expected) {
 		t.Fatalf("expected %d steps, got %d: %#v", len(expected), len(plan.Steps), plan.Steps)
 	}
@@ -88,6 +91,22 @@ func assertPlanTools(t *testing.T, plan Plan, expected []string) {
 		}
 		if plan.Steps[index].StepID == "" {
 			t.Fatalf("step %d missing step_id", index)
+		}
+		metadata, ok := registry.GetTool(plan.Steps[index].ToolName)
+		if !ok {
+			t.Fatalf("step %d tool %q missing from registry", index, plan.Steps[index].ToolName)
+		}
+		if !metadata.Enabled {
+			t.Fatalf("step %d tool %q is disabled", index, plan.Steps[index].ToolName)
+		}
+		if plan.Steps[index].ToolCategory == "" {
+			t.Fatalf("step %d missing tool_category", index)
+		}
+		if plan.Steps[index].RiskLevel == "" {
+			t.Fatalf("step %d missing risk_level", index)
+		}
+		if plan.Steps[index].PermissionScope == "" {
+			t.Fatalf("step %d missing permission_scope", index)
 		}
 	}
 }
