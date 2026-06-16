@@ -49,6 +49,9 @@ func TestRuntimeDeniesDangerousTaskBeforeToolsAndAudit(t *testing.T) {
 	if response.AuditResult.Method != "intent_guard" {
 		t.Fatalf("expected intent_guard method, got %q", response.AuditResult.Method)
 	}
+	if response.Plan != nil {
+		t.Fatalf("dangerous task should not enter planner, got plan: %#v", response.Plan)
+	}
 	if auditor.called {
 		t.Fatal("audit-core client should not be called for denied dangerous task")
 	}
@@ -70,6 +73,18 @@ func TestRuntimeAllowsSafeTaskToReachToolsAndAudit(t *testing.T) {
 	}
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected safe task to execute tools")
+	}
+	if response.Plan == nil {
+		t.Fatal("expected safe task to return plan")
+	}
+	if response.Plan.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("expected ssh_anomaly_check plan, got %q", response.Plan.Scenario)
+	}
+	if !hasTraceTool(response.ToolTrace, "service_status") {
+		t.Fatal("expected SSH task trace to include service_status")
+	}
+	if !hasTraceTool(response.ToolTrace, "port_checker") {
+		t.Fatal("expected SSH task trace to include port_checker")
 	}
 	for _, trace := range response.ToolTrace {
 		if trace.OperationType == "" {
@@ -94,4 +109,13 @@ func TestRuntimeAllowsSafeTaskToReachToolsAndAudit(t *testing.T) {
 	if response.AuditResult.Method != "traceshield" {
 		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)
 	}
+}
+
+func hasTraceTool(traces []logtrace.ToolTrace, toolName string) bool {
+	for _, trace := range traces {
+		if trace.ToolName == toolName {
+			return true
+		}
+	}
+	return false
 }

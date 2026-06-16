@@ -6,6 +6,7 @@
 User Task
 -> Go Agent Runtime
 -> Intent Guard
+-> Rule-based Ops Planner
 -> Tool Registry
 -> Kylin Ops Tools
 -> Semantic Tool Trace
@@ -15,7 +16,7 @@ User Task
 -> Audit Result / Risk Graph
 ```
 
-当前阶段：Stage 3：Eino Adapter 接入骨架。
+当前阶段：Stage 4：Rule-based Ops Planner for Kylin Security Tasks。
 
 ## 当前做了什么
 
@@ -27,6 +28,8 @@ User Task
 - 扩展了工具调用 trace，使其携带 `operation_type`、`resource_type`、`boundary_level`、`allowed_by_policy` 等语义字段。
 - audit-core-py 会把语义 trace 映射到 `risk_graph.nodes`，便于后续解释和可视化。
 - 加入了可选 Eino Adapter 骨架和实验接口 `/api/agent/run-eino`。
+- 加入了 Rule-based Ops Planner，可以根据 SSH 异常、服务状态、端口检查、系统概览等任务生成可解释 Plan。
+- 增强了 `service_status` 和 `log_reader`，支持受控 systemctl 探测和白名单系统日志读取。
 - 加固了 Linux/麒麟部署脚本和 Windows/Linux E2E 测试脚本。
 - 已在 Windows 本机和银河麒麟高级服务器版 V11 x86_64 VM 上完成预验证。
 
@@ -40,6 +43,7 @@ User Task
 - 没有引入 `torch`、`transformers`、`faiss`、`sentence-transformers` 等重依赖。
 - 没有实现前端页面。
 - LoongArch 环境尚未完成最终验证。
+- Rule-based Planner 仍是轻量规则匹配，不等同于真实 LLM/Eino 智能规划。
 
 ## 目录概览
 
@@ -84,6 +88,8 @@ Python audit-core：
 
 `/api/agent/run` 是稳定主链路。
 `/api/agent/run-eino` 是实验链路；当前默认 fallback 到稳定 runtime，并在 `summary` 中标记 `stable runtime fallback used`。
+
+`/api/agent/run` 和 `/api/agent/run-eino` 当前都会返回可选字段 `plan`。危险任务被 `intent_guard` 短路时不会返回 plan。
 
 ## 环境变量
 
@@ -233,8 +239,11 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run \
 
 - `decision=allow` 或 `review`
 - `audit_result.method=traceshield`
+- `plan.scenario=ssh_anomaly_check`
+- `plan.steps` 包含 `os_info`、`service_status`、`port_checker`、`log_reader`
 - `tool_trace` 非空
 - trace 中包含 `operation_type`、`resource_type`、`boundary_level`
+- trace 中包含 `system_service`、`network_port`，如果日志可读则包含 `system_log`
 
 危险任务：
 
@@ -249,6 +258,7 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run \
 - `decision=deny`
 - `audit_result.method=intent_guard`
 - `tool_trace=[]`
+- `plan` 为空或不存在
 
 Eino 实验接口：
 
@@ -262,7 +272,7 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run-eino \
 
 - 返回结构与 `/api/agent/run` 一致
 - `summary` 包含 `stable runtime fallback used`
-- 当前仍走稳定 runtime 和 TraceShield 审计
+- 当前仍走稳定 runtime、Rule-based Ops Planner 和 TraceShield 审计
 
 ## E2E 测试
 
@@ -288,6 +298,8 @@ bash scripts/linux/test_agent_e2e.sh
 - `/api/agent/run` dangerous task
 - `/api/agent/run-eino` safe task
 - `/api/agent/run-eino` dangerous task
+- safe task 的 `plan.scenario=ssh_anomaly_check`
+- safe task 的 plan steps 和 semantic tool trace
 
 ## 开发测试
 
@@ -362,6 +374,26 @@ TraceShield 负责工具调用链审计，例如：
 
 这些字段用于帮助 audit-core-py 生成更清晰的 `risk_graph.nodes`，也为后续报告和可视化做准备。
 
+## Rule-based Ops Planner
+
+当前支持四类场景：
+
+- `ssh_anomaly_check`：SSH 登录异常、登录失败、暴力破解、异常登录等任务。
+- `service_check`：检查 `sshd`、`nginx`、`docker` 等服务状态。
+- `port_check`：检查指定端口监听或开放状态。
+- `system_overview`：默认系统概览。
+
+例如“检查当前系统 SSH 登录异常”会生成：
+
+```text
+plan-001 os_info
+plan-002 service_status service_name=sshd
+plan-003 port_checker host=127.0.0.1 port=22
+plan-004 log_reader paths=/var/log/secure,/var/log/auth.log lines=100
+```
+
+`log_reader` 只允许读取白名单日志路径。如果路径不存在或权限不足，会生成 `status=error` 的 graceful trace，不会导致 Agent 崩溃。
+
 ## Eino Adapter 状态
 
 当前没有引入真实 Eino 依赖。
@@ -383,13 +415,14 @@ TraceShield 负责工具调用链审计，例如：
 - `docs/stage2_tool_semantics.md`：工具语义映射说明
 - `docs/stage2_5_kylin_precheck.md`：麒麟预检查说明
 - `docs/stage3_eino_adapter.md`：Eino Adapter 接入说明
+- `docs/stage4_rule_based_planner.md`：Rule-based Ops Planner 说明
 - `docs/todo.md`：后续计划
 
 ## 后续 TODO
 
 - 在 LoongArch 环境完成最终验证。
 - 增加 systemd service 文件。
-- 扩展 planner，让安全任务可以选择更多真实运维工具。
+- 扩展 Rule-based Ops Planner，让更多安全运维任务可以选择真实工具链。
 - 将更多 TraceShield evidence 映射为用户可解释报告。
 - 接入真实 Eino runtime。
 - 接入远程 LLM API。

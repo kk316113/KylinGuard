@@ -52,6 +52,9 @@ func TestAgentRunHandlerKeepsStableRuntimeBehavior(t *testing.T) {
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected nonempty tool_trace")
 	}
+	if response.Plan == nil || response.Plan.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("expected ssh_anomaly_check plan, got %#v", response.Plan)
+	}
 	if !auditor.called {
 		t.Fatal("expected audit client to be called")
 	}
@@ -77,6 +80,9 @@ func TestAgentRunEinoSafeTaskFallsBackToStableRuntime(t *testing.T) {
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected nonempty tool_trace")
 	}
+	if response.Plan == nil || response.Plan.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("expected run-eino fallback to use ssh_anomaly_check plan, got %#v", response.Plan)
+	}
 	if !auditor.called {
 		t.Fatal("expected stable runtime fallback to call audit client")
 	}
@@ -98,6 +104,9 @@ func TestAgentRunEinoDangerousTaskFallsBackAndDeniesBeforeAudit(t *testing.T) {
 	}
 	if len(response.ToolTrace) != 0 {
 		t.Fatalf("expected empty tool_trace, got %d entries", len(response.ToolTrace))
+	}
+	if response.Plan != nil {
+		t.Fatalf("dangerous run-eino task should not enter planner, got %#v", response.Plan)
 	}
 	if auditor.called {
 		t.Fatal("audit client should not be called for dangerous task")

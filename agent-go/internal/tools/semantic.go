@@ -48,7 +48,7 @@ func SemanticForTool(toolName string, input map[string]any) ToolSemantic {
 			PolicyReason:      "Local port inspection is allowed for diagnostics",
 		}
 	case "service_status":
-		service := stringValue(input, "service", "system")
+		service := serviceNameFromInput(input)
 		return ToolSemantic{
 			OperationType:     "inspect",
 			ResourceType:      "system_service",
@@ -70,23 +70,39 @@ func SemanticForTool(toolName string, input map[string]any) ToolSemantic {
 }
 
 func logReaderSemantic(input map[string]any) ToolSemantic {
-	path := stringValue(input, "path", "unknown-log-resource")
-	sensitive := isSensitiveLogPath(path)
+	paths := logPathsFromInput(input)
+	path := "unknown-log-resource"
+	if len(paths) > 0 {
+		path = strings.Join(paths, ",")
+	}
+	allowed := len(paths) > 0
+	requiresPrivilege := false
+	for _, candidate := range paths {
+		normalized := normalizeLogPath(candidate)
+		if !isAllowedLogReadPath(normalized) {
+			allowed = false
+		}
+		if isPrivilegedLogPath(normalized) {
+			requiresPrivilege = true
+		}
+	}
 	semantic := ToolSemantic{
 		OperationType:     "read",
 		ResourceType:      "system_log",
 		ResourcePath:      path,
 		PermissionScope:   "system_log_read",
-		BoundaryLevel:     "low",
+		BoundaryLevel:     "sensitive_system_resource",
 		ToolSemantic:      "Read recent system logs for diagnosis",
-		RequiresPrivilege: false,
-		AllowedByPolicy:   true,
-		PolicyReason:      "Log read is allowed for diagnostics",
+		RequiresPrivilege: requiresPrivilege,
+		AllowedByPolicy:   allowed,
+		PolicyReason:      "Whitelisted system log read is allowed for diagnostics and should be reviewed",
 	}
-	if sensitive {
-		semantic.BoundaryLevel = "sensitive_system_resource"
+	if !allowed {
+		semantic.PermissionScope = "blocked_file_read"
+		semantic.BoundaryLevel = "dangerous"
 		semantic.RequiresPrivilege = true
-		semantic.PolicyReason = "Sensitive system log read is allowed only for diagnosis and should be reviewed"
+		semantic.AllowedByPolicy = false
+		semantic.PolicyReason = "Requested log path is outside the log_reader whitelist"
 	}
 	return semantic
 }
@@ -147,17 +163,15 @@ func unknownSemantic(toolName string) ToolSemantic {
 	}
 }
 
-func isSensitiveLogPath(path string) bool {
+func isPrivilegedLogPath(path string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
 	sensitive := []string{
 		"/var/log/secure",
 		"/var/log/auth.log",
 		"/var/log/audit/audit.log",
-		"/var/log/messages",
-		"/var/log/syslog",
 	}
 	for _, candidate := range sensitive {
-		if normalized == candidate || strings.HasPrefix(normalized, candidate+".") {
+		if normalized == candidate {
 			return true
 		}
 	}

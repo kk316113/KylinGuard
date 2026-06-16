@@ -9,13 +9,15 @@ Stage 3 的目标是在不破坏稳定链路的前提下，为后续真实 Eino 
 ```text
 /api/agent/run
 -> intent_guard
--> static planner/tools
+-> planner/tools
 -> semantic trace
 -> audit-core-py
 -> TraceShield
 ```
 
 直接重写会增加回归风险，尤其是 intent_guard 短路、TraceShield 审计、Linux/LoongArch 构建和部署脚本稳定性。
+
+注：Stage 3 完成时主链路仍偏静态工具链；Stage 4 后稳定 runtime 已切换为 Rule-based Ops Planner，`/api/agent/run-eino` fallback 也复用该 planner。
 
 ## 当前接入方式
 

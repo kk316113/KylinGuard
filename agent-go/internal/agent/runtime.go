@@ -27,6 +27,7 @@ type RunResponse struct {
 	Task        string               `json:"task"`
 	Decision    string               `json:"decision"`
 	Summary     string               `json:"summary"`
+	Plan        *Plan                `json:"plan,omitempty"`
 	ToolTrace   []logtrace.ToolTrace `json:"tool_trace"`
 	AuditResult auditclient.Result   `json:"audit_result"`
 }
@@ -44,7 +45,7 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 
 	return &Runtime{
 		registry: registry,
-		planner:  NewStaticPlanner(),
+		planner:  NewRuleBasedPlanner(),
 		guard:    security.NewIntentGuard(),
 		auditor:  auditor,
 		traces:   traceStore,
@@ -84,14 +85,14 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		}, nil
 	}
 
-	steps, err := r.planner.Plan(ctx, task)
+	plan, err := r.planner.Plan(ctx, task)
 	if err != nil {
 		return RunResponse{}, err
 	}
 
-	traces := make([]logtrace.ToolTrace, 0, len(steps))
-	for _, step := range steps {
-		result, _ := r.registry.Invoke(ctx, step.ToolName, step.Input)
+	traces := make([]logtrace.ToolTrace, 0, len(plan.Steps))
+	for _, step := range plan.Steps {
+		result, _ := r.registry.InvokeWithStepID(ctx, step.StepID, step.ToolName, step.Input)
 		traces = append(traces, result.Trace)
 		r.traces.Add(result.Trace)
 	}
@@ -108,6 +109,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		Task:        task,
 		Decision:    audit.Decision,
 		Summary:     "agent run completed",
+		Plan:        &plan,
 		ToolTrace:   traces,
 		AuditResult: audit,
 	}, nil

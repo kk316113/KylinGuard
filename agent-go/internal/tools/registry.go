@@ -40,9 +40,20 @@ func (r *Registry) Register(name string, handler Handler) {
 }
 
 func (r *Registry) Invoke(ctx context.Context, name string, input map[string]any) (Result, error) {
+	return r.InvokeWithStepID(ctx, "", name, input)
+}
+
+func (r *Registry) InvokeWithStepID(ctx context.Context, stepID string, name string, input map[string]any) (Result, error) {
+	if input == nil {
+		input = map[string]any{}
+	}
+	if stepID == "" {
+		stepID = logtrace.NextStepID()
+	}
+
 	startedAt := time.Now().UTC()
 	trace := logtrace.ToolTrace{
-		StepID:    logtrace.NextStepID(),
+		StepID:    stepID,
 		ToolName:  name,
 		Input:     input,
 		Status:    "ok",

@@ -6,20 +6,22 @@
 User Task
 -> Go/Eino Agent Runtime
 -> Intent Guard
+-> Rule-based Ops Planner
 -> Tool Registry
 -> Kylin Ops Tools
--> Tool Trace
+-> Semantic Tool Trace
 -> Python Audit Core
 -> Evidence Chain
 -> Final Report
 ```
 
-## 当前 Stage 3 状态
+## 当前 Stage 4 状态
 
-- `Go/Eino Agent Runtime`：稳定主链路仍为 Go runtime + static planner；新增默认禁用的 Eino adapter 骨架。
+- `Go/Eino Agent Runtime`：稳定主链路为 Go runtime + Rule-based Ops Planner；默认禁用的 Eino adapter 仍 fallback 到稳定 runtime。
 - `Intent Guard`：当前为关键词规则占位。
-- `Tool Registry`：当前已注册基础工具接口。
-- `Kylin Ops Tools`：当前仅提供保守实现和 stub。
+- `Rule-based Ops Planner`：根据任务选择 `ssh_anomaly_check`、`service_check`、`port_check`、`system_overview` 等工具计划。
+- `Tool Registry`：当前已注册基础工具接口，并按 Plan 步骤执行。
+- `Kylin Ops Tools`：当前提供保守实现，不允许任意 shell 执行或任意文件读取。
 - `Tool Trace`：当前已定义统一 trace 字段，并携带工具语义、资源语义、权限范围和边界级别。
 - `Python Audit Core`：当前为 FastAPI 服务，通过 TraceShield adapter 调用清洗后的 TraceShield 方法核心。
 - `Evidence Chain`：当前由 adapter 将 TraceShield evidence steps 转换为统一 HTTP 输出，并将语义 trace 转换为 `risk_graph.nodes`。
@@ -43,6 +45,9 @@ Go Agent
 ## 工具语义流
 
 ```text
+Rule-based Plan
+-> PlanStep
+-> Tool Registry
 Kylin Ops Tool
 -> tools.SemanticForTool(...)
 -> logtrace.ToolTrace semantic fields
@@ -55,3 +60,5 @@ Kylin Ops Tool
 ## Eino 接入边界
 
 当前不硬编码 Eino import 路径，也不引入 Eino 外部依赖。`/api/agent/run` 是稳定主链路，`/api/agent/run-eino` 是实验链路。Eino adapter 未启用或真实 runtime 未实现时，handler fallback 到 `StableRuntimeAdapter`，因此仍会执行 `intent_guard`、Tool Registry、语义 trace 和 audit-core-py。
+
+Stage 4 之后，`/api/agent/run-eino` fallback 也会复用 Rule-based Ops Planner，不会退回旧静态工具链。
