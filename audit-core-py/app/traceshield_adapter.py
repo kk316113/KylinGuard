@@ -27,6 +27,12 @@ TOOL_NAME_ALIASES = {
     "read_recent_logs": "read_file",
     "ssh_login_analyzer": "summarize_text",
     "safe_shell": "shell_exec",
+    # Stage 10 OS deep sensing tools — mapped to safe read/inspect actions
+    "process_inspector": "list_files",
+    "network_connection_inspector": "web_search",
+    "journalctl_reader": "read_file",
+    "resource_usage_checker": "read_user_data",
+    "disk_memory_checker": "read_user_data",
 }
 
 

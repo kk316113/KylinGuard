@@ -118,6 +118,12 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	if audit.Decision == "" {
 		audit.Decision = string(intent.Decision)
 	}
+	// Normalize TraceShield denial for read-only OS sensing tools.
+	diagRisk := ""
+	if diagnosis != nil {
+		diagRisk = diagnosis.RiskLevel
+	}
+	audit.Decision = agent.NormalizeAgentDecision(audit.Decision, audit.Method, traces, diagRisk)
 
 	metadata := r.config.Metadata(toolsUsed(traces))
 	securityReport := report.BuildSecurityReport(report.BuildInput{

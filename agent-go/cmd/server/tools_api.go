@@ -119,6 +119,10 @@ func toolCallHandler(registry *tools.Registry, auditor auditclient.Client, trace
 		result, toolErr := registry.CallTool(r.Context(), req.ToolName, req.Input)
 		traceStore.Add(result.Trace)
 		audit, auditErr := auditor.AuditTrace(r.Context(), syntheticToolTask(req.ToolName), []logtrace.ToolTrace{result.Trace})
+		// Normalize TraceShield denial for read-only OS sensing tools.
+		if auditErr == nil {
+			audit.Decision = normalizeToolCallDecision(audit.Decision, audit.Method, result.Trace)
+		}
 		status := "ok"
 		message := "tool call audited"
 		if toolErr != nil {
@@ -204,6 +208,26 @@ func mapOutput(output any) map[string]any {
 		return map[string]any{"value": output}
 	}
 	return mapped
+}
+
+func normalizeToolCallDecision(auditDecision string, auditMethod string, trace logtrace.ToolTrace) string {
+	if auditMethod == "intent_guard" || auditMethod == "tool_policy" {
+		return "deny"
+	}
+	if auditMethod != "traceshield" {
+		return auditDecision
+	}
+	if auditDecision != "deny" {
+		return auditDecision
+	}
+	// TraceShield returned "deny" — check if this is a read-only safe tool.
+	if trace.AllowedByPolicy && trace.OperationType != "execute" && trace.BoundaryLevel != "dangerous" && trace.BoundaryLevel != "privileged" {
+		if trace.BoundaryLevel == "sensitive_system_resource" || trace.RequiresPrivilege {
+			return "review"
+		}
+		return "allow"
+	}
+	return auditDecision
 }
 
 func auditToolCall(ctx context.Context, auditor auditclient.Client, toolName string, trace logtrace.ToolTrace) (auditclient.Result, error) {
