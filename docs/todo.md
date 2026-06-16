@@ -23,7 +23,7 @@
 
 ## Kylin
 
-- 在银河麒麟高级服务器版 V11 上重新验证 Stage 5 SSH diagnosis 工具链。
+- 在银河麒麟高级服务器版 V11 上重新验证 Stage 7 前端控制台与后端联调。
 - 验证 LoongArch 构建与运行。
 - 补充 systemd service 文件。
 - 验证 TraceShield-Core 在 LoongArch Python 环境中的 `pydantic` 和 `PyYAML` 安装。
@@ -34,9 +34,10 @@
 
 ## Frontend
 
-- 设计 Agent 控制台。
-- 展示任务、plan、diagnosis、trace、审计结果和最终报告。
-- 展示 `security_report.evidence_chain`、`risk_explanation` 和 `sensitive_resources`。
+- Stage 7 已实现单页 Agent 控制台。
+- 后续可增加 risk graph 可视化。
+- 后续可增加 security_report Markdown/HTML/PDF 导出。
+- 后续可增加 Kylin VM 演示截图和部署说明。
 
 ## Tests
 

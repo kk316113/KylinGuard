@@ -14,10 +14,10 @@ User Task
 -> Python Audit Core
 -> Evidence Chain
 -> Report Builder
--> Final Report
+-> Frontend Security Console
 ```
 
-## 当前 Stage 5 状态
+## 当前 Stage 7 状态
 
 - `Go/Eino Agent Runtime`：稳定主链路为 Go runtime + Rule-based Ops Planner + SSH diagnosis tools + Report Builder；默认禁用的 Eino adapter 仍 fallback 到稳定 runtime。
 - `Intent Guard`：当前为关键词规则占位。
@@ -29,7 +29,7 @@ User Task
 - `Python Audit Core`：当前为 FastAPI 服务，通过 TraceShield adapter 调用清洗后的 TraceShield 方法核心。
 - `Evidence Chain`：当前由 adapter 将 TraceShield evidence steps 转换为统一 HTTP 输出，并将语义 trace 转换为 `risk_graph.nodes`。
 - `Report Builder`：当前在 Go Agent 侧生成 `security_report`，用于解释 plan、tool_trace、diagnosis 和 audit_result。
-- `Final Report`：当前为 JSON 报告结构，前端/文件导出未实现。
+- `Frontend Security Console`：当前为 Vue 3 + Vite 单页控制台，展示任务输入、执行计划、审计摘要、证据链、敏感资源、风险解释、建议和 Raw JSON。
 
 ## TraceShield 接入边界
 
@@ -62,7 +62,18 @@ Kylin Ops Tool
 -> risk_graph semantic nodes
 -> report.BuildSecurityReport(...)
 -> security_report.evidence_chain / risk_explanation / recommendations
+-> frontend security console
 ```
+
+## Frontend 边界
+
+前端只调用 Go Agent：
+
+- `GET /health`
+- `POST /api/agent/run`
+- `POST /api/agent/run-eino`
+
+前端不直接调用 audit-core-py，不执行系统命令，不决定 `allow/review/deny`，也不提供删除日志、封禁 IP、关闭防火墙或重启服务等自动处置按钮。
 
 ## Eino 接入边界
 

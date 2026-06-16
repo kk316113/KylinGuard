@@ -18,7 +18,7 @@ User Task
 -> Audit Result / Risk Graph
 ```
 
-当前阶段：Stage 6：Audit Report and Evidence Chain Enhancement。
+当前阶段：Stage 7：KylinGuard Frontend Security Console Implementation。
 
 ## 当前做了什么
 
@@ -35,6 +35,7 @@ User Task
 - 新增 `ssh_login_analyzer`，可以采集认证日志或 journalctl，分析 SSH 登录失败、无效用户、成功登录和来源 IP。
 - `/api/agent/run` 会在 SSH 异常场景返回 `diagnosis`，但最终安全判定仍由 audit-core-py / TraceShield 给出。
 - 新增确定性 `security_report`，将 plan、tool_trace、diagnosis、audit_result 组织为 evidence chain、risk explanation、sensitive resources 和 recommendations。
+- 新增 Vue 3 前端控制台，用于触发 Go Agent 任务并展示 plan、diagnosis、tool_trace、security_report 和 Raw JSON。
 - 加固了 Linux/麒麟部署脚本和 Windows/Linux E2E 测试脚本。
 - 已在 Windows 本机和银河麒麟高级服务器版 V11 x86_64 VM 上完成预验证。
 
@@ -51,6 +52,7 @@ User Task
 - Rule-based Planner 仍是轻量规则匹配，不等同于真实 LLM/Eino 智能规划。
 - `ssh_login_analyzer` 不会自动封禁 IP，不会修改防火墙，也不会删除或移动日志。
 - `security_report` 不负责最终裁决，不会覆盖 `decision` 或 `audit_result`。
+- 前端不是安全边界，不直接调用 audit-core-py，不执行命令，不提供自动处置按钮。
 
 ## 目录概览
 
@@ -76,7 +78,7 @@ User Task
   阶段说明、架构说明、工具语义设计、麒麟适配说明、验证记录和 TODO。
 
 - `frontend/`
-  前端占位目录，当前未实现。
+  Vue 3 + Vite + TypeScript 前端控制台，展示安全运维任务、执行计划、审计摘要、证据链、敏感资源、风险解释、建议和 Raw JSON。
 
 ## 关键接口
 
@@ -151,6 +153,26 @@ go run ./cmd/server
 netstat -ano | findstr :8080
 taskkill /PID <PID> /F
 ```
+
+启动前端控制台：
+
+```powershell
+cd D:\code\2026\KylinGuard-Agent\frontend
+npm install
+npm run dev
+```
+
+默认访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+前端通过 Vite proxy 调用 Go Agent：
+
+- `/health`
+- `/api/agent/run`
+- `/api/agent/run-eino`
 
 ## Linux/麒麟部署启动
 
@@ -466,6 +488,7 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 - `docs/stage5_real_kylin_diagnosis_tools.md`：真实 SSH 登录异常诊断工具链说明
 - `docs/stage6_audit_report_evidence_chain.md`：审计报告与证据链说明
 - `docs/todo.md`：后续计划
+- `frontend/README.md`：前端控制台启动与安全边界说明
 
 ## 后续 TODO
 
@@ -474,6 +497,7 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 - 扩展 Rule-based Ops Planner，让更多安全运维任务可以选择真实工具链。
 - 扩展 SSH 日志格式、时间窗口和用户名/IP 维度诊断。
 - 将 `security_report` 导出为前端页面或报告文件。
+- 扩展前端展示，例如 risk graph、报告导出和 Kylin VM 演示截图。
 - 将更多 TraceShield evidence 映射为用户可解释报告。
 - 接入真实 Eino runtime。
 - 接入远程 LLM API。
