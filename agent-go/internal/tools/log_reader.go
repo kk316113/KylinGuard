@@ -7,6 +7,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"kylin-guard-agent/agent-go/internal/execproxy"
+	"kylin-guard-agent/agent-go/internal/logtrace"
 )
 
 const (
@@ -23,15 +26,16 @@ var allowedLogPaths = map[string]bool{
 }
 
 type LogReaderResult struct {
-	Path           string    `json:"path"`
-	AttemptedPaths []string  `json:"attempted_paths"`
-	Purpose        string    `json:"purpose"`
-	LinesRequested int       `json:"lines_requested"`
-	LinesRead      int       `json:"lines_read"`
-	Lines          []string  `json:"lines"`
-	Message        string    `json:"message"`
-	Errors         []string  `json:"errors"`
-	Timestamp      time.Time `json:"timestamp"`
+	Path             string                     `json:"path"`
+	AttemptedPaths   []string                   `json:"attempted_paths"`
+	Purpose          string                     `json:"purpose"`
+	LinesRequested   int                        `json:"lines_requested"`
+	LinesRead        int                        `json:"lines_read"`
+	Lines            []string                   `json:"lines"`
+	Message          string                     `json:"message"`
+	Errors           []string                   `json:"errors"`
+	Timestamp        time.Time                  `json:"timestamp"`
+	ExecutionContext *logtrace.ExecutionContext `json:"-"`
 }
 
 func LogReader(ctx context.Context, input map[string]any) (any, string, string, error) {
@@ -42,13 +46,15 @@ func LogReader(ctx context.Context, input map[string]any) (any, string, string, 
 	purpose := stringValue(input, "purpose", "diagnostic_log_read")
 	now := time.Now().UTC()
 
+	nec := execproxy.NativeExecutionContext(execproxy.ProfileSensitiveRead, "native_go:os.Open", "log file read via Go bufio.Scanner")
 	result := LogReaderResult{
-		AttemptedPaths: paths,
-		Purpose:        purpose,
-		LinesRequested: lines,
-		Lines:          []string{},
-		Errors:         []string{},
-		Timestamp:      now,
+		AttemptedPaths:   paths,
+		Purpose:          purpose,
+		LinesRequested:   lines,
+		Lines:            []string{},
+		Errors:           []string{},
+		Timestamp:        now,
+		ExecutionContext: ecPtr(nec),
 	}
 
 	if len(paths) == 0 {

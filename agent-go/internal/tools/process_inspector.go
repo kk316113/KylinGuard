@@ -3,20 +3,23 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
 	"time"
+
+	"kylin-guard-agent/agent-go/internal/execproxy"
+	"kylin-guard-agent/agent-go/internal/logtrace"
 )
 
 // ProcessInspectorResult holds the output of process inspection.
 type ProcessInspectorResult struct {
-	Processes []ProcessInfo `json:"processes"`
-	Count     int           `json:"count"`
-	Source    string        `json:"source"`
-	Message   string        `json:"message"`
-	Timestamp time.Time     `json:"timestamp"`
+	Processes        []ProcessInfo              `json:"processes"`
+	Count            int                        `json:"count"`
+	Source           string                     `json:"source"`
+	Message          string                     `json:"message"`
+	Timestamp        time.Time                  `json:"timestamp"`
+	ExecutionContext *logtrace.ExecutionContext `json:"-"`
 }
 
 // ProcessInfo describes a single process.
@@ -37,7 +40,6 @@ func SafeProcessName(name string) bool {
 }
 
 // ProcessInspector inspects running processes, optionally filtered by name.
-// It is a read-only diagnostic tool and does not modify or kill processes.
 func ProcessInspector(ctx context.Context, input map[string]any) (any, string, string, error) {
 	name := strings.TrimSpace(stringValue(input, "name", ""))
 	limit := intValue(input, "limit", 20)
@@ -47,17 +49,16 @@ func ProcessInspector(ctx context.Context, input map[string]any) (any, string, s
 	if limit > 100 {
 		limit = 100
 	}
-
 	now := time.Now().UTC()
 
-	// Validate process name if provided.
 	if name != "" && !safeProcessNamePattern.MatchString(name) {
 		result := ProcessInspectorResult{
-			Processes: []ProcessInfo{},
-			Count:     0,
-			Source:    "",
-			Message:   fmt.Sprintf("invalid process name %q: only letters, digits, underscore, hyphen, and dot are allowed", name),
-			Timestamp: now,
+			Processes:        []ProcessInfo{},
+			Count:            0,
+			Source:           "",
+			Message:          fmt.Sprintf("invalid process name %q: only letters, digits, underscore, hyphen, and dot are allowed", name),
+			Timestamp:        now,
+			ExecutionContext: ecPtr(execproxy.DeniedContext("process_inspector", "invalid process name")),
 		}
 		return result, "process_inspector: invalid process name rejected", "low", fmt.Errorf("invalid process name %q", name)
 	}
@@ -68,46 +69,43 @@ func ProcessInspector(ctx context.Context, input map[string]any) (any, string, s
 	case "windows":
 		return processInspectorWindows(ctx, name, limit, now)
 	default:
+		ec := execproxy.NativeExecutionContext(execproxy.ProfileLowRead, "unsupported_platform", "process_inspector unsupported on "+runtime.GOOS)
 		result := ProcessInspectorResult{
-			Processes: []ProcessInfo{},
-			Count:     0,
-			Source:    "",
-			Message:   fmt.Sprintf("process_inspector is not supported on %s", runtime.GOOS),
-			Timestamp: now,
+			Processes:        []ProcessInfo{},
+			Count:            0,
+			Source:           "",
+			Message:          fmt.Sprintf("process_inspector is not supported on %s", runtime.GOOS),
+			Timestamp:        now,
+			ExecutionContext: ecPtr(ec),
 		}
 		return result, "process_inspector unsupported on this OS", "low", nil
 	}
 }
 
 func processInspectorLinux(ctx context.Context, name string, limit int, now time.Time) (any, string, string, error) {
-	_, err := exec.LookPath("ps")
-	if err != nil {
-		result := ProcessInspectorResult{
-			Processes: []ProcessInfo{},
-			Count:     0,
-			Source:    "",
-			Message:   "ps command not found",
-			Timestamp: now,
+	exec := execproxy.NewExecutor()
+	result, execErr := exec.Execute(ctx, execproxy.CommandSpec{
+		ToolName: "process_inspector",
+		Profile:  execproxy.ProfileLowRead,
+		Command:  "ps",
+		Args:     []string{"aux"},
+		Reason:   "inspect running processes",
+	})
+
+	if execErr != nil || result.Status == "error" {
+		ec := result.Context
+		r := ProcessInspectorResult{
+			Processes:        []ProcessInfo{},
+			Count:            0,
+			Source:           "ps",
+			Message:          fmt.Sprintf("ps aux failed: %v", execErr),
+			Timestamp:        now,
+			ExecutionContext: ecPtr(ec),
 		}
-		return result, "process_inspector: ps not found", "low", err
+		return r, "process_inspector: ps aux failed", "review", execErr
 	}
 
-	args := []string{"aux"}
-	output, cmdErr := runCommand(ctx, defaultCommandTimeout, "ps", args...)
-
-	if cmdErr != nil {
-		result := ProcessInspectorResult{
-			Processes: []ProcessInfo{},
-			Count:     0,
-			Source:    "ps",
-			Message:   fmt.Sprintf("ps aux failed: %v", cmdErr),
-			Timestamp: now,
-		}
-		return result, "process_inspector: ps aux failed", "review", cmdErr
-	}
-
-	lines := strings.Split(output.Stdout, "\n")
-	// Skip the header line if present.
+	lines := strings.Split(result.Stdout, "\n")
 	startIdx := 0
 	if len(lines) > 0 && strings.HasPrefix(strings.ToLower(lines[0]), "user") {
 		startIdx = 1
@@ -123,13 +121,8 @@ func processInspectorLinux(ctx context.Context, name string, limit int, now time
 		if len(fields) < 11 {
 			continue
 		}
-		// ps aux format: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
 		procName := fields[10]
-		if len(fields) > 11 {
-			procName = fields[10]
-		}
 
-		// Filter by name if specified.
 		if name != "" {
 			baseName := procName
 			if idx := strings.LastIndex(baseName, "/"); idx >= 0 {
@@ -144,30 +137,17 @@ func processInspectorLinux(ctx context.Context, name string, limit int, now time
 		if len(fields) > 1 {
 			fmt.Sscanf(fields[1], "%d", &pid)
 		}
-
-		user := ""
-		if len(fields) > 0 {
-			user = fields[0]
-		}
-
+		user := fields[0]
 		state := ""
 		if len(fields) > 7 {
 			state = fields[7]
 		}
-
 		cmd := procName
 		if len(fields) > 10 {
 			cmd = strings.Join(fields[10:], " ")
 		}
 
-		processes = append(processes, ProcessInfo{
-			PID:   pid,
-			Name:  procName,
-			User:  user,
-			State: state,
-			Cmd:   cmd,
-		})
-
+		processes = append(processes, ProcessInfo{PID: pid, Name: procName, User: user, State: state, Cmd: cmd})
 		if len(processes) >= limit {
 			break
 		}
@@ -178,54 +158,51 @@ func processInspectorLinux(ctx context.Context, name string, limit int, now time
 		summary = fmt.Sprintf("process_inspector found %d processes matching %q", len(processes), name)
 	}
 
-	result := ProcessInspectorResult{
-		Processes: processes,
-		Count:     len(processes),
-		Source:    "ps",
-		Message:   "process inspection completed",
-		Timestamp: now,
+	r := ProcessInspectorResult{
+		Processes:        processes,
+		Count:            len(processes),
+		Source:           "ps",
+		Message:          "process inspection completed",
+		Timestamp:        now,
+		ExecutionContext: ecPtr(result.Context),
 	}
-	return result, summary, "low", nil
+	return r, summary, "low", nil
 }
 
 func processInspectorWindows(ctx context.Context, name string, limit int, now time.Time) (any, string, string, error) {
-	_, err := exec.LookPath("tasklist")
-	if err != nil {
-		result := ProcessInspectorResult{
-			Processes: []ProcessInfo{},
-			Count:     0,
-			Source:    "",
-			Message:   "tasklist command not found",
-			Timestamp: now,
-		}
-		return result, "process_inspector: tasklist not found", "low", err
-	}
-
+	exec := execproxy.NewExecutor()
 	args := []string{"/FO", "CSV", "/NH"}
 	if name != "" {
 		args = append(args, "/FI", fmt.Sprintf("IMAGENAME eq %s*", name))
 	}
+	result, execErr := exec.Execute(ctx, execproxy.CommandSpec{
+		ToolName: "process_inspector",
+		Profile:  execproxy.ProfileLowRead,
+		Command:  "tasklist",
+		Args:     args,
+		Reason:   "inspect running processes on Windows",
+	})
 
-	output, cmdErr := runCommand(ctx, defaultCommandTimeout, "tasklist", args...)
-	if cmdErr != nil {
-		result := ProcessInspectorResult{
-			Processes: []ProcessInfo{},
-			Count:     0,
-			Source:    "tasklist",
-			Message:   fmt.Sprintf("tasklist failed: %v", cmdErr),
-			Timestamp: now,
+	if execErr != nil || result.Status == "error" {
+		ec := result.Context
+		r := ProcessInspectorResult{
+			Processes:        []ProcessInfo{},
+			Count:            0,
+			Source:           "tasklist",
+			Message:          fmt.Sprintf("tasklist failed: %v", execErr),
+			Timestamp:        now,
+			ExecutionContext: ecPtr(ec),
 		}
-		return result, "process_inspector: tasklist failed", "review", cmdErr
+		return r, "process_inspector: tasklist failed", "review", execErr
 	}
 
 	processes := make([]ProcessInfo, 0, limit)
-	lines := strings.Split(output.Stdout, "\n")
+	lines := strings.Split(result.Stdout, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		// tasklist CSV format: "ImageName","PID","SessionName","Session#","Mem Usage"
 		parts := strings.Split(line, ",")
 		if len(parts) < 2 {
 			continue
@@ -234,19 +211,11 @@ func processInspectorWindows(ctx context.Context, name string, limit int, now ti
 		pidStr := strings.Trim(parts[1], `"`)
 		pid := 0
 		fmt.Sscanf(pidStr, "%d", &pid)
-
 		memUsage := ""
 		if len(parts) >= 5 {
 			memUsage = strings.Trim(parts[4], `"`)
 		}
-
-		processes = append(processes, ProcessInfo{
-			PID:   pid,
-			Name:  imageName,
-			State: memUsage,
-			Cmd:   imageName,
-		})
-
+		processes = append(processes, ProcessInfo{PID: pid, Name: imageName, State: memUsage, Cmd: imageName})
 		if len(processes) >= limit {
 			break
 		}
@@ -257,12 +226,31 @@ func processInspectorWindows(ctx context.Context, name string, limit int, now ti
 		summary = fmt.Sprintf("process_inspector found %d processes matching %q", len(processes), name)
 	}
 
-	result := ProcessInspectorResult{
-		Processes: processes,
-		Count:     len(processes),
-		Source:    "tasklist",
-		Message:   "process inspection completed",
-		Timestamp: now,
+	r := ProcessInspectorResult{
+		Processes:        processes,
+		Count:            len(processes),
+		Source:           "tasklist",
+		Message:          "process inspection completed",
+		Timestamp:        now,
+		ExecutionContext: ecPtr(result.Context),
 	}
-	return result, summary, "low", nil
+	return r, summary, "low", nil
+}
+
+// ecPtr converts an execproxy.ExecutionContext to *logtrace.ExecutionContext.
+func ecPtr(ec execproxy.ExecutionContext) *logtrace.ExecutionContext {
+	return &logtrace.ExecutionContext{
+		Executor:            ec.Executor,
+		Profile:             ec.Profile,
+		CommandName:         ec.CommandName,
+		ArgsCount:           ec.ArgsCount,
+		TimeoutMs:           ec.TimeoutMs,
+		MaxOutputBytes:      ec.MaxOutputBytes,
+		ShellUsed:           ec.ShellUsed,
+		SudoUsed:            ec.SudoUsed,
+		AllowedByExecPolicy: ec.AllowedByExecPolicy,
+		PolicyReason:        ec.PolicyReason,
+		EffectiveUser:       ec.EffectiveUser,
+		Platform:            ec.Platform,
+	}
 }

@@ -8,44 +8,46 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"kylin-guard-agent/agent-go/internal/execproxy"
+	"kylin-guard-agent/agent-go/internal/logtrace"
 )
 
-// ResourceUsageCheckerResult holds the output of resource usage inspection.
 type ResourceUsageCheckerResult struct {
-	LoadAvg   *LoadAvgInfo `json:"loadavg"`
-	Memory    *MemInfo     `json:"memory"`
-	RiskLevel string       `json:"risk_level"`
-	Source    string       `json:"source"`
-	Message   string       `json:"message"`
-	Timestamp time.Time    `json:"timestamp"`
+	LoadAvg          *LoadAvgInfo               `json:"loadavg"`
+	Memory           *MemInfo                   `json:"memory"`
+	RiskLevel        string                     `json:"risk_level"`
+	Source           string                     `json:"source"`
+	Message          string                     `json:"message"`
+	Timestamp        time.Time                  `json:"timestamp"`
+	ExecutionContext *logtrace.ExecutionContext `json:"-"`
 }
 
-// LoadAvgInfo holds system load averages.
 type LoadAvgInfo struct {
 	OneMin     float64 `json:"one_min"`
 	FiveMin    float64 `json:"five_min"`
 	FifteenMin float64 `json:"fifteen_min"`
 }
 
-// MemInfo holds memory usage information.
 type MemInfo struct {
 	MemTotalKB        int64   `json:"mem_total_kb"`
 	MemAvailableKB    int64   `json:"mem_available_kb"`
 	MemAvailableRatio float64 `json:"mem_available_ratio"`
 }
 
-// ResourceUsageChecker reads system load and memory usage from procfs.
-// It is a read-only diagnostic tool.
 func ResourceUsageChecker(ctx context.Context, input map[string]any) (any, string, string, error) {
-	_ = input // No input parameters needed.
+	_ = input
 	now := time.Now().UTC()
+
+	nec := execproxy.NativeExecutionContext(execproxy.ProfileLowRead, "procfs_read", "native Go procfs reader: /proc/loadavg, /proc/meminfo")
 
 	if runtime.GOOS != "linux" {
 		result := ResourceUsageCheckerResult{
-			RiskLevel: "unknown",
-			Source:    "",
-			Message:   "resource_usage_checker is only supported on Linux",
-			Timestamp: now,
+			RiskLevel:        "unknown",
+			Source:           "",
+			Message:          "resource_usage_checker is only supported on Linux",
+			Timestamp:        now,
+			ExecutionContext: ecPtr(nec),
 		}
 		return result, "resource_usage_checker unsupported on non-Linux host", "low", nil
 	}
@@ -83,12 +85,13 @@ func ResourceUsageChecker(ctx context.Context, input map[string]any) (any, strin
 	)
 
 	result := ResourceUsageCheckerResult{
-		LoadAvg:   loadAvg,
-		Memory:    mem,
-		RiskLevel: riskLevel,
-		Source:    "procfs",
-		Message:   message,
-		Timestamp: now,
+		LoadAvg:          loadAvg,
+		Memory:           mem,
+		RiskLevel:        riskLevel,
+		Source:           "procfs",
+		Message:          message,
+		Timestamp:        now,
+		ExecutionContext: ecPtr(nec),
 	}
 	return result, summary, riskLevel, nil
 }
@@ -102,20 +105,13 @@ func readLoadAvg() (*LoadAvgInfo, string) {
 	if len(fields) < 3 {
 		return nil, "unexpected /proc/loadavg format"
 	}
-
 	one, err1 := strconv.ParseFloat(fields[0], 64)
 	five, err2 := strconv.ParseFloat(fields[1], 64)
 	fifteen, err3 := strconv.ParseFloat(fields[2], 64)
-
 	if err1 != nil || err2 != nil || err3 != nil {
 		return nil, "cannot parse /proc/loadavg values"
 	}
-
-	return &LoadAvgInfo{
-		OneMin:     one,
-		FiveMin:    five,
-		FifteenMin: fifteen,
-	}, ""
+	return &LoadAvgInfo{OneMin: one, FiveMin: five, FifteenMin: fifteen}, ""
 }
 
 func readMemInfo() (*MemInfo, string) {
@@ -123,7 +119,6 @@ func readMemInfo() (*MemInfo, string) {
 	if err != nil {
 		return nil, fmt.Sprintf("cannot read /proc/meminfo: %v", err)
 	}
-
 	var memTotalKB, memAvailableKB int64
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
@@ -143,17 +138,11 @@ func readMemInfo() (*MemInfo, string) {
 			memAvailableKB = val
 		}
 	}
-
 	if memTotalKB == 0 {
 		return nil, "cannot parse MemTotal from /proc/meminfo"
 	}
-
 	ratio := float64(memAvailableKB) / float64(memTotalKB)
-	return &MemInfo{
-		MemTotalKB:        memTotalKB,
-		MemAvailableKB:    memAvailableKB,
-		MemAvailableRatio: ratio,
-	}, ""
+	return &MemInfo{MemTotalKB: memTotalKB, MemAvailableKB: memAvailableKB, MemAvailableRatio: ratio}, ""
 }
 
 func loadAvgField(load *LoadAvgInfo, fn func(*LoadAvgInfo) float64) float64 {

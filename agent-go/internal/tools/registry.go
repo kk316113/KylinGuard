@@ -155,6 +155,90 @@ func applyOutputSemantic(trace *logtrace.ToolTrace, output any) {
 			trace.ResourcePath = sshAuthResourcePath(typed.LogCollection)
 		}
 	}
+	// Extract execution_context from tool results that carry one.
+	if ec := extractExecutionContext(output); ec != nil {
+		clone := *ec
+		trace.ExecutionContext = &clone
+	}
+}
+
+// extractExecutionContext pulls an ExecutionContext from tool result structs.
+func extractExecutionContext(output any) *logtrace.ExecutionContext {
+	switch typed := output.(type) {
+	case ProcessInspectorResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *ProcessInspectorResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case NetworkConnectionInspectorResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *NetworkConnectionInspectorResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case JournalctlReaderResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *JournalctlReaderResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case ResourceUsageCheckerResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *ResourceUsageCheckerResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case DiskMemoryCheckerResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *DiskMemoryCheckerResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case ServiceStatusResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *ServiceStatusResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case OSInfoResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *OSInfoResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case LogReaderResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *LogReaderResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case PortCheckerResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *PortCheckerResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	}
+	return nil
 }
 
 func applySemantic(trace *logtrace.ToolTrace, semantic ToolSemantic) {

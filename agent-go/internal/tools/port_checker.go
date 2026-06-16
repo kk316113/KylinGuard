@@ -6,15 +6,19 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	"kylin-guard-agent/agent-go/internal/execproxy"
+	"kylin-guard-agent/agent-go/internal/logtrace"
 )
 
 type PortCheckerResult struct {
-	Host      string    `json:"host"`
-	Port      int       `json:"port"`
-	Address   string    `json:"address"`
-	Open      bool      `json:"open"`
-	Message   string    `json:"message"`
-	Timestamp time.Time `json:"timestamp"`
+	Host             string                     `json:"host"`
+	Port             int                        `json:"port"`
+	Address          string                     `json:"address"`
+	Open             bool                       `json:"open"`
+	Message          string                     `json:"message"`
+	Timestamp        time.Time                  `json:"timestamp"`
+	ExecutionContext *logtrace.ExecutionContext `json:"-"`
 }
 
 func PortChecker(ctx context.Context, input map[string]any) (any, string, string, error) {
@@ -37,13 +41,15 @@ func PortChecker(ctx context.Context, input map[string]any) (any, string, string
 		message = "port is open"
 	}
 
+	nec := execproxy.NativeExecutionContext(execproxy.ProfileLowRead, "native_go:net.Dial", "TCP port connectivity check via Go net.Dialer")
 	result := PortCheckerResult{
-		Host:      host,
-		Port:      port,
-		Address:   address,
-		Open:      open,
-		Message:   message,
-		Timestamp: time.Now().UTC(),
+		Host:             host,
+		Port:             port,
+		Address:          address,
+		Open:             open,
+		Message:          message,
+		Timestamp:        time.Now().UTC(),
+		ExecutionContext: ecPtr(nec),
 	}
 	return result, fmt.Sprintf("%s: %s", address, message), "low", nil
 }

@@ -3,10 +3,11 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"kylin-guard-agent/agent-go/internal/execproxy"
 )
 
 const defaultAuthLogLines = 200
@@ -68,18 +69,22 @@ func collectSSHAuthLogs(ctx context.Context, input map[string]any) (LogCollectio
 		return finishLogCollectionError(result, "file logs unavailable and journalctl is only checked on Linux targets")
 	}
 
-	if _, err := exec.LookPath("journalctl"); err != nil {
-		result.Errors = append(result.Errors, "journalctl: command not found")
+	exec := execproxy.NewExecutor()
+	execResult, execErr := exec.Execute(ctx, execproxy.CommandSpec{
+		ToolName:         "ssh_login_analyzer",
+		Profile:          execproxy.ProfileSensitiveRead,
+		Command:          "journalctl",
+		Args:             []string{"-u", "sshd", "-n", strconv.Itoa(lines), "--no-pager"},
+		SensitiveOutput:  true,
+		AllowNonZeroExit: true,
+		Reason:           "collect SSH auth logs for anomaly analysis",
+	})
+	if execErr != nil {
+		result.Errors = append(result.Errors, "journalctl -u sshd: "+execErr.Error())
 		return finishLogCollectionError(result, "all auth log sources unavailable")
 	}
 
-	output, err := runCommand(ctx, defaultCommandTimeout, "journalctl", "-u", "sshd", "-n", strconv.Itoa(lines), "--no-pager")
-	if err != nil {
-		result.Errors = append(result.Errors, "journalctl -u sshd: "+err.Error())
-		return finishLogCollectionError(result, "all auth log sources unavailable")
-	}
-
-	collected := splitLogLines(output.Stdout)
+	collected := splitLogLines(execResult.Stdout)
 	result.SourceType = "journalctl"
 	result.SourcePath = "journalctl:sshd"
 	result.Lines = collected
