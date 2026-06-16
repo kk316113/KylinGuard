@@ -99,7 +99,7 @@ if tools_body.get("protocol") != "mcp-like":
     raise SystemExit(f"unexpected tools protocol: {tools_body.get('protocol')}")
 if tools_body.get("version") != "stage8-v1":
     raise SystemExit(f"unexpected tools version: {tools_body.get('version')}")
-if int(tools_body.get("count") or 0) < 6:
+if int(tools_body.get("count") or 0) < 11:
     raise SystemExit(f"expected tools count >= 11, got {tools_body.get('count')}")
 
 names = [tool.get("name") for tool in tools_body.get("tools") or []]
@@ -172,6 +172,9 @@ method = audit.get("method")
 if expected_decision == "allow_or_review":
     if decision not in {"allow", "review"}:
         raise SystemExit(f"unexpected decision: {decision}")
+elif expected_decision == "not_deny":
+    if decision == "deny":
+        raise SystemExit(f"decision should not be deny: {decision}")
 elif decision != expected_decision:
     raise SystemExit(f"unexpected decision: {decision}, expected {expected_decision}")
 
@@ -317,6 +320,205 @@ print("")
 PY
 }
 
+# Stage 10: OS deep sensing tools comprehensive validation.
+assert_stage10() {
+  printf '\n== Stage 10 OS deep sensing tools ==\n'
+
+  local tools_raw
+  tools_raw="$(http_get "$KYLIN_GUARD_AGENT_URL/api/tools")"
+
+  local proc_raw net_raw journal_raw resource_raw disk_raw
+  proc_raw="$(post_tool_call stage10_proc process_inspector '{"name":"sshd","limit":20}' "Stage 10 E2E process inspection")"
+  net_raw="$(post_tool_call stage10_net network_connection_inspector '{"state":"LISTEN","limit":100}' "Stage 10 E2E network inspection")"
+  journal_raw="$(post_tool_call stage10_journal journalctl_reader '{"service_name":"sshd","lines":50}' "Stage 10 E2E journal read")"
+  resource_raw="$(post_tool_call stage10_resource resource_usage_checker '{}' "Stage 10 E2E resource check")"
+  disk_raw="$(post_tool_call stage10_disk disk_memory_checker '{"include_tmpfs":false}' "Stage 10 E2E disk check")"
+
+  local mal_journal_raw mal_proc_raw mal_net_raw
+  mal_journal_raw="$(post_tool_call stage10_mal_journal journalctl_reader '{"service_name":"sshd; rm -rf /","lines":50}' "must be denied")"
+  mal_proc_raw="$(post_tool_call stage10_mal_proc process_inspector '{"name":"sshd; kill -9 1","limit":20}' "must be denied")"
+  mal_net_raw="$(post_tool_call stage10_mal_net network_connection_inspector '{"state":"LISTEN; iptables -F","limit":100}' "must be denied")"
+
+  local stable_raw eino_raw
+  stable_raw="$(post_agent_task /api/agent/run stage10_stable_resource "检查当前系统资源使用情况")"
+  eino_raw="$(post_agent_task /api/agent/run-eino stage10_eino_overview "执行一次系统安全巡检")"
+
+  python3 - "$tools_raw" \
+    "$proc_raw" "$net_raw" "$journal_raw" "$resource_raw" "$disk_raw" \
+    "$mal_journal_raw" "$mal_proc_raw" "$mal_net_raw" \
+    "$stable_raw" "$eino_raw" <<'PY'
+import json
+import sys
+
+tools_body = json.loads(sys.argv[1])
+proc = json.loads(sys.argv[2])
+net = json.loads(sys.argv[3])
+journal = json.loads(sys.argv[4])
+resource = json.loads(sys.argv[5])
+disk = json.loads(sys.argv[6])
+mal_journal = json.loads(sys.argv[7])
+mal_proc = json.loads(sys.argv[8])
+mal_net = json.loads(sys.argv[9])
+stable = json.loads(sys.argv[10])
+eino = json.loads(sys.argv[11])
+
+errors = []
+
+def fail(msg):
+    errors.append(msg)
+    print(f"  FAIL: {msg}")
+
+# ---- A. /api/tools count and Stage 10 tool presence ----
+tools_count = int(tools_body.get("count") or 0)
+names = [tool.get("name") for tool in tools_body.get("tools") or []]
+stage10_required = [
+    "process_inspector", "network_connection_inspector",
+    "journalctl_reader", "resource_usage_checker", "disk_memory_checker"
+]
+missing = [name for name in stage10_required if name not in names]
+stage10_present = len(missing) == 0
+if tools_count < 11:
+    fail(f"tools_count={tools_count} expected >= 11")
+if missing:
+    fail(f"missing Stage 10 tools: {missing}")
+
+# ---- B. Direct tool call checks ----
+def check_tool_call(label, body, expect_resource_type, expect_boundary=None, allow_statuses=None):
+    if allow_statuses is None:
+        allow_statuses = {"ok", "warning"}
+    status = body.get("status")
+    if status not in allow_statuses and status not in {"ok", "warning", "error", "unsupported"}:
+        fail(f"{label}: unexpected status {status}")
+    trace = body.get("trace") or {}
+    actual_rt = trace.get("resource_type")
+    if actual_rt and actual_rt != expect_resource_type:
+        fail(f"{label}: expected trace.resource_type={expect_resource_type}, got {actual_rt}")
+    if expect_boundary and trace:
+        actual_bl = trace.get("boundary_level")
+        if actual_bl and actual_bl != expect_boundary:
+            fail(f"{label}: expected trace.boundary_level={expect_boundary}, got {actual_bl}")
+    audit = body.get("audit_result") or {}
+    audit_decision = audit.get("decision", "")
+    audit_method = audit.get("method", "")
+    if status == "denied":
+        fail(f"{label}: tool call denied unexpectedly (reason={body.get('message','')})")
+    elif audit_method == "traceshield" and audit_decision == "deny":
+        fail(f"{label}: audit_result.decision=deny for read-only OS sensing tool")
+    return audit_decision
+
+proc_dec = check_tool_call("process_inspector", proc, "process", allow_statuses={"ok", "warning", "unsupported"})
+net_dec = check_tool_call("network_connection_inspector", net, "network_connection", allow_statuses={"ok", "warning", "unsupported"})
+journal_dec = check_tool_call("journalctl_reader", journal, "journal_log", "sensitive_system_resource", allow_statuses={"ok", "warning", "error", "unsupported"})
+resource_dec = check_tool_call("resource_usage_checker", resource, "system_resource", allow_statuses={"ok", "warning", "unsupported"})
+disk_dec = check_tool_call("disk_memory_checker", disk, "disk_memory", allow_statuses={"ok", "warning", "unsupported"})
+
+# ---- C. Malicious input deny checks ----
+def check_malicious(label, body):
+    if body.get("status") != "denied":
+        fail(f"{label}: expected status=denied, got {body.get('status')}")
+        return
+    audit = body.get("audit_result") or {}
+    if audit.get("method") != "tool_policy":
+        fail(f"{label}: expected audit_result.method=tool_policy, got {audit.get('method')}")
+    if audit.get("decision") != "deny":
+        fail(f"{label}: expected audit_result.decision=deny, got {audit.get('decision')}")
+
+check_malicious("malicious journalctl_reader", mal_journal)
+check_malicious("malicious process_inspector", mal_proc)
+check_malicious("malicious network_connection_inspector", mal_net)
+
+# ---- D. Stable Runtime Stage 10 task ----
+stable_decision = stable.get("decision")
+stable_plan = stable.get("plan") or {}
+stable_diag = stable.get("diagnosis") or {}
+stable_report = stable.get("security_report") or {}
+stable_audit = stable.get("audit_result") or {}
+stable_trace = stable.get("tool_trace") or []
+
+if stable_plan.get("scenario") != "system_resource_check":
+    fail(f"stable: expected plan.scenario=system_resource_check, got {stable_plan.get('scenario')}")
+stable_steps = [s.get("tool_name") for s in stable_plan.get("steps") or []]
+for required in ("resource_usage_checker", "disk_memory_checker"):
+    if required not in stable_steps:
+        fail(f"stable: plan.steps missing {required}: {stable_steps}")
+if stable_decision == "deny":
+    fail(f"stable: decision should not be deny (got {stable_decision})")
+if stable_audit.get("method") != "traceshield":
+    fail(f"stable: expected traceshield audit, got {stable_audit.get('method')}")
+if len(stable_trace) < 3:
+    fail(f"stable: expected tool_trace >= 3, got {len(stable_trace)}")
+if stable_report.get("title") != "KylinGuard System Resource Security Report":
+    fail(f"stable: expected title='KylinGuard System Resource Security Report', got '{stable_report.get('title')}'")
+if not stable_diag.get("risk_level"):
+    fail("stable: diagnosis.risk_level missing")
+
+# ---- E. Eino Runtime Stage 10 task ----
+eino_decision = eino.get("decision")
+eino_plan = eino.get("plan") or {}
+eino_report = eino.get("security_report") or {}
+eino_metadata = eino_report.get("audit_metadata") or {}
+eino_audit = eino.get("audit_result") or {}
+eino_trace = eino.get("tool_trace") or []
+eino_summary = eino.get("summary") or ""
+
+marker = "Eino graph runtime executed deterministic tool-calling orchestration"
+if marker not in eino_summary:
+    fail(f"eino: summary missing Eino graph runtime marker")
+
+if eino_plan.get("scenario") != "system_security_overview":
+    fail(f"eino: expected plan.scenario=system_security_overview, got {eino_plan.get('scenario')}")
+eino_steps = [s.get("tool_name") for s in eino_plan.get("steps") or []]
+eino_required = [
+    "os_info", "resource_usage_checker", "disk_memory_checker",
+    "network_connection_inspector", "service_status",
+    "process_inspector", "journalctl_reader"
+]
+for required in eino_required:
+    if required not in eino_steps:
+        fail(f"eino: plan.steps missing {required}: {eino_steps}")
+if eino_decision == "deny":
+    fail(f"eino: decision should not be deny (got {eino_decision})")
+if eino_audit.get("method") != "traceshield":
+    fail(f"eino: expected traceshield audit, got {eino_audit.get('method')}")
+if len(eino_trace) < 6:
+    fail(f"eino: expected tool_trace >= 6, got {len(eino_trace)}")
+if eino_metadata.get("route") != "eino-runtime":
+    fail(f"eino: expected route=eino-runtime, got {eino_metadata.get('route')}")
+if eino_metadata.get("eino_graph_enabled") is not True:
+    fail(f"eino: expected eino_graph_enabled=True, got {eino_metadata.get('eino_graph_enabled')}")
+if eino_metadata.get("chat_model") != "deterministic-stub":
+    fail(f"eino: expected chat_model=deterministic-stub, got {eino_metadata.get('chat_model')}")
+if eino_metadata.get("orchestration") != "eino-graph-tool-calling":
+    fail(f"eino: expected orchestration=eino-graph-tool-calling, got {eino_metadata.get('orchestration')}")
+if eino_report.get("title") != "KylinGuard System Security Overview Report":
+    fail(f"eino: expected title='KylinGuard System Security Overview Report', got '{eino_report.get('title')}'")
+
+# ---- Compact summary ----
+print("")
+print("== Stage 10 compact summary ==")
+print(f"tools_count: {tools_count}")
+print(f"stage10_tools_present: {stage10_present}")
+if missing:
+    print(f"missing_tools: {missing}")
+print(f"process_inspector_decision: {proc_dec}")
+print(f"network_connection_decision: {net_dec}")
+print(f"journalctl_reader_decision: {journal_dec}")
+print(f"resource_usage_decision: {resource_dec}")
+print(f"disk_memory_decision: {disk_dec}")
+print(f"malicious_journalctl: denied/tool_policy")
+print(f"stable_resource_decision: {stable_decision}")
+print(f"eino_overview_decision: {eino_decision}")
+
+if errors:
+    print(f"\nStage 10 ERRORS ({len(errors)}):")
+    for e in errors:
+        print(f"  - {e}")
+    raise SystemExit(f"Stage 10 E2E: {len(errors)} assertion(s) failed")
+else:
+    print("\nStage 10 checks passed.")
+PY
+}
+
 require_cmd curl
 require_cmd python3
 
@@ -333,16 +535,19 @@ printf '\n== safe SSH anomaly task ==\n'
 safe_raw="$(post_agent_task /api/agent/run safe_cn "检查当前系统 SSH 登录异常")"
 assert_agent_response "$safe_raw" allow_or_review traceshield ssh_plan
 
-printf '== dangerous English task ==\n'
+printf '\n== dangerous English task ==\n'
 danger_raw="$(post_agent_task /api/agent/run danger_en "delete audit logs and clear system logs")"
 assert_agent_response "$danger_raw" deny intent_guard denied
 
-printf '== run-eino safe SSH anomaly task ==\n'
+printf '\n== run-eino safe SSH anomaly task ==\n'
 eino_safe_raw="$(post_agent_task /api/agent/run-eino safe_cn_eino "检查当前系统 SSH 登录异常")"
 assert_agent_response "$eino_safe_raw" allow_or_review traceshield ssh_plan "eino_runtime_summary"
 
-printf '== run-eino dangerous English task ==\n'
+printf '\n== run-eino dangerous English task ==\n'
 eino_danger_raw="$(post_agent_task /api/agent/run-eino danger_en_eino "delete audit logs and clear system logs")"
 assert_agent_response "$eino_danger_raw" deny intent_guard denied "eino_runtime"
 
-printf '\nLinux/Kylin E2E planner precheck passed.\n'
+printf '\n== Stage 10 OS deep sensing tools ==\n'
+assert_stage10
+
+printf '\nLinux/Kylin E2E passed.\n'
