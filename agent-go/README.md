@@ -10,7 +10,7 @@ go run ./cmd/server
 
 默认监听 `:8080`。可通过 `KYLIN_GUARD_AGENT_PORT` 或 `KYLIN_GUARD_AGENT_ADDR` 覆盖。审计服务默认调用 `AUDIT_CORE_URL=http://127.0.0.1:8001`。
 
-`EINO_ENABLED` 默认 `false`。Stage 3 只提供 Eino adapter 骨架，不引入真实 Eino 依赖。Stage 8 之后，稳定 runtime 使用 Rule-based Ops Planner、SSH 登录异常诊断工具链、MCP-like Tool Registry 和 deterministic report builder，`/api/agent/run-eino` fallback 也复用同一路径。
+`EINO_RUNTIME_ENABLED` 默认 `true`，`EINO_LLM_ENABLED` 默认 `false`。Stage 9A 之后，`/api/agent/run-eino` 进入 deterministic Eino Runtime Skeleton，不再 fallback 到 stable runtime。当前仍不引入真实 Eino 依赖。
 
 ## 接口
 
@@ -40,7 +40,16 @@ go run ./cmd/server
 
 `POST /api/agent/run-eino`
 
-实验接口。当前 Eino adapter 未启用时 fallback 到稳定 runtime，返回结构与 `/api/agent/run` 相同，并在 `summary` 中标记 `eino adapter disabled, stable runtime fallback used`。
+实验接口。当前执行 Stage 9A deterministic Eino Runtime Skeleton，返回结构与 `/api/agent/run` 兼容，并在 `summary` 中标记 `Eino runtime executed deterministic planner-backed tool orchestration.`。
+
+run-eino 路径会在 `security_report.audit_metadata` 中标记：
+
+- `route=eino-runtime`
+- `runtime=eino`
+- `llm_enabled=false`
+- `orchestration=deterministic-planner-backed`
+- `tool_protocol=mcp-like`
+- `eino_runtime_version=stage9a-v1`
 
 `GET /api/tools`
 
@@ -117,7 +126,9 @@ Planner 生成计划时会查询 Tool Registry，并把工具的 `tool_category`
 
 ## Eino 接入说明
 
-当前阶段没有硬编码 Eino import 路径，也没有把 Eino 外部依赖加入 `go.mod`。`internal/agent/eino_adapter.go` 只提供默认禁用的 adapter 骨架。后续确认 Eino 的实际模块路径、版本和 Kylin 构建方式后，再通过 build tag 或替换 adapter 实现接入。
+当前阶段没有硬编码 Eino import 路径，也没有把 Eino 外部依赖加入 `go.mod`。`internal/eino` 提供 deterministic runtime skeleton 和 MCP-like Tool Adapter，用于验证 Eino 编排路径如何复用 planner、Tool Registry、Tool Policy 和 TraceShield。
+
+后续确认 Eino 的实际模块路径、版本和 Kylin 构建方式后，再通过 build tag 或替换 adapter 接入真实 ChatModel / ReAct Agent。
 
 ## 安全边界
 

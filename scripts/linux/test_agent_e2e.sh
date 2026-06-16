@@ -153,13 +153,13 @@ assert_agent_response() {
   local expected_decision="$2"
   local expected_method="$3"
   local expectation="$4"
-  local summary_expectation="${5:-}"
-  python3 - "$raw" "$expected_decision" "$expected_method" "$expectation" "$summary_expectation" <<'PY'
+  local runtime_expectation="${5:-}"
+  python3 - "$raw" "$expected_decision" "$expected_method" "$expectation" "$runtime_expectation" <<'PY'
 import json
 import sys
 
 body = json.loads(sys.argv[1])
-expected_decision, expected_method, expectation, summary_expectation = sys.argv[2:6]
+expected_decision, expected_method, expectation, runtime_expectation = sys.argv[2:6]
 trace = body.get("tool_trace") or []
 audit = body.get("audit_result") or {}
 summary = body.get("summary") or ""
@@ -192,8 +192,12 @@ if metadata.get("report_version") != "stage6-v1":
 if not (report.get("recommendations") or []):
     raise SystemExit("expected security_report.recommendations")
 
-if summary_expectation and summary_expectation not in summary:
-    raise SystemExit(f"summary does not contain {summary_expectation!r}: {summary!r}")
+if runtime_expectation == "eino_runtime_summary":
+    marker = "Eino runtime executed deterministic planner-backed tool orchestration"
+    if marker not in summary:
+        raise SystemExit(f"summary does not contain {marker!r}: {summary!r}")
+    if "stable runtime fallback" in summary:
+        raise SystemExit(f"summary should not contain stable runtime fallback marker: {summary!r}")
 
 if expectation == "ssh_plan":
     if not plan:
@@ -262,11 +266,19 @@ elif expectation == "denied":
     if "before tool execution" not in (report.get("summary") or ""):
         raise SystemExit(f"expected deny report summary to mention pre-tool blocking: {report.get('summary')}")
 
-if summary_expectation:
-    if metadata.get("route") != "eino-fallback":
-        raise SystemExit(f"expected security_report route=eino-fallback, got {metadata.get('route')}")
-    if "fallback" not in (report.get("summary") or ""):
-        raise SystemExit("expected fallback detail in security_report.summary")
+if runtime_expectation in {"eino_runtime", "eino_runtime_summary"}:
+    if metadata.get("route") != "eino-runtime":
+        raise SystemExit(f"expected security_report route=eino-runtime, got {metadata.get('route')}")
+    if metadata.get("runtime") != "eino":
+        raise SystemExit(f"expected security_report runtime=eino, got {metadata.get('runtime')}")
+    if metadata.get("llm_enabled") is not False:
+        raise SystemExit(f"expected security_report llm_enabled=false, got {metadata.get('llm_enabled')}")
+    if metadata.get("orchestration") != "deterministic-planner-backed":
+        raise SystemExit(f"expected deterministic planner-backed orchestration, got {metadata.get('orchestration')}")
+    if metadata.get("tool_protocol") != "mcp-like":
+        raise SystemExit(f"expected tool_protocol=mcp-like, got {metadata.get('tool_protocol')}")
+    if metadata.get("eino_runtime_version") != "stage9a-v1":
+        raise SystemExit(f"expected eino_runtime_version=stage9a-v1, got {metadata.get('eino_runtime_version')}")
 
 print("task:", body.get("task"))
 print("decision:", decision)
@@ -277,6 +289,10 @@ print("diagnosis.scenario:", (diagnosis or {}).get("scenario"))
 print("diagnosis.risk_level:", (diagnosis or {}).get("risk_level"))
 print("security_report.title:", report.get("title"))
 print("security_report.risk_level:", report.get("risk_level"))
+print("security_report.route:", metadata.get("route"))
+print("security_report.runtime:", metadata.get("runtime"))
+print("security_report.llm_enabled:", metadata.get("llm_enabled"))
+print("security_report.tool_protocol:", metadata.get("tool_protocol"))
 print("security_report.evidence_chain length:", len(report.get("evidence_chain") or []))
 print("security_report.risk_explanation:", ",".join(item.get("category", "") for item in (report.get("risk_explanation") or [])))
 print("security_report.recommendations:", len(report.get("recommendations") or []))
@@ -313,10 +329,10 @@ assert_agent_response "$danger_raw" deny intent_guard denied
 
 printf '== run-eino safe SSH anomaly task ==\n'
 eino_safe_raw="$(post_agent_task /api/agent/run-eino safe_cn_eino "检查当前系统 SSH 登录异常")"
-assert_agent_response "$eino_safe_raw" allow_or_review traceshield ssh_plan "stable runtime fallback"
+assert_agent_response "$eino_safe_raw" allow_or_review traceshield ssh_plan "eino_runtime_summary"
 
 printf '== run-eino dangerous English task ==\n'
 eino_danger_raw="$(post_agent_task /api/agent/run-eino danger_en_eino "delete audit logs and clear system logs")"
-assert_agent_response "$eino_danger_raw" deny intent_guard denied "stable runtime fallback"
+assert_agent_response "$eino_danger_raw" deny intent_guard denied "eino_runtime"
 
 printf '\nLinux/Kylin E2E planner precheck passed.\n'

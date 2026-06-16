@@ -3,8 +3,9 @@
 ## Agent
 
 - 确认 Eino 官方 module path 和 API。
-- 用 build tag 或替换 adapter 实现接入真实 Eino planner/runtime。
-- 为 `/api/agent/run-eino` 增加真实 Eino 编排路径并保持 intent_guard/audit-core-py 不可绕过。
+- Stage 9A 已将 `/api/agent/run-eino` 升级为 deterministic Eino Runtime Skeleton。
+- Stage 9A 已新增 MCP-like Tool Adapter，run-eino 路径复用 Tool Registry、Tool Policy 和 TraceShield。
+- Stage 9B 再用 build tag 或替换 adapter 接入真实 Eino ChatModel / ReAct Agent。
 - 扩展 Rule-based Ops Planner 的场景覆盖，例如磁盘容量、CPU/内存、进程异常、网络连接、审计日志异常。
 - 为 planner 增加更严格的服务名、端口和日志意图解析测试集。
 - Stage 8 已实现 MCP-like Tool Registry、ToolMetadata、Tool Policy 和 `/api/tools*` 接口。
@@ -26,6 +27,7 @@
 ## Kylin
 
 - 在银河麒麟高级服务器版 V11 上验证 Stage 8 `/api/tools`、`/api/tools/call` 与原 SSH anomaly 链路。
+- 在银河麒麟高级服务器版 V11 上验证 Stage 9A `/api/agent/run-eino` 不再 fallback，并返回 `route=eino-runtime`。
 - 验证 LoongArch 构建与运行。
 - 补充 systemd service 文件。
 - 验证 TraceShield-Core 在 LoongArch Python 环境中的 `pydantic` 和 `PyYAML` 安装。
@@ -45,6 +47,7 @@
 ## Tests
 
 - Stage 8 已补充 ToolMetadata、Tool Policy、tools API handler 和 planner metadata 测试。
+- Stage 9A 已补充 Eino runtime skeleton、Tool Adapter 和 run-eino handler 测试。
 - 增加更多 Go 单元测试和 HTTP handler 测试，覆盖 planner edge cases。
 - 增加更多 SSH 认证日志样例测试，覆盖 Kylin/OpenSSH 常见格式。
 - 扩展 Python FastAPI endpoint 测试，覆盖 risky samples 和 fallback 行为。

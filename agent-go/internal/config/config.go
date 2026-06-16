@@ -3,9 +3,10 @@ package config
 import "os"
 
 type Config struct {
-	Addr         string
-	AuditCoreURL string
-	EinoEnabled  bool
+	Addr               string
+	AuditCoreURL       string
+	EinoRuntimeEnabled bool
+	EinoLLMEnabled     bool
 }
 
 func Load() Config {
@@ -16,9 +17,10 @@ func Load() Config {
 	}
 
 	return Config{
-		Addr:         addr,
-		AuditCoreURL: getenv("AUDIT_CORE_URL", "http://127.0.0.1:8001"),
-		EinoEnabled:  getenvBool("EINO_ENABLED", false),
+		Addr:               addr,
+		AuditCoreURL:       getenv("AUDIT_CORE_URL", "http://127.0.0.1:8001"),
+		EinoRuntimeEnabled: getenvBool("EINO_RUNTIME_ENABLED", true),
+		EinoLLMEnabled:     getenvBool("EINO_LLM_ENABLED", getenvBool("EINO_ENABLED", false)),
 	}
 }
 

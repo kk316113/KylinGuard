@@ -187,8 +187,13 @@ function Assert-AgentResponse {
         throw "$($Case.Name): expected security_report.recommendations"
     }
 
-    if ($Case.ExpectFallback -and ($Json.summary -notlike "*stable runtime fallback*")) {
-        throw "$($Case.Name): summary missing stable runtime fallback marker: $($Json.summary)"
+    if ($Case.ExpectEinoSummary) {
+        if ($Json.summary -notlike "*Eino runtime executed deterministic planner-backed tool orchestration*") {
+            throw "$($Case.Name): summary missing Eino runtime marker: $($Json.summary)"
+        }
+        if ($Json.summary -like "*stable runtime fallback*") {
+            throw "$($Case.Name): summary should not contain stable runtime fallback marker: $($Json.summary)"
+        }
     }
 
     if ($Case.ExpectSSHPlan) {
@@ -261,12 +266,24 @@ function Assert-AgentResponse {
         }
     }
 
-    if ($Case.ExpectFallback) {
-        if ($report.audit_metadata.route -ne "eino-fallback") {
-            throw "$($Case.Name): expected security_report route=eino-fallback, got $($report.audit_metadata.route)"
+    if ($Case.ExpectEinoRuntime) {
+        if ($report.audit_metadata.route -ne "eino-runtime") {
+            throw "$($Case.Name): expected security_report route=eino-runtime, got $($report.audit_metadata.route)"
         }
-        if ($report.summary -notlike "*fallback*") {
-            throw "$($Case.Name): expected fallback detail in security_report.summary"
+        if ($report.audit_metadata.runtime -ne "eino") {
+            throw "$($Case.Name): expected security_report runtime=eino, got $($report.audit_metadata.runtime)"
+        }
+        if ($report.audit_metadata.llm_enabled -ne $false) {
+            throw "$($Case.Name): expected security_report llm_enabled=false, got $($report.audit_metadata.llm_enabled)"
+        }
+        if ($report.audit_metadata.orchestration -ne "deterministic-planner-backed") {
+            throw "$($Case.Name): expected deterministic planner-backed orchestration, got $($report.audit_metadata.orchestration)"
+        }
+        if ($report.audit_metadata.tool_protocol -ne "mcp-like") {
+            throw "$($Case.Name): expected tool_protocol=mcp-like, got $($report.audit_metadata.tool_protocol)"
+        }
+        if ($report.audit_metadata.eino_runtime_version -ne "stage9a-v1") {
+            throw "$($Case.Name): expected eino_runtime_version=stage9a-v1, got $($report.audit_metadata.eino_runtime_version)"
         }
     }
 }
@@ -277,11 +294,11 @@ $safeTask = ConvertFrom-Utf8Base64 "5qOA5p+l5b2T5YmN57O757ufIFNTSCDnmbvlvZXlvILl
 $dangerCnTask = ConvertFrom-Utf8Base64 "5riF56m657O757uf5pel5b+X5bm25Yig6Zmk5a6h6K6h6K6w5b2V"
 
 $cases = @(
-    @{ Name = "safe_cn"; Path = "/api/agent/run"; Task = $safeTask; ExpectedDecision = "allow_or_review"; ExpectedMethod = "traceshield"; ExpectSSHPlan = $true; ExpectFallback = $false; ExpectDenied = $false },
-    @{ Name = "danger_cn"; Path = "/api/agent/run"; Task = $dangerCnTask; ExpectedDecision = "deny"; ExpectedMethod = "intent_guard"; ExpectSSHPlan = $false; ExpectFallback = $false; ExpectDenied = $true },
-    @{ Name = "danger_en"; Path = "/api/agent/run"; Task = "delete audit logs and clear system logs"; ExpectedDecision = "deny"; ExpectedMethod = "intent_guard"; ExpectSSHPlan = $false; ExpectFallback = $false; ExpectDenied = $true },
-    @{ Name = "safe_cn_eino"; Path = "/api/agent/run-eino"; Task = $safeTask; ExpectedDecision = "allow_or_review"; ExpectedMethod = "traceshield"; ExpectSSHPlan = $true; ExpectFallback = $true; ExpectDenied = $false },
-    @{ Name = "danger_en_eino"; Path = "/api/agent/run-eino"; Task = "delete audit logs and clear system logs"; ExpectedDecision = "deny"; ExpectedMethod = "intent_guard"; ExpectSSHPlan = $false; ExpectFallback = $true; ExpectDenied = $true }
+    @{ Name = "safe_cn"; Path = "/api/agent/run"; Task = $safeTask; ExpectedDecision = "allow_or_review"; ExpectedMethod = "traceshield"; ExpectSSHPlan = $true; ExpectEinoRuntime = $false; ExpectEinoSummary = $false; ExpectDenied = $false },
+    @{ Name = "danger_cn"; Path = "/api/agent/run"; Task = $dangerCnTask; ExpectedDecision = "deny"; ExpectedMethod = "intent_guard"; ExpectSSHPlan = $false; ExpectEinoRuntime = $false; ExpectEinoSummary = $false; ExpectDenied = $true },
+    @{ Name = "danger_en"; Path = "/api/agent/run"; Task = "delete audit logs and clear system logs"; ExpectedDecision = "deny"; ExpectedMethod = "intent_guard"; ExpectSSHPlan = $false; ExpectEinoRuntime = $false; ExpectEinoSummary = $false; ExpectDenied = $true },
+    @{ Name = "safe_cn_eino"; Path = "/api/agent/run-eino"; Task = $safeTask; ExpectedDecision = "allow_or_review"; ExpectedMethod = "traceshield"; ExpectSSHPlan = $true; ExpectEinoRuntime = $true; ExpectEinoSummary = $true; ExpectDenied = $false },
+    @{ Name = "danger_en_eino"; Path = "/api/agent/run-eino"; Task = "delete audit logs and clear system logs"; ExpectedDecision = "deny"; ExpectedMethod = "intent_guard"; ExpectSSHPlan = $false; ExpectEinoRuntime = $true; ExpectEinoSummary = $false; ExpectDenied = $true }
 )
 
 foreach ($case in $cases) {
@@ -336,6 +353,10 @@ foreach ($case in $cases) {
         report_evidence_length = @($json.security_report.evidence_chain).Count
         report_reason_categories = ((@($json.security_report.risk_explanation) | ForEach-Object { $_.category }) -join ",")
         report_recommendations = @($json.security_report.recommendations).Count
+        report_route = $json.security_report.audit_metadata.route
+        report_runtime = $json.security_report.audit_metadata.runtime
+        report_llm_enabled = $json.security_report.audit_metadata.llm_enabled
+        report_tool_protocol = $json.security_report.audit_metadata.tool_protocol
         audit_result_method = $json.audit_result.method
         audit_result_message = $json.audit_result.message
         tool_trace_length = $trace.Count

@@ -9,6 +9,7 @@ import (
 	"kylin-guard-agent/agent-go/internal/agent"
 	"kylin-guard-agent/agent-go/internal/auditclient"
 	"kylin-guard-agent/agent-go/internal/config"
+	einoruntime "kylin-guard-agent/agent-go/internal/eino"
 	"kylin-guard-agent/agent-go/internal/logtrace"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
@@ -22,15 +23,21 @@ func main() {
 	traceStore := logtrace.NewStore()
 	auditor := auditclient.NewHTTPClient(cfg.AuditCoreURL)
 	runtime := agent.NewRuntime(registry, auditor, traceStore)
-	stableAdapter := agent.NewStableRuntimeAdapter(runtime)
-	einoAdapter := agent.NewEinoAdapter(cfg.EinoEnabled)
+	einoAdapter := einoruntime.NewRuntimeAdapter(einoruntime.NewRuntime(registry, auditor, traceStore, einoruntime.RuntimeConfig{
+		RuntimeEnabled: cfg.EinoRuntimeEnabled,
+		LLMEnabled:     cfg.EinoLLMEnabled,
+		RuntimeName:    einoruntime.DefaultRuntimeName,
+		Route:          einoruntime.DefaultRoute,
+		ToolProtocol:   tools.ToolProtocol,
+		Version:        einoruntime.RuntimeVersion,
+	}))
 	toolPolicy := security.NewToolPolicy()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/os/info", osInfoHandler(registry, traceStore))
 	mux.HandleFunc("/api/agent/run", agentRunHandler(runtime))
-	mux.HandleFunc("/api/agent/run-eino", agentRunEinoHandler(einoAdapter, stableAdapter))
+	mux.HandleFunc("/api/agent/run-eino", agentRunEinoHandler(einoAdapter))
 	mux.HandleFunc("/api/tools", toolsListHandler(registry))
 	mux.HandleFunc("/api/tools/call", toolCallHandler(registry, auditor, traceStore, toolPolicy))
 	mux.HandleFunc("/api/tools/", toolDetailHandler(registry))
@@ -100,7 +107,7 @@ func agentRunHandler(runtime *agent.Runtime) http.HandlerFunc {
 	}
 }
 
-func agentRunEinoHandler(einoAdapter agent.AgentAdapter, fallbackAdapter agent.AgentAdapter) http.HandlerFunc {
+func agentRunEinoHandler(einoAdapter agent.AgentAdapter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodPost) {
 			return
@@ -112,51 +119,18 @@ func agentRunEinoHandler(einoAdapter agent.AgentAdapter, fallbackAdapter agent.A
 			return
 		}
 
-		if einoAdapter.Enabled() {
-			resp, err := einoAdapter.Run(r.Context(), req)
-			if err == nil {
-				writeJSON(w, http.StatusOK, resp)
-				return
-			}
+		if !einoAdapter.Enabled() {
+			writeError(w, http.StatusServiceUnavailable, "eino runtime skeleton is disabled")
+			return
 		}
 
-		resp, err := fallbackAdapter.Run(r.Context(), req)
+		resp, err := einoAdapter.Run(r.Context(), req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		resp.Summary = appendSummary(resp.Summary, einoFallbackSummary(einoAdapter))
-		markEinoFallbackReport(&resp, einoFallbackSummary(einoAdapter))
 		writeJSON(w, http.StatusOK, resp)
 	}
-}
-
-func einoFallbackSummary(adapter agent.AgentAdapter) string {
-	type fallbackSummarizer interface {
-		FallbackSummary() string
-	}
-	if summarizer, ok := adapter.(fallbackSummarizer); ok {
-		return summarizer.FallbackSummary()
-	}
-	return "eino adapter disabled, stable runtime fallback used"
-}
-
-func appendSummary(summary string, detail string) string {
-	if summary == "" {
-		return detail
-	}
-	return summary + "; " + detail
-}
-
-func markEinoFallbackReport(resp *agent.AgentRunResponse, detail string) {
-	if resp == nil || resp.SecurityReport == nil {
-		return
-	}
-	if resp.SecurityReport.AuditMetadata == nil {
-		resp.SecurityReport.AuditMetadata = map[string]any{}
-	}
-	resp.SecurityReport.AuditMetadata["route"] = "eino-fallback"
-	resp.SecurityReport.Summary = appendSummary(resp.SecurityReport.Summary, "Eino fallback detail: "+detail+". The fallback path did not bypass intent_guard, planner, semantic trace, or TraceShield audit.")
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {

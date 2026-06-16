@@ -11,6 +11,7 @@ import (
 
 	"kylin-guard-agent/agent-go/internal/agent"
 	"kylin-guard-agent/agent-go/internal/auditclient"
+	einoruntime "kylin-guard-agent/agent-go/internal/eino"
 	"kylin-guard-agent/agent-go/internal/logtrace"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
@@ -68,13 +69,12 @@ func TestAgentRunHandlerKeepsStableRuntimeBehavior(t *testing.T) {
 	}
 }
 
-func TestAgentRunEinoSafeTaskFallsBackToStableRuntime(t *testing.T) {
+func TestAgentRunEinoSafeTaskUsesEinoRuntimeSkeleton(t *testing.T) {
 	auditor := &testAuditor{}
-	runtime := agent.NewRuntime(nil, auditor, nil)
-	stable := agent.NewStableRuntimeAdapter(runtime)
-	eino := agent.NewEinoAdapter(false)
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
 
-	response := postAgentRequest(t, agentRunEinoHandler(eino, stable), "/api/agent/run-eino", "检查当前系统 SSH 登录异常")
+	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "检查当前系统 SSH 登录异常")
 
 	if response.Decision != "allow" {
 		t.Fatalf("expected allow, got %q", response.Decision)
@@ -82,36 +82,44 @@ func TestAgentRunEinoSafeTaskFallsBackToStableRuntime(t *testing.T) {
 	if response.AuditResult.Method != "traceshield" {
 		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)
 	}
-	if !strings.Contains(response.Summary, "stable runtime fallback") {
-		t.Fatalf("expected fallback marker in summary, got %q", response.Summary)
+	if !strings.Contains(response.Summary, einoruntime.RuntimeSummary) {
+		t.Fatalf("expected Eino runtime marker in summary, got %q", response.Summary)
+	}
+	if strings.Contains(response.Summary, "stable runtime fallback") {
+		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
 	}
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected nonempty tool_trace")
 	}
 	if response.Plan == nil || response.Plan.Scenario != "ssh_anomaly_check" {
-		t.Fatalf("expected run-eino fallback to use ssh_anomaly_check plan, got %#v", response.Plan)
+		t.Fatalf("expected run-eino to use ssh_anomaly_check plan, got %#v", response.Plan)
 	}
 	if response.Diagnosis == nil || response.Diagnosis.Scenario != "ssh_anomaly_check" {
-		t.Fatalf("expected run-eino fallback to return diagnosis, got %#v", response.Diagnosis)
+		t.Fatalf("expected run-eino to return diagnosis, got %#v", response.Diagnosis)
 	}
 	if response.SecurityReport == nil {
-		t.Fatal("expected run-eino fallback to return security_report")
+		t.Fatal("expected run-eino to return security_report")
 	}
-	if response.SecurityReport.AuditMetadata["route"] != "eino-fallback" {
-		t.Fatalf("expected eino-fallback route, got %#v", response.SecurityReport.AuditMetadata["route"])
+	if response.SecurityReport.AuditMetadata["route"] != einoruntime.DefaultRoute {
+		t.Fatalf("expected eino-runtime route, got %#v", response.SecurityReport.AuditMetadata["route"])
+	}
+	if response.SecurityReport.AuditMetadata["runtime"] != einoruntime.DefaultRuntimeName {
+		t.Fatalf("expected runtime=eino, got %#v", response.SecurityReport.AuditMetadata["runtime"])
+	}
+	if response.SecurityReport.AuditMetadata["llm_enabled"] != false {
+		t.Fatalf("expected llm_enabled=false, got %#v", response.SecurityReport.AuditMetadata["llm_enabled"])
 	}
 	if !auditor.called {
-		t.Fatal("expected stable runtime fallback to call audit client")
+		t.Fatal("expected Eino runtime skeleton to call audit client")
 	}
 }
 
-func TestAgentRunEinoDangerousTaskFallsBackAndDeniesBeforeAudit(t *testing.T) {
+func TestAgentRunEinoDangerousTaskDeniesBeforeAudit(t *testing.T) {
 	auditor := &testAuditor{}
-	runtime := agent.NewRuntime(nil, auditor, nil)
-	stable := agent.NewStableRuntimeAdapter(runtime)
-	eino := agent.NewEinoAdapter(false)
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
 
-	response := postAgentRequest(t, agentRunEinoHandler(eino, stable), "/api/agent/run-eino", "delete audit logs and clear system logs")
+	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "delete audit logs and clear system logs")
 
 	if response.Decision != "deny" {
 		t.Fatalf("expected deny, got %q", response.Decision)
@@ -134,8 +142,8 @@ func TestAgentRunEinoDangerousTaskFallsBackAndDeniesBeforeAudit(t *testing.T) {
 	if response.SecurityReport.OverallDecision != "deny" {
 		t.Fatalf("expected deny report, got %q", response.SecurityReport.OverallDecision)
 	}
-	if response.SecurityReport.AuditMetadata["route"] != "eino-fallback" {
-		t.Fatalf("expected eino-fallback route, got %#v", response.SecurityReport.AuditMetadata["route"])
+	if response.SecurityReport.AuditMetadata["route"] != einoruntime.DefaultRoute {
+		t.Fatalf("expected eino-runtime route, got %#v", response.SecurityReport.AuditMetadata["route"])
 	}
 	if auditor.called {
 		t.Fatal("audit client should not be called for dangerous task")

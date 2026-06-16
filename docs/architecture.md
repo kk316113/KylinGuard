@@ -7,6 +7,7 @@ User Task
 -> Go/Eino Agent Runtime
 -> Intent Guard
 -> Rule-based Ops Planner
+-> MCP-like Tool Adapter (run-eino)
 -> MCP-like Tool Registry
 -> Kylin Ops Tools
 -> SSH Diagnosis Tools
@@ -17,13 +18,14 @@ User Task
 -> Frontend Security Console
 ```
 
-## 当前 Stage 8 状态
+## 当前 Stage 9A 状态
 
-- `Go/Eino Agent Runtime`：稳定主链路为 Go runtime + Rule-based Ops Planner + SSH diagnosis tools + Report Builder；默认禁用的 Eino adapter 仍 fallback 到稳定 runtime。
+- `Go/Eino Agent Runtime`：`/api/agent/run` 仍为稳定 Go runtime；`/api/agent/run-eino` 已进入 deterministic Eino Runtime Skeleton，不再 fallback 到稳定 runtime。
 - `Intent Guard`：当前为关键词规则占位。
 - `Rule-based Ops Planner`：根据任务选择 `ssh_anomaly_check`、`service_check`、`port_check`、`system_overview` 等工具计划。
 - `MCP-like Tool Registry`：当前已注册基础工具 metadata 和 executor，并提供 `/api/tools`、`/api/tools/{name}`、`/api/tools/call`。
 - `Tool Policy`：控制 direct tool call，禁止 unknown tool、`safe_shell` direct call、越界端口、非白名单日志和恶意 service name。
+- `MCP-like Tool Adapter`：Eino Runtime Skeleton 通过该 adapter 执行 planner steps，必须查询 ToolMetadata 并经过 Tool Policy。
 - `Kylin Ops Tools`：当前提供保守实现，不允许任意 shell 执行或任意文件读取。
 - `SSH Diagnosis Tools`：`auth_log_collector` 和 `ssh_login_analyzer` 只读采集并分析 SSH 认证日志，输出 `diagnosis`。
 - `Tool Trace`：当前已定义统一 trace 字段，并携带工具语义、资源语义、权限范围和边界级别。
@@ -90,9 +92,18 @@ Stage 8 的工具协议提供：
 
 ## Eino 接入边界
 
-当前不硬编码 Eino import 路径，也不引入 Eino 外部依赖。`/api/agent/run` 是稳定主链路，`/api/agent/run-eino` 是实验链路。Eino adapter 未启用或真实 runtime 未实现时，handler fallback 到 `StableRuntimeAdapter`，因此仍会执行 `intent_guard`、Tool Registry、语义 trace 和 audit-core-py。
+当前不硬编码 Eino import 路径，也不引入 Eino 外部依赖。`/api/agent/run` 是稳定主链路，`/api/agent/run-eino` 是实验链路，但 Stage 9A 后它已经进入 deterministic Eino Runtime Skeleton。
 
-Stage 6 之后，`/api/agent/run-eino` fallback 也会复用 Rule-based Ops Planner、SSH diagnosis tools 和 Report Builder，不会退回旧静态工具链。报告中的 `audit_metadata.route=eino-fallback` 用于说明 fallback 未绕过安全链路。
+run-eino 当前元数据为：
+
+- `route=eino-runtime`
+- `runtime=eino`
+- `llm_enabled=false`
+- `orchestration=deterministic-planner-backed`
+- `tool_protocol=mcp-like`
+- `eino_runtime_version=stage9a-v1`
+
+Eino 不是安全边界。run-eino 仍必须经过 `intent_guard`、Rule-based Planner、MCP-like Tool Adapter、Tool Policy、semantic trace 和 audit-core-py / TraceShield。
 
 ## Report 边界
 
