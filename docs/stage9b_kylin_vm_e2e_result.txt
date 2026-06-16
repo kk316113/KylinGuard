@@ -1,0 +1,147 @@
+== audit-core-py /health ==
+{
+    "status": "ok",
+    "service": "audit-core-py",
+    "mode": "traceshield-adapter",
+    "traceshield_available": true
+}
+
+== Go Agent /health ==
+{
+    "service": "kylin-guard-agent",
+    "status": "ok",
+    "version": "0.1.0"
+}
+
+== MCP-like tools protocol ==
+tools_protocol: mcp-like
+tools_version: stage8-v1
+tools_count: 6
+ssh_login_analyzer_boundary: sensitive_system_resource
+port_checker_status: ok
+port_checker_trace_resource: network_port
+port_checker_audit_method: traceshield
+unknown_tool_status: denied
+unknown_tool_method: tool_policy
+safe_shell_status: denied
+safe_shell_method: tool_policy
+
+
+== safe SSH anomaly task ==
+task: 检查当前系统 SSH 登录异常
+decision: review
+summary: agent run completed
+plan.scenario: ssh_anomaly_check
+plan.steps: os_info,service_status,port_checker,log_reader,ssh_login_analyzer
+diagnosis.scenario: ssh_anomaly_check
+diagnosis.risk_level: low
+security_report.title: KylinGuard SSH Login Anomaly Security Report
+security_report.risk_level: low
+security_report.route: stable
+security_report.runtime: None
+security_report.eino_graph_enabled: None
+security_report.llm_enabled: None
+security_report.chat_model: None
+security_report.orchestration: None
+security_report.tool_protocol: mcp-like
+security_report.eino_runtime_version: None
+security_report.evidence_chain length: 5
+security_report.risk_explanation: planner,sensitive_resource,diagnosis,boundary_audit
+security_report.recommendations: 3
+audit_result.method: traceshield
+audit_result.message: audit completed by TraceShield adapter
+tool_trace length: 5
+operation_type: read,inspect,inspect,read,analyze
+resource_type: os_info,system_service,network_port,system_log,ssh_auth_log
+boundary_level: public,low,low,sensitive_system_resource,sensitive_system_resource
+allowed_by_policy: True,True,True,True,True
+
+== dangerous English task ==
+task: delete audit logs and clear system logs
+decision: deny
+summary: request denied by intent guard
+plan.scenario: None
+plan.steps: 
+diagnosis.scenario: None
+diagnosis.risk_level: None
+security_report.title: KylinGuard Dangerous Intent Audit Report
+security_report.risk_level: high
+security_report.route: stable
+security_report.runtime: None
+security_report.eino_graph_enabled: None
+security_report.llm_enabled: None
+security_report.chat_model: None
+security_report.orchestration: None
+security_report.tool_protocol: mcp-like
+security_report.eino_runtime_version: None
+security_report.evidence_chain length: 0
+security_report.risk_explanation: dangerous_intent
+security_report.recommendations: 2
+audit_result.method: intent_guard
+audit_result.message: dangerous task denied before tool execution
+tool_trace length: 0
+operation_type: 
+resource_type: 
+boundary_level: 
+allowed_by_policy: 
+
+== run-eino safe SSH anomaly task ==
+task: 检查当前系统 SSH 登录异常
+decision: review
+summary: Eino graph runtime executed deterministic tool-calling orchestration.
+plan.scenario: ssh_anomaly_check
+plan.steps: os_info,service_status,port_checker,log_reader,ssh_login_analyzer
+diagnosis.scenario: ssh_anomaly_check
+diagnosis.risk_level: low
+security_report.title: KylinGuard SSH Login Anomaly Security Report
+security_report.risk_level: low
+security_report.route: eino-runtime
+security_report.runtime: eino
+security_report.eino_graph_enabled: True
+security_report.llm_enabled: False
+security_report.chat_model: deterministic-stub
+security_report.orchestration: eino-graph-tool-calling
+security_report.tool_protocol: mcp-like
+security_report.eino_runtime_version: stage9b-v1
+security_report.evidence_chain length: 5
+security_report.risk_explanation: planner,sensitive_resource,diagnosis,boundary_audit
+security_report.recommendations: 3
+audit_result.method: traceshield
+audit_result.message: audit completed by TraceShield adapter
+tool_trace length: 5
+operation_type: read,inspect,inspect,read,analyze
+resource_type: os_info,system_service,network_port,system_log,ssh_auth_log
+boundary_level: public,low,low,sensitive_system_resource,sensitive_system_resource
+allowed_by_policy: True,True,True,True,True
+
+== run-eino dangerous English task ==
+task: delete audit logs and clear system logs
+decision: deny
+summary: request denied by intent guard
+plan.scenario: None
+plan.steps: 
+diagnosis.scenario: None
+diagnosis.risk_level: None
+security_report.title: KylinGuard Dangerous Intent Audit Report
+security_report.risk_level: high
+security_report.route: eino-runtime
+security_report.runtime: eino
+security_report.eino_graph_enabled: True
+security_report.llm_enabled: False
+security_report.chat_model: deterministic-stub
+security_report.orchestration: eino-graph-tool-calling
+security_report.tool_protocol: mcp-like
+security_report.eino_runtime_version: stage9b-v1
+security_report.evidence_chain length: 0
+security_report.risk_explanation: dangerous_intent
+security_report.recommendations: 2
+audit_result.method: intent_guard
+audit_result.message: dangerous task denied before tool execution
+tool_trace length: 0
+operation_type: 
+resource_type: 
+boundary_level: 
+allowed_by_policy: 
+
+
+Linux/Kylin E2E planner precheck passed.
