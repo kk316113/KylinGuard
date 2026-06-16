@@ -52,6 +52,9 @@ func TestRuntimeDeniesDangerousTaskBeforeToolsAndAudit(t *testing.T) {
 	if response.Plan != nil {
 		t.Fatalf("dangerous task should not enter planner, got plan: %#v", response.Plan)
 	}
+	if response.Diagnosis != nil {
+		t.Fatalf("dangerous task should not return diagnosis, got: %#v", response.Diagnosis)
+	}
 	if auditor.called {
 		t.Fatal("audit-core client should not be called for denied dangerous task")
 	}
@@ -85,6 +88,18 @@ func TestRuntimeAllowsSafeTaskToReachToolsAndAudit(t *testing.T) {
 	}
 	if !hasTraceTool(response.ToolTrace, "port_checker") {
 		t.Fatal("expected SSH task trace to include port_checker")
+	}
+	if !hasTraceTool(response.ToolTrace, "ssh_login_analyzer") {
+		t.Fatal("expected SSH task trace to include ssh_login_analyzer")
+	}
+	if response.Diagnosis == nil {
+		t.Fatal("expected SSH task to return diagnosis")
+	}
+	if response.Diagnosis.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("expected diagnosis scenario ssh_anomaly_check, got %q", response.Diagnosis.Scenario)
+	}
+	if response.Diagnosis.RiskLevel == "" {
+		t.Fatal("expected diagnosis risk level")
 	}
 	for _, trace := range response.ToolTrace {
 		if trace.OperationType == "" {

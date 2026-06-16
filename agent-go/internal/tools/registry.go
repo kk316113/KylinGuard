@@ -30,6 +30,7 @@ func NewDefaultRegistry() *Registry {
 	registry.Register("os_info", OSInfo)
 	registry.Register("service_status", ServiceStatus)
 	registry.Register("log_reader", LogReader)
+	registry.Register("ssh_login_analyzer", SSHLoginAnalyzer)
 	registry.Register("port_checker", PortChecker)
 	registry.Register("safe_shell", SafeShell)
 	return registry
@@ -73,6 +74,7 @@ func (r *Registry) InvokeWithStepID(ctx context.Context, stepID string, name str
 	}
 
 	output, summary, riskHint, err := handler(ctx, input)
+	applyOutputSemantic(&trace, output)
 	trace.OutputSummary = summary
 	if riskHint != "" {
 		trace.RiskHint = riskHint
@@ -86,6 +88,17 @@ func (r *Registry) InvokeWithStepID(ctx context.Context, stepID string, name str
 	trace.FinishedAt = time.Now().UTC()
 
 	return Result{Output: output, Trace: trace}, err
+}
+
+func applyOutputSemantic(trace *logtrace.ToolTrace, output any) {
+	switch typed := output.(type) {
+	case SSHLoginAnalyzerResult:
+		trace.ResourcePath = sshAuthResourcePath(typed.LogCollection)
+	case *SSHLoginAnalyzerResult:
+		if typed != nil {
+			trace.ResourcePath = sshAuthResourcePath(typed.LogCollection)
+		}
+	}
 }
 
 func applySemantic(trace *logtrace.ToolTrace, semantic ToolSemantic) {

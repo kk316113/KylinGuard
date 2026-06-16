@@ -60,13 +60,13 @@ function Assert-AgentResponse {
             throw "$($Case.Name): unexpected plan.scenario $($Json.plan.scenario)"
         }
         $stepTools = @($Json.plan.steps | ForEach-Object { $_.tool_name })
-        Assert-ContainsAll -Actual $stepTools -Expected @("os_info", "service_status", "port_checker", "log_reader") -Label "$($Case.Name) plan.steps"
+        Assert-ContainsAll -Actual $stepTools -Expected @("os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer") -Label "$($Case.Name) plan.steps"
 
-        if ($trace.Count -lt 3) {
-            throw "$($Case.Name): expected tool_trace length >= 3, got $($trace.Count)"
+        if ($trace.Count -lt 5) {
+            throw "$($Case.Name): expected tool_trace length >= 5, got $($trace.Count)"
         }
         $resourceTypes = @($trace | ForEach-Object { $_.resource_type })
-        Assert-ContainsAll -Actual $resourceTypes -Expected @("os_info", "system_service", "network_port") -Label "$($Case.Name) tool_trace.resource_type"
+        Assert-ContainsAll -Actual $resourceTypes -Expected @("os_info", "system_service", "network_port", "system_log", "ssh_auth_log") -Label "$($Case.Name) tool_trace.resource_type"
 
         $logTrace = @($trace | Where-Object { $_.tool_name -eq "log_reader" })
         if ($logTrace.Count -gt 0) {
@@ -76,6 +76,16 @@ function Assert-AgentResponse {
                 Write-Warning "$($Case.Name): log_reader returned graceful error: $($logTrace[0].output_summary)"
             }
         }
+
+        if ($null -eq $Json.diagnosis) {
+            throw "$($Case.Name): expected diagnosis"
+        }
+        if ($Json.diagnosis.scenario -ne "ssh_anomaly_check") {
+            throw "$($Case.Name): unexpected diagnosis.scenario $($Json.diagnosis.scenario)"
+        }
+        if (@("low", "medium", "high", "unknown") -notcontains $Json.diagnosis.risk_level) {
+            throw "$($Case.Name): unexpected diagnosis.risk_level $($Json.diagnosis.risk_level)"
+        }
     }
 
     if ($Case.ExpectDenied) {
@@ -84,6 +94,9 @@ function Assert-AgentResponse {
         }
         if ($null -ne $Json.plan) {
             throw "$($Case.Name): denied task should not include plan"
+        }
+        if ($null -ne $Json.diagnosis) {
+            throw "$($Case.Name): denied task should not include diagnosis"
         }
     }
 }
@@ -144,6 +157,8 @@ foreach ($case in $cases) {
         summary = $json.summary
         plan_scenario = $json.plan.scenario
         plan_steps = ($planSteps -join ",")
+        diagnosis_scenario = $json.diagnosis.scenario
+        diagnosis_risk_level = $json.diagnosis.risk_level
         audit_result_method = $json.audit_result.method
         audit_result_message = $json.audit_result.message
         tool_trace_length = $trace.Count

@@ -62,10 +62,26 @@ func SemanticForTool(toolName string, input map[string]any) ToolSemantic {
 		}
 	case "log_reader":
 		return logReaderSemantic(input)
+	case "ssh_login_analyzer":
+		return sshLoginAnalyzerSemantic()
 	case "safe_shell":
 		return safeShellSemantic(input)
 	default:
 		return unknownSemantic(toolName)
+	}
+}
+
+func sshLoginAnalyzerSemantic() ToolSemantic {
+	return ToolSemantic{
+		OperationType:     "analyze",
+		ResourceType:      "ssh_auth_log",
+		ResourcePath:      "ssh_auth:none",
+		PermissionScope:   "ssh_auth_log_analyze",
+		BoundaryLevel:     "sensitive_system_resource",
+		ToolSemantic:      "ssh_login_anomaly_analysis",
+		RequiresPrivilege: true,
+		AllowedByPolicy:   true,
+		PolicyReason:      "SSH authentication log analysis is allowed for the user-requested SSH anomaly diagnosis task",
 	}
 }
 

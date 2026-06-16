@@ -25,6 +25,7 @@ TOOL_NAME_ALIASES = {
     "port_checker": "web_search",
     "log_reader": "read_file",
     "read_recent_logs": "read_file",
+    "ssh_login_analyzer": "summarize_text",
     "safe_shell": "shell_exec",
 }
 

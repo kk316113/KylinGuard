@@ -16,13 +16,16 @@ func TestRuleBasedPlannerSSHAnomaly(t *testing.T) {
 	if plan.Scenario != "ssh_anomaly_check" {
 		t.Fatalf("expected ssh_anomaly_check, got %q", plan.Scenario)
 	}
-	assertPlanTools(t, plan, []string{"os_info", "service_status", "port_checker", "log_reader"})
+	assertPlanTools(t, plan, []string{"os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer"})
 
 	if plan.Steps[1].Input["service_name"] != "sshd" {
 		t.Fatalf("expected sshd service, got %#v", plan.Steps[1].Input["service_name"])
 	}
 	if plan.Steps[2].Input["port"] != 22 {
 		t.Fatalf("expected port 22, got %#v", plan.Steps[2].Input["port"])
+	}
+	if plan.Steps[4].Input["lines"] != 200 {
+		t.Fatalf("expected ssh_login_analyzer lines=200, got %#v", plan.Steps[4].Input["lines"])
 	}
 }
 

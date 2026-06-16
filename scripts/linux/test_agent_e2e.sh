@@ -60,6 +60,7 @@ trace = body.get("tool_trace") or []
 audit = body.get("audit_result") or {}
 summary = body.get("summary") or ""
 plan = body.get("plan")
+diagnosis = body.get("diagnosis")
 
 decision = body.get("decision")
 method = audit.get("method")
@@ -81,15 +82,15 @@ if expectation == "ssh_plan":
     if plan.get("scenario") != "ssh_anomaly_check":
         raise SystemExit(f"unexpected plan.scenario: {plan.get('scenario')}")
     plan_tools = [step.get("tool_name") for step in plan.get("steps") or []]
-    for required in ("os_info", "service_status", "port_checker", "log_reader"):
+    for required in ("os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer"):
         if required not in plan_tools:
             raise SystemExit(f"plan.steps missing {required}: {plan_tools}")
 
-    if len(trace) < 3:
-        raise SystemExit(f"expected tool_trace length >= 3, got {len(trace)}")
+    if len(trace) < 5:
+        raise SystemExit(f"expected tool_trace length >= 5, got {len(trace)}")
 
     resource_types = [step.get("resource_type") for step in trace]
-    for required in ("os_info", "system_service", "network_port"):
+    for required in ("os_info", "system_service", "network_port", "system_log", "ssh_auth_log"):
         if required not in resource_types:
             raise SystemExit(f"tool_trace.resource_type missing {required}: {resource_types}")
 
@@ -106,17 +107,28 @@ if expectation == "ssh_plan":
         else:
             print("warning: log_reader returned graceful error:", log_steps[0].get("output_summary"))
 
+    if not diagnosis:
+        raise SystemExit("expected diagnosis for safe SSH task")
+    if diagnosis.get("scenario") != "ssh_anomaly_check":
+        raise SystemExit(f"unexpected diagnosis.scenario: {diagnosis.get('scenario')}")
+    if diagnosis.get("risk_level") not in {"low", "medium", "high", "unknown"}:
+        raise SystemExit(f"unexpected diagnosis.risk_level: {diagnosis.get('risk_level')}")
+
 elif expectation == "denied":
     if trace:
         raise SystemExit(f"expected empty tool_trace, got {len(trace)}")
     if plan:
         raise SystemExit(f"denied task should not include plan: {plan}")
+    if diagnosis:
+        raise SystemExit(f"denied task should not include diagnosis: {diagnosis}")
 
 print("task:", body.get("task"))
 print("decision:", decision)
 print("summary:", summary)
 print("plan.scenario:", (plan or {}).get("scenario"))
 print("plan.steps:", ",".join(step.get("tool_name", "") for step in ((plan or {}).get("steps") or [])))
+print("diagnosis.scenario:", (diagnosis or {}).get("scenario"))
+print("diagnosis.risk_level:", (diagnosis or {}).get("risk_level"))
 print("audit_result.method:", method)
 print("audit_result.message:", audit.get("message"))
 print("tool_trace length:", len(trace))

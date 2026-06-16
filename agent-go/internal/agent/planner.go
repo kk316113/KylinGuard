@@ -52,6 +52,10 @@ func (RuleBasedPlanner) Plan(ctx context.Context, task string) (Plan, error) {
 				"lines":   100,
 				"purpose": "ssh_login_anomaly_check",
 			}, "Read recent SSH authentication logs if available"),
+			planStep("ssh_login_analyzer", map[string]any{
+				"paths": []string{"/var/log/secure", "/var/log/auth.log"},
+				"lines": 200,
+			}, "Analyze SSH authentication failures, accepted logins, and top failed source IPs"),
 		}), nil
 	case isServiceCheckTask(normalized):
 		service := extractServiceName(normalized)

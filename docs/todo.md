@@ -7,6 +7,7 @@
 - 为 `/api/agent/run-eino` 增加真实 Eino 编排路径并保持 intent_guard/audit-core-py 不可绕过。
 - 扩展 Rule-based Ops Planner 的场景覆盖，例如磁盘容量、CPU/内存、进程异常、网络连接、审计日志异常。
 - 为 planner 增加更严格的服务名、端口和日志意图解析测试集。
+- 扩展 SSH 登录异常诊断的日志格式样例、时间窗口分析、用户名维度和 IP 维度统计。
 - 接入远程模型 API provider。
 - 增加工具权限策略和审批流。
 
@@ -20,22 +21,24 @@
 
 ## Kylin
 
-- 在银河麒麟高级服务器版 V11 上重新验证 Stage 4 planner 工具链。
+- 在银河麒麟高级服务器版 V11 上重新验证 Stage 5 SSH diagnosis 工具链。
 - 验证 LoongArch 构建与运行。
 - 补充 systemd service 文件。
 - 验证 TraceShield-Core 在 LoongArch Python 环境中的 `pydantic` 和 `PyYAML` 安装。
 - 在 Kylin V11 VM 上运行 `deploy/kylin/check_env.sh` 和 `scripts/linux/test_agent_e2e.sh`。
 - 验证 `/var/log/*` 读取权限和日志路径差异。
 - 验证 `ss`、`netstat`、`journalctl` 在目标系统上的可用性。
+- 验证 `journalctl -u sshd` 在 Kylin V11 上的服务名差异。
 
 ## Frontend
 
 - 设计 Agent 控制台。
-- 展示任务、trace、审计结果和最终报告。
+- 展示任务、plan、diagnosis、trace、审计结果和最终报告。
 
 ## Tests
 
 - 增加更多 Go 单元测试和 HTTP handler 测试，覆盖 planner edge cases。
+- 增加更多 SSH 认证日志样例测试，覆盖 Kylin/OpenSSH 常见格式。
 - 扩展 Python FastAPI endpoint 测试，覆盖 risky samples 和 fallback 行为。
 - 增加 Linux E2E 脚本在 Kylin V11 上的实机验证记录。
 - 增加最小 CI。

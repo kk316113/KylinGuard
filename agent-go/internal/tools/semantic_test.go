@@ -55,6 +55,26 @@ func TestSemanticForSensitiveLogReader(t *testing.T) {
 	}
 }
 
+func TestSemanticForSSHLoginAnalyzer(t *testing.T) {
+	semantic := SemanticForTool("ssh_login_analyzer", map[string]any{})
+
+	if semantic.OperationType != "analyze" {
+		t.Fatalf("expected analyze operation, got %q", semantic.OperationType)
+	}
+	if semantic.ResourceType != "ssh_auth_log" {
+		t.Fatalf("expected ssh_auth_log resource type, got %q", semantic.ResourceType)
+	}
+	if semantic.BoundaryLevel != "sensitive_system_resource" {
+		t.Fatalf("expected sensitive boundary, got %q", semantic.BoundaryLevel)
+	}
+	if !semantic.RequiresPrivilege {
+		t.Fatal("ssh auth analysis should require privilege")
+	}
+	if !semantic.AllowedByPolicy {
+		t.Fatal("ssh auth analysis should be allowed by policy")
+	}
+}
+
 func TestSemanticForAllowedSafeShell(t *testing.T) {
 	semantic := SemanticForTool("safe_shell", map[string]any{
 		"command": "df -h",

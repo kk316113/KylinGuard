@@ -55,6 +55,9 @@ func TestAgentRunHandlerKeepsStableRuntimeBehavior(t *testing.T) {
 	if response.Plan == nil || response.Plan.Scenario != "ssh_anomaly_check" {
 		t.Fatalf("expected ssh_anomaly_check plan, got %#v", response.Plan)
 	}
+	if response.Diagnosis == nil || response.Diagnosis.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("expected ssh anomaly diagnosis, got %#v", response.Diagnosis)
+	}
 	if !auditor.called {
 		t.Fatal("expected audit client to be called")
 	}
@@ -83,6 +86,9 @@ func TestAgentRunEinoSafeTaskFallsBackToStableRuntime(t *testing.T) {
 	if response.Plan == nil || response.Plan.Scenario != "ssh_anomaly_check" {
 		t.Fatalf("expected run-eino fallback to use ssh_anomaly_check plan, got %#v", response.Plan)
 	}
+	if response.Diagnosis == nil || response.Diagnosis.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("expected run-eino fallback to return diagnosis, got %#v", response.Diagnosis)
+	}
 	if !auditor.called {
 		t.Fatal("expected stable runtime fallback to call audit client")
 	}
@@ -107,6 +113,9 @@ func TestAgentRunEinoDangerousTaskFallsBackAndDeniesBeforeAudit(t *testing.T) {
 	}
 	if response.Plan != nil {
 		t.Fatalf("dangerous run-eino task should not enter planner, got %#v", response.Plan)
+	}
+	if response.Diagnosis != nil {
+		t.Fatalf("dangerous run-eino task should not return diagnosis, got %#v", response.Diagnosis)
 	}
 	if auditor.called {
 		t.Fatal("audit client should not be called for dangerous task")
