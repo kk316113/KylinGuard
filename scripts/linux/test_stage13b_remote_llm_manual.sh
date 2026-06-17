@@ -99,8 +99,11 @@ if [ -z "$RESPONSE" ]; then
 fi
 
 # Use python3 to validate the response with detailed error reporting.
+printf '  Response saved to: %s\n' "$RESPONSE_FILE"
 python3 - "$RESPONSE" <<'PYCHECK'
 import json, sys
+
+RESPONSE_FILE = "/tmp/stage13b_remote_llm_response.json"
 
 resp = json.loads(sys.argv[1])
 errors = []
@@ -109,6 +112,26 @@ def check(cond, msg):
     if not cond:
         errors.append(msg)
 
+def get_first(*paths):
+    """Try multiple paths to find a value, return the first non-None."""
+    for path in paths:
+        parts = path.split(".")
+        val = resp
+        try:
+            for p in parts:
+                if p.isdigit():
+                    val = val[int(p)]
+                elif isinstance(val, dict):
+                    val = val.get(p)
+                else:
+                    val = None
+                    break
+            if val is not None:
+                return val
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+    return None
+
 def print_summary():
     print("\n  Response summary:")
     print(f"    task: {resp.get('task', '?')}")
@@ -116,6 +139,8 @@ def print_summary():
     print(f"    summary: {resp.get('summary', '?')}")
     print(f"    audit_result.method: {(resp.get('audit_result') or {}).get('method', '?')}")
     print(f"    tool_trace length: {len(resp.get('tool_trace') or [])}")
+    print(f"    plan.scenario: {(resp.get('plan') or {}).get('scenario', '?')}")
+    print(f"    plan.steps: {[(s.get('tool_name','?')) for s in (resp.get('plan') or {}).get('steps') or []]}")
     rt = resp.get('reasoning_trace') or {}
     print(f"    reasoning_trace: {rt.get('trace_id', '?')} spans={len(rt.get('spans') or [])}")
     report = resp.get('security_report') or {}
@@ -126,6 +151,16 @@ def print_summary():
     print(f"    security_report.llm_enabled: {meta.get('llm_enabled', '?')}")
     print(f"    security_report.chat_model: {meta.get('chat_model', '?')}")
     print(f"    security_report.chat_model_adapter: {meta.get('chat_model_adapter', '?')}")
+    print(f"    security_report.remote_llm_used: {meta.get('remote_llm_used', '?')}")
+    print(f"    security_report.fallback_used: {meta.get('fallback_used', '?')}")
+    if meta.get("fallback_reason"):
+        print(f"    security_report.fallback_reason: {meta.get('fallback_reason')}")
+    print(f"    security_report.eino_runtime_version: {meta.get('eino_runtime_version', '?')}")
+    # Chat model span attributes
+    for span in rt.get('spans') or []:
+        if span.get('type') == 'chat_model':
+            print(f"    chat_model span attributes: {json.dumps(span.get('attributes', {}))}")
+            break
 
 # Top-level structure
 check("task" in resp, "response missing 'task'")
@@ -147,25 +182,54 @@ else:
     check(meta.get("chat_model_adapter") == "interface-v1", f"expected chat_model_adapter=interface-v1, got {meta.get('chat_model_adapter')}")
     check(meta.get("eino_runtime_version") == "stage13a-v1", f"expected eino_runtime_version=stage13a-v1, got {meta.get('eino_runtime_version')}")
 
-    # remote_llm_used or fallback_used
-    remote = meta.get("remote_llm_used")
-    fallback = meta.get("fallback_used")
+    # Read remote_llm_used / fallback_used from multiple locations (priority order).
+    remote = get_first(
+        "security_report.remote_llm_used",
+        "security_report.audit_metadata.remote_llm_used",
+        "reasoning_trace.spans.attributes.remote_llm_used",
+    )
+    fallback = get_first(
+        "security_report.fallback_used",
+        "security_report.audit_metadata.fallback_used",
+        "reasoning_trace.spans.attributes.fallback_used",
+    )
+    # If not found at top level, try audit_metadata.
+    if remote is None:
+        remote = meta.get("remote_llm_used")
+    if fallback is None:
+        fallback = meta.get("fallback_used")
+    # Last resort: walk chat_model span attributes.
+    if remote is None or fallback is None:
+        for span in (resp.get("reasoning_trace") or {}).get("spans") or []:
+            if span.get("type") == "chat_model":
+                attrs = span.get("attributes") or {}
+                if remote is None:
+                    remote = attrs.get("remote_llm_used")
+                if fallback is None:
+                    fallback = attrs.get("fallback_used")
+                break
+
     check(remote is True or fallback is True,
           f"expected remote_llm_used=true or fallback_used=true, got remote={remote} fallback={fallback}")
     if fallback is True:
         fb_reason = meta.get("fallback_reason", "")
+        if not fb_reason:
+            # Try chat_model span.
+            for span in (resp.get("reasoning_trace") or {}).get("spans") or []:
+                if span.get("type") == "chat_model":
+                    fb_reason = (span.get("attributes") or {}).get("fallback_reason", "")
+                    break
         check(fb_reason != "", "fallback_used=true but fallback_reason is empty")
-        # Check no sensitive data in fallback_reason.
         for pat in ["sk-", "Bearer", "Authorization"]:
             if pat in fb_reason:
                 check(False, f"fallback_reason contains sensitive pattern '{pat}'")
 
-    # Check remote_llm_used specifics
+    # Check remote_llm_used specifics — plan must match SSH task.
+    plan = resp.get("plan") or {}
+    scenario = plan.get("scenario", "")
+    check(scenario == "ssh_anomaly_check",
+          f"expected scenario=ssh_anomaly_check for SSH task, got {scenario}")
     if remote is True:
-        plan = resp.get("plan") or {}
-        scenario = plan.get("scenario", "")
-        check(scenario == "ssh_anomaly_check",
-              f"expected scenario=ssh_anomaly_check for SSH task, got {scenario}")
         traces = resp.get("tool_trace") or []
         check(len(traces) > 0, f"expected tool_trace for remote LLM plan, got empty")
 

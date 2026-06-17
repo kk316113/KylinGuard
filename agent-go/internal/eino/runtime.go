@@ -272,6 +272,8 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 		Route:       metadata.Route,
 	})
 	attachRuntimeMetadata(securityReport, metadata, r.registry)
+	// Inject LLM execution metadata into security report audit_metadata.
+	r.attachLLMMetadata(securityReport)
 	rtb.SetAttr(srSpan.SpanID, "report_title", securityReport.Title)
 	rtb.SetAttr(srSpan.SpanID, "report_sections", len(securityReport.EvidenceChain)+len(securityReport.RiskExplanation)+len(securityReport.Recommendations))
 	rtb.EndSpan(srSpan.SpanID, "ok")
@@ -612,5 +614,33 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 	securityReport.AuditMetadata["tools_used"] = append([]string{}, metadata.ToolsUsed...)
 	if registry != nil {
 		securityReport.AuditMetadata["registered_tool_count"] = len(registry.ListTools())
+	}
+}
+
+// attachLLMMetadata injects remote LLM execution metadata into the security report.
+func (r *Runtime) attachLLMMetadata(securityReport *report.SecurityReport) {
+	if securityReport == nil || securityReport.AuditMetadata == nil {
+		return
+	}
+	fb, ok := r.chatModel.(*FallbackChatModelAdapter)
+	if !ok {
+		securityReport.AuditMetadata["remote_llm_used"] = false
+		securityReport.AuditMetadata["fallback_used"] = false
+		return
+	}
+	used, reason := fb.FallbackInfo()
+	isRemote := r.config.LLMEnabled && r.config.LLMProvider != "deterministic"
+	securityReport.AuditMetadata["remote_llm_used"] = isRemote && !used
+	if !isRemote {
+		securityReport.AuditMetadata["remote_llm_used"] = false
+	}
+	securityReport.AuditMetadata["fallback_used"] = used
+	if used && reason != "" {
+		securityReport.AuditMetadata["fallback_reason"] = reason
+	}
+	// Provider and model info (sanitized: no API key).
+	securityReport.AuditMetadata["llm_provider"] = r.config.LLMProvider
+	if r.config.LLMModel != "" {
+		securityReport.AuditMetadata["llm_model"] = r.config.LLMModel
 	}
 }
