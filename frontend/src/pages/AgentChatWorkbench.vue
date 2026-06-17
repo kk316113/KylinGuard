@@ -234,44 +234,45 @@ async function send() {
 </script>
 
 <style scoped>
-.agent-shell { display: flex; flex-direction: column; height: 100vh; background: var(--color-bg-1); }
+.agent-shell { display: flex; flex-direction: column; height: 100vh; background: #fff; }
 
-/* Header */
-.agent-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; border-bottom: 1px solid var(--color-border); background: var(--color-bg-2); flex-shrink: 0; }
-.header-left { display: flex; align-items: center; gap: 8px; }
-.header-brand { font-size: 15px; font-weight: 600; }
-.header-tagline { font-size: 12px; color: var(--color-text-3); }
-.header-right { display: flex; align-items: center; gap: 10px; }
+/* Header — darker, stronger presence */
+.agent-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px; border-bottom: 1px solid #e5e6eb; background: #f7f8fa; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.header-left { display: flex; align-items: center; gap: 10px; }
+.header-brand { font-size: 20px; font-weight: 700; color: #1d2129; letter-spacing: 0.3px; }
+.header-tagline { font-size: 14px; color: #4e5969; font-weight: 500; }
+.header-right { display: flex; align-items: center; gap: 12px; }
 
 /* Chat scroll area */
-.chat-scroll { flex: 1; overflow-y: auto; }
-.chat-container { max-width: 800px; margin: 0 auto; padding: 24px 16px 16px; }
+.chat-scroll { flex: 1; overflow-y: auto; background: #fff; }
+.chat-container { max-width: 760px; margin: 0 auto; padding: 16px 16px 12px; }
 
-/* Empty state */
-.empty-state { text-align: center; padding: 60px 20px 40px; }
-.empty-title { font-size: 20px; font-weight: 600; margin-bottom: 10px; }
-.empty-subtitle { font-size: 13px; color: var(--color-text-3); max-width: 500px; margin: 0 auto 24px; line-height: 1.6; }
-.suggestion-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
-.sugg-chip { cursor: pointer; padding: 4px 12px; font-size: 13px; }
+/* Empty state — bigger, bolder, tighter */
+.empty-state { text-align: center; padding: 48px 20px 32px; }
+.empty-title { font-size: 32px; font-weight: 700; color: #1d2129; margin-bottom: 12px; line-height: 1.25; }
+.empty-subtitle { font-size: 16px; color: #4e5969; max-width: 520px; margin: 0 auto 28px; line-height: 1.6; font-weight: 400; }
+.suggestion-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.sugg-chip { cursor: pointer; padding: 8px 18px; font-size: 15px; font-weight: 600; color: #1d2129; border: 1px solid #c9cdd4; background: #f7f8fa; border-radius: 20px; transition: all 0.15s; }
+.sugg-chip:hover { background: #e8e9ed; border-color: #86909c; }
 
 /* Messages */
-.msg-row { margin-bottom: 16px; }
+.msg-row { margin-bottom: 18px; }
 .msg-row.user { display: flex; justify-content: flex-end; }
 .msg { max-width: 680px; }
 
 .user-msg .msg-text {
-  background: var(--color-primary-light-1); padding: 10px 14px; border-radius: 16px 16px 4px 16px;
-  font-size: 14px; line-height: 1.5;
+  background: #e8f3ff; padding: 12px 18px; border-radius: 18px 18px 4px 18px;
+  font-size: 15px; line-height: 1.5; color: #1d2129; font-weight: 500;
 }
-.assistant-msg .msg-text { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.assistant-msg .msg-text { font-size: 15px; line-height: 1.65; white-space: pre-wrap; color: #1d2129; }
 .system-msg .msg-text { }
 .error-msg .msg-text { }
 
-/* Running card */
-.running-card { background: var(--color-fill-2); padding: 16px; border-radius: 12px; }
+/* Running card — better contrast */
+.running-card { background: #f7f8fa; padding: 18px; border-radius: 12px; border: 1px solid #e5e6eb; color: #1d2129; font-size: 15px; font-weight: 500; }
 
 /* Composer */
-.composer { flex-shrink: 0; border-top: 1px solid var(--color-border); padding: 12px 24px; background: var(--color-bg-2); }
-.composer-inner { max-width: 800px; margin: 0 auto; display: flex; align-items: flex-end; }
+.composer { flex-shrink: 0; border-top: 1px solid #e5e6eb; padding: 12px 24px; background: #f7f8fa; }
+.composer-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: flex-end; }
 .composer-inner .a-textarea { flex: 1; }
 </style>
