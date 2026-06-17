@@ -1,108 +1,122 @@
 # 麒盾 KylinGuard：面向麒麟操作系统的安全智能运维 Agent
 
-`KylinGuard-Agent` 是一个面向银河麒麟服务器环境的安全智能运维 Agent 比赛工程。当前重点不是跑本地大模型，而是建立一条可验证、可审计、可逐步演进的 Agent 安全链路：
+`KylinGuard-Agent` 是一个面向银河麒麟服务器环境的安全智能运维 Agent。
+
+核心链路：
 
 ```text
 User Task
--> Go Agent Runtime
 -> Intent Guard
--> Rule-based Ops Planner
+-> Eino Graph Runtime / Stable Runtime
+-> ChatModelAdapter / deterministic-stub / Remote LLM Adapter
 -> MCP-like Tool Registry
--> Kylin Ops Tools
--> SSH Diagnosis Tools
--> Semantic Tool Trace
--> audit-core-py
--> TraceShield Adapter
--> TraceShield Core
--> Security Report
--> Audit Result / Risk Graph
+-> Tool Policy
+-> Least-Privilege Execution Proxy
+-> OS sensing tools / SSH diagnosis tools
+-> semantic tool_trace
+-> TraceShield audit
+-> Decision Normalizer
+-> diagnosis
+-> security_report
+-> reasoning_trace
+-> 前端 Agent 安全运维控制台 / 对话工作台
 ```
 
-当前阶段：Stage 12：Remote LLM API Adapter Interface & Frontend Eino Metadata Display。
+当前阶段：**Stage 15A**：One-click Demo Runtime & Competition Acceptance Hardening。
 
 ## 当前做了什么
 
-- 初始化了 Go Agent 后端服务，默认端口 `8080`。
-- 初始化了 Python `audit-core-py` 审计服务，默认端口 `8001`。
-- 接入清洗后的 TraceShield 论文审计核心，Go Agent 只通过 HTTP 调用，不直接 import TraceShield。
-- 增加了 `intent_guard` 前置安全护栏，危险任务会在工具执行前短路 deny。
-- 增加了运维工具注册表和基础工具：`os_info`、`port_checker`、`service_status`、`log_reader`、`safe_shell`。
-- 扩展了工具调用 trace，使其携带 `operation_type`、`resource_type`、`boundary_level`、`allowed_by_policy` 等语义字段。
-- audit-core-py 会把语义 trace 映射到 `risk_graph.nodes`，便于后续解释和可视化。
-- 加入了 CloudWeGo Eino `compose.Graph` 实验运行路径和 `/api/agent/run-eino`。
-- 加入了 Rule-based Ops Planner，可以根据 SSH 异常、服务状态、端口检查、系统概览等任务生成可解释 Plan。
-- 增强了 `service_status` 和 `log_reader`，支持受控 systemctl 探测和白名单系统日志读取。
-- 新增 `ssh_login_analyzer`，可以采集认证日志或 journalctl，分析 SSH 登录失败、无效用户、成功登录和来源 IP。
-- `/api/agent/run` 会在 SSH 异常场景返回 `diagnosis`，但最终安全判定仍由 audit-core-py / TraceShield 给出。
-- 新增确定性 `security_report`，将 plan、tool_trace、diagnosis、audit_result 组织为 evidence chain、risk explanation、sensitive resources 和 recommendations。
-- 新增 Vue 3 前端控制台，用于触发 Go Agent 任务并展示 plan、diagnosis、tool_trace、security_report 和 Raw JSON。
-- 新增 MCP-like 运维工具协议层，支持工具发现、工具详情查询和受策略控制的单工具调用。
-- 为 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`、`safe_shell` 注册了 `ToolMetadata`。
-- 新增 `/api/tools`、`/api/tools/{name}`、`/api/tools/call`，其中 `/api/tools/call` 必须经过 Tool Policy、semantic trace 和 audit-core-py / TraceShield 审计链路。
-- `security_report.audit_metadata` 增加 `tool_protocol=mcp-like`、`tool_protocol_version=stage8-v1`、注册工具数和 `tools_used`。
-- 新增 deterministic ChatModel Stub，`/api/agent/run-eino` 默认进入 Eino graph tool-calling runtime，不再 fallback 到 stable runtime。
-- 新增 MCP-like Tool Adapter，Eino graph tool node 通过 Tool Policy 和 Tool Registry 执行工具调用，不直接执行 shell 或任意读取文件。
-- 新增 `ChatModelAdapter` 接口，支持 `DeterministicChatModelStub`（规则匹配）和 `RemoteLLMMockAdapter`（远程 LLM 占位符），为未来接入真实 LLM API 做准备。
-- 新增 `EINO_LLM_PROVIDER`、`EINO_LLM_ENDPOINT`、`EINO_LLM_MODEL`、`EINO_LLM_API_KEY` 环境变量，用于配置远程 LLM adapter。
-- 新增 `EinoMetadataPanel` 前端组件，在 Eino 模式下展示 runtime、chat_model、chat_model_adapter、orchestration 等元数据。
-- run-eino 路径的 `security_report.audit_metadata` 会标记 `runtime=eino`、`eino_graph_enabled=true`、`llm_enabled=false`、`chat_model=deterministic-stub`、`chat_model_adapter=interface-v1`、`orchestration=eino-graph-tool-calling`、`eino_runtime_version=stage12-v1`。
-- 加固了 Linux/麒麟部署脚本和 Windows/Linux E2E 测试脚本。
-- 已在 Windows 本机和银河麒麟高级服务器版 V11 x86_64 VM 上完成预验证。
+### Stage 8 — MCP-like Tool Protocol & Registry
+
+- 新增 `/api/tools`、`/api/tools/{name}`、`/api/tools/call`
+- `/api/tools/call` 必须经过 Tool Policy、semantic trace 和 TraceShield 审计
+- ToolMetadata 包含 name、description、category、operation_type、resource_type、boundary_level、risk_level、input_schema 等字段
+- `safe_shell` 默认 `enabled=false`、`direct_call_allowed=false`
+
+### Stage 9B — Eino Graph Runtime
+
+- 引入 `github.com/cloudwego/eino v0.9.8`
+- `/api/agent/run-eino` 进入 Eino compose.Graph
+- Graph 节点：ChatModelAdapter → MCP-like Tool Adapter
+- `ChatModelAdapter` 接口支持 deterministic-stub 和远程 LLM adapter
+
+### Stage 10 — OS Deep Sensing Tools
+
+- 新增 5 个只读 OS 感知工具：`process_inspector`、`network_connection_inspector`、`journalctl_reader`、`resource_usage_checker`、`disk_memory_checker`
+- 每个工具完整接入 Tool Registry、Tool Policy、semantic trace、TraceShield
+- 新增 Rule-based Planner 场景：system_resource_check、network_connection_check、process_health_check、journal_log_check、system_security_overview
+
+### Stage 11 — Least-Privilege Execution Proxy
+
+- 新增 `internal/execproxy/` 包
+- 所有系统命令执行经过统一安全入口
+- 命令白名单、禁止 shell/sudo、参数注入检测、超时控制、输出截断
+- 每个工具 trace 注入 `execution_context`
+
+### Stage 12B — Reasoning Trace
+
+- 新增 `internal/reasoningtrace/` 包
+- 每次 Agent 执行生成完整推理链路 span：intent_guard → planner → chat_model → tool_policy → exec_proxy → tool_call → audit → decision_normalizer → diagnosis → security_report
+- 敏感字段脱敏（API_KEY、Authorization、Bearer 等）
+
+### Stage 13A/13B — Remote LLM Adapter
+
+- `RemoteLLMAdapter` 支持 OpenAI-compatible / DeepSeek API
+- `FallbackChatModelAdapter`：远程 LLM 失败时自动降级为 deterministic-stub
+- 强制结构化 Tool Plan JSON 输出校验
+- 默认 `EINO_LLM_ENABLED=false`
+- `ValidateLLMConfig` 提供清晰的配置校验
+- 手动验证脚本 `scripts/linux/test_stage13b_remote_llm_manual.sh`
+
+### Stage 14A/14B/14C — Agent Chat Workbench
+
+- 前端 Agent Chat 工作台（Arco Design Vue）
+- Chat-first 界面：对话流 + 内嵌决策卡片 + 折叠执行过程 + Inspector Drawer
+- Guided Scenario Cards、Agent Running Narrative、Follow-up Suggestions
+- 可选演示说明模式
+- 脱敏后的 Raw JSON 展示
+
+### Stage 15A — One-click Demo Runtime
+
+- `scripts/linux/start_demo.sh`：一键启动 audit-core-py + Go Agent + 前端 + 可选 mock LLM
+- `scripts/linux/stop_demo.sh`：停止所有服务
+- `scripts/linux/check_demo.sh`：健康检查 + LLM 模式校验
+- `DEMO_MOCK_LLM=true` 启用 mock remote LLM 演示
+- 生成 `run/demo.env` 供手动验证脚本使用
 
 ## 当前没做什么
 
-- 没有修改 `TraceShield-Core` 仓库。
-- 没有改变 TraceShield 核心算法语义。
-- 没有实现 Boundary Lattice、真实 Data-flow Evidence、真实 Provenance Contract。
-- 没有接入真实 LLM ChatModel、ReAct Agent、模型厂商 SDK 或远程模型 API；Stage 12 定义了 `ChatModelAdapter` 接口和 `RemoteLLMMockAdapter`（占位符），但仍使用 `DeterministicChatModelStub`。
-- 没有接入真实 LLM 或本地大模型。
-- 没有引入 `torch`、`transformers`、`faiss`、`sentence-transformers` 等重依赖。
-- 没有实现前端页面。
-- LoongArch 环境尚未完成最终验证。
-- Deterministic ChatModel Stub 仍是轻量规则映射，不等同于真实 LLM 智能规划。
-- `ssh_login_analyzer` 不会自动封禁 IP，不会修改防火墙，也不会删除或移动日志。
-- `security_report` 不负责最终裁决，不会覆盖 `decision` 或 `audit_result`。
-- 前端不是安全边界，不直接调用 audit-core-py，不执行命令，不提供自动处置按钮。
-- Stage 8 没有做新的前端大改，Stage 7 前端当前冻结为展示层。
-- 没有开放任意 shell、任意文件读取或绕过 Agent 的后门工具接口。
+- 没有修改 `TraceShield-Core` 仓库
+- 没有改变 TraceShield 核心算法语义
+- 没有接入真实远程 LLM（默认 `EINO_LLM_ENABLED=false`）
+- 没有引入 `torch`、`transformers`、`faiss`、`sentence-transformers` 等重依赖
+- 没有实现登录系统
+- 没有实现历史会话数据库持久化
+- 没有后端自动处置能力（不 kill 进程、不改防火墙、不删除日志）
+- 没有开放任意 shell 或任意文件读取
 
 ## 目录概览
 
-- `agent-go/`
-  Go Agent 后端。包含 HTTP 服务、稳定 runtime、Eino adapter 骨架、工具注册、语义 trace、安全护栏和 audit-core HTTP client。
-
-- `audit-core-py/`
-  Python FastAPI 审计服务。封装 TraceShield adapter，对外提供 `/health`、`/audit/capabilities`、`/audit/trace`。
-
-- `data/sample_traces/`
-  审计样例 trace，包括安全系统检查、敏感日志读取、清空日志、提权等样例。
-
-- `deploy/kylin/`
-  面向 Linux/银河麒麟的环境检查、安装和启动脚本。
-
-- `scripts/windows/`
-  Windows 本机 E2E 测试脚本。
-
-- `scripts/linux/`
-  Linux/麒麟 E2E 测试脚本。
-
-- `docs/`
-  阶段说明、架构说明、工具语义设计、麒麟适配说明、验证记录和 TODO。
-
-- `frontend/`
-  Vue 3 + Vite + TypeScript 前端控制台，展示安全运维任务、执行计划、审计摘要、证据链、敏感资源、风险解释、建议和 Raw JSON。
+- `agent-go/`：Go Agent 后端，包含 HTTP 服务、runtime、Eino graph、工具注册、execproxy、语义 trace、安全护栏、reasoning trace
+- `audit-core-py/`：Python FastAPI 审计服务，封装 TraceShield adapter
+- `data/sample_traces/`：审计样例 trace
+- `deploy/kylin/`：麒麟部署脚本
+- `scripts/linux/`：Linux/麒麟启动、停止、E2E、demo、健康检查脚本
+- `scripts/windows/`：Windows E2E 测试脚本
+- `scripts/dev/`：开发工具（mock LLM server）
+- `docs/`：各阶段文档、架构说明、验证记录
+- `frontend/`：Vue 3 + Arco Design Vue + TypeScript 前端控制台和工作台
 
 ## 关键接口
 
 Go Agent：
 
 - `GET /health`
-- `GET /api/os/info`
-- `POST /api/agent/run`
-- `POST /api/agent/run-eino`
-- `GET /api/tools`
-- `GET /api/tools/{name}`
-- `POST /api/tools/call`
+- `POST /api/agent/run` — 稳定主链路
+- `POST /api/agent/run-eino` — Eino graph runtime 链路
+- `GET /api/tools` — 工具列表
+- `GET /api/tools/{name}` — 工具详情
+- `POST /api/tools/call` — 受控单工具调用
 
 Python audit-core：
 
@@ -110,252 +124,93 @@ Python audit-core：
 - `GET /audit/capabilities`
 - `POST /audit/trace`
 
-`/api/agent/run` 是稳定主链路。
-`/api/agent/run-eino` 是实验链路；当前默认进入 CloudWeGo Eino graph runtime，并在 `summary` 中标记 `Eino graph runtime executed chat model adapter orchestration.`。
-
-`/api/agent/run` 和 `/api/agent/run-eino` 当前都会返回可选字段 `plan`。危险任务被 `intent_guard` 短路时不会返回 plan。
-
-SSH 登录异常场景还会返回可选字段 `diagnosis`。`diagnosis` 是诊断结果，不覆盖 `audit_result`。
-
-所有 Agent run 响应当前都会返回可选字段 `security_report`。它是面向展示和报告的解释结构，不改变最终 `decision`。
-
-`/api/tools` 和 `/api/tools/{name}` 只返回工具 metadata，不执行工具，不需要 audit-core-py。
-`/api/tools/call` 是 MCP-like 单工具调用入口，不是绕过 Agent 的后门：请求会先经过 Tool Policy，允许后才调用现有 Tool Registry，生成 semantic trace，并调用 audit-core-py / TraceShield 审计。
-`safe_shell` 会出现在工具列表中，但默认 `enabled=false` 且 `direct_call_allowed=false`，不能通过 `/api/tools/call` 直连执行。
-
-## 环境变量
-
-Windows 本机常用：
-
-```powershell
-$env:TRACESHIELD_CORE_PATH = "D:\code\2026\TraceShield-Core"
-$env:AUDIT_CORE_URL = "http://127.0.0.1:8001"
-$env:KYLIN_GUARD_AGENT_PORT = "8080"
-$env:EINO_ENABLED = "false"
-$env:EINO_RUNTIME_ENABLED = "true"
-$env:EINO_GRAPH_ENABLED = "true"
-$env:EINO_LLM_ENABLED = "false"
-$env:EINO_LLM_PROVIDER = "deterministic"
-```
-
-Linux/麒麟推荐：
+## 快速启动（Kylin VM 推荐）
 
 ```bash
-export KYLINGUARD_HOME=/opt/kylin-guard-agent
-export TRACESHIELD_CORE_PATH=/opt/traceshield-core
-export AUDIT_CORE_URL=http://127.0.0.1:8001
-export AGENT_GO_PORT=8080
-export AUDIT_CORE_PORT=8001
-export EINO_ENABLED=false
-export EINO_RUNTIME_ENABLED=true
-export EINO_GRAPH_ENABLED=true
-export EINO_LLM_ENABLED=false
-export EINO_LLM_PROVIDER=deterministic
+cd /opt/kylin-guard-agent
+bash scripts/linux/start_demo.sh
+bash scripts/linux/check_demo.sh
+```
+
+浏览器访问 `http://127.0.0.1:5173`
+
+Mock LLM 模式：
+
+```bash
+DEMO_MOCK_LLM=true bash scripts/linux/start_demo.sh
+source run/demo.env
+bash scripts/linux/test_stage13b_remote_llm_manual.sh
+```
+
+停止：
+
+```bash
+bash scripts/linux/stop_demo.sh
 ```
 
 ## Windows 本机启动
 
-先启动 audit-core-py：
-
 ```powershell
+# 启动 audit-core-py
 cd D:\code\2026\KylinGuard-Agent\audit-core-py
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
 $env:TRACESHIELD_CORE_PATH = "D:\code\2026\TraceShield-Core"
 .\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
-```
 
-再启动 Go Agent：
-
-```powershell
+# 启动 Go Agent
 cd D:\code\2026\KylinGuard-Agent\agent-go
 $env:AUDIT_CORE_URL = "http://127.0.0.1:8001"
-$env:EINO_ENABLED = "false"
 $env:EINO_RUNTIME_ENABLED = "true"
 $env:EINO_GRAPH_ENABLED = "true"
 $env:EINO_LLM_ENABLED = "false"
 go run ./cmd/server
-```
 
-如果 `8080` 被旧进程占用：
-
-```powershell
-netstat -ano | findstr :8080
-taskkill /PID <PID> /F
-```
-
-启动前端控制台：
-
-```powershell
+# 启动前端
 cd D:\code\2026\KylinGuard-Agent\frontend
 npm install
 npm run dev
 ```
 
-默认访问：
+## 环境变量
 
-```text
-http://127.0.0.1:5173
-```
-
-前端通过 Vite proxy 调用 Go Agent：
-
-- `/health`
-- `/api/agent/run`
-- `/api/agent/run-eino`
-
-## Linux/麒麟部署启动
-
-在目标机器上建议将仓库放到：
-
-```bash
-/opt/kylin-guard-agent
-```
-
-TraceShield-Core 建议放到：
-
-```bash
-/opt/traceshield-core
-```
-
-预检查环境：
-
-```bash
-cd /opt/kylin-guard-agent
-bash deploy/kylin/check_env.sh
-```
-
-安装 Python 审计服务依赖：
-
-```bash
-export KYLINGUARD_HOME=/opt/kylin-guard-agent
-export TRACESHIELD_CORE_PATH=/opt/traceshield-core
-bash deploy/kylin/install_audit_core_py.sh
-```
-
-安装/构建 Go Agent：
-
-```bash
-export KYLINGUARD_HOME=/opt/kylin-guard-agent
-bash deploy/kylin/install_agent_go.sh
-```
-
-启动 audit-core-py：
-
-```bash
-export KYLINGUARD_HOME=/opt/kylin-guard-agent
-export TRACESHIELD_CORE_PATH=/opt/traceshield-core
-export AUDIT_CORE_PORT=8001
-bash deploy/kylin/run_audit_core_py.sh
-```
-
-启动 Go Agent：
-
-```bash
-export KYLINGUARD_HOME=/opt/kylin-guard-agent
-export AUDIT_CORE_URL=http://127.0.0.1:8001
-export AGENT_GO_PORT=8080
-export EINO_ENABLED=false
-export EINO_RUNTIME_ENABLED=true
-export EINO_GRAPH_ENABLED=true
-export EINO_LLM_ENABLED=false
-bash deploy/kylin/run_agent_go.sh
-```
-
-也可以使用 Linux/麒麟一键启动脚本同时拉起 audit-core-py 和 Go Agent：
-
-```bash
-export KYLINGUARD_HOME=/opt/kylin-guard-agent
-export TRACESHIELD_CORE_PATH=/opt/traceshield-core
-export AUDIT_CORE_PORT=8001
-export AGENT_GO_PORT=8080
-export AUDIT_CORE_URL=http://127.0.0.1:8001
-export EINO_GRAPH_ENABLED=true
-bash scripts/linux/start_all.sh
-```
-
-停止服务：
-
-```bash
-export KYLINGUARD_HOME=/opt/kylin-guard-agent
-bash scripts/linux/stop_all.sh
-```
-
-一键脚本会将日志写入 `logs/audit-core.log` 和 `logs/agent-go.log`，并在 `run/` 目录记录进程 PID。
-
-当前预期支持 `x86_64`、`aarch64`、`loongarch64`。x86_64 麒麟 VM 已完成预验证；LoongArch 仍需最终验证。
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `EINO_RUNTIME_ENABLED` | `true` | 启用 Eino runtime |
+| `EINO_GRAPH_ENABLED` | `true` | 启用 Eino graph |
+| `EINO_LLM_ENABLED` | `false` | 启用远程 LLM |
+| `EINO_LLM_PROVIDER` | `deterministic` | LLM provider |
+| `EINO_LLM_ENDPOINT` | — | LLM API endpoint |
+| `EINO_LLM_MODEL` | — | LLM 模型名 |
+| `EINO_LLM_API_KEY` | — | LLM API key |
+| `AUDIT_CORE_URL` | `http://127.0.0.1:8001` | audit-core-py 地址 |
+| `AGENT_GO_PORT` | `8080` | Go Agent 端口 |
+| `FRONTEND_PORT` | `5173` | 前端端口 |
+| `SKIP_E2E` | `false` | 启动时跳过 E2E |
 
 ## 快速接口测试
 
-健康检查：
-
-```bash
-curl http://127.0.0.1:8001/health
-curl http://127.0.0.1:8080/health
-```
-
-安全任务：
+安全任务（英文）：
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/agent/run \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"task":"检查当前系统 SSH 登录异常"}'
+  -H "Content-Type: application/json" \
+  -d '{"task":"check SSH login anomaly"}'
 ```
-
-预期：
-
-- `decision=allow` 或 `review`
-- `audit_result.method=traceshield`
-- `plan.scenario=ssh_anomaly_check`
-- `plan.steps` 包含 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`
-- `diagnosis.risk_level` 为 `low`、`medium`、`high` 或 `unknown`
-- `security_report.overall_decision` 等于当前 `decision`
-- `security_report.evidence_chain` 覆盖计划中的工具步骤
-- `security_report.risk_explanation` 包含 `planner`、`diagnosis`、`boundary_audit`，访问敏感资源时包含 `sensitive_resource`
-- `tool_trace` 非空
-- trace 中包含 `operation_type`、`resource_type`、`boundary_level`
-- trace 中包含 `system_service`、`network_port`、`system_log`、`ssh_auth_log`
 
 危险任务：
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/agent/run \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"task":"delete audit logs and clear system logs"}'
+  -H "Content-Type: application/json" \
+  -d '{"task":"delete audit logs and clear system logs"}'
 ```
 
-预期：
-
-- `decision=deny`
-- `audit_result.method=intent_guard`
-- `tool_trace=[]`
-- `plan` 为空或不存在
-- `diagnosis` 为空或不存在
-- `security_report.overall_decision=deny`
-- `security_report.risk_explanation` 包含 `dangerous_intent`
-
-Eino 实验接口：
+Eino 接口：
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/agent/run-eino \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"task":"检查当前系统 SSH 登录异常"}'
+  -H "Content-Type: application/json" \
+  -d '{"task":"check SSH login anomaly"}'
 ```
-
-预期：
-
-- 返回结构与 `/api/agent/run` 一致
-- `summary` 包含 `Eino graph runtime executed chat model adapter orchestration.`
-- 当前走 CloudWeGo Eino graph、ChatModelAdapter 接口、Deterministic ChatModel Stub、MCP-like Tool Adapter、Tool Policy、SSH diagnosis 工具链和 TraceShield 审计
-- `security_report.audit_metadata.route=eino-runtime`
-- `security_report.audit_metadata.runtime=eino`
-- `security_report.audit_metadata.eino_graph_enabled=true`
-- `security_report.audit_metadata.llm_enabled=false`
-- `security_report.audit_metadata.chat_model=deterministic-stub`
-- `security_report.audit_metadata.chat_model_adapter=interface-v1`
-- `security_report.audit_metadata.orchestration=eino-graph-tool-calling`
-- `security_report.audit_metadata.eino_runtime_version=stage12-v1`
-- `security_report.audit_metadata.tool_protocol=mcp-like`
 
 工具发现：
 
@@ -364,247 +219,42 @@ curl -s http://127.0.0.1:8080/api/tools
 curl -s http://127.0.0.1:8080/api/tools/ssh_login_analyzer
 ```
 
-预期：
-
-- `protocol=mcp-like`
-- `version=stage8-v1`
-- `count >= 6`
-- 包含 `os_info`、`service_status`、`port_checker`、`log_reader`、`ssh_login_analyzer`、`safe_shell`
-- `ssh_login_analyzer.boundary_level=sensitive_system_resource`
-- 返回 `input_schema` 和 `output_schema`
-
-受策略控制的单工具调用：
-
-```bash
-curl -s -X POST http://127.0.0.1:8080/api/tools/call \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"tool_name":"port_checker","input":{"host":"127.0.0.1","port":22},"reason":"Stage 8 direct tool call"}'
-```
-
-预期：
-
-- `status=ok` 或 `error`，但不能是 `denied`
-- `trace.resource_type=network_port`
-- `audit_result` 存在，audit-core-py 可用时应进入 TraceShield 审计
-
-危险或未知工具调用：
-
-```bash
-curl -s -X POST http://127.0.0.1:8080/api/tools/call \
-  -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{"tool_name":"safe_shell","input":{"command":"rm -rf /"},"reason":"must be denied"}'
-```
-
-预期：
-
-- `status=denied`
-- 不执行工具
-- `audit_result.method=tool_policy`
-- `audit_result.decision=deny`
-
 ## E2E 测试
-
-Windows：
-
-```powershell
-cd D:\code\2026\KylinGuard-Agent
-.\scripts\windows\test_agent_e2e.ps1
-```
-
-Linux/麒麟：
 
 ```bash
 cd /opt/kylin-guard-agent
 bash scripts/linux/test_agent_e2e.sh
 ```
 
-脚本会测试：
-
-- audit-core-py `/health`
-- Go Agent `/health`
-- `/api/agent/run` safe task
-- `/api/agent/run` dangerous task
-- `/api/agent/run-eino` safe task
-- `/api/agent/run-eino` dangerous task
-- `/api/tools` tools discovery
-- `/api/tools/ssh_login_analyzer` tool detail
-- `/api/tools/call` port_checker direct call
-- `/api/tools/call` unknown_tool deny
-- `/api/tools/call` safe_shell dangerous command deny
-- safe task 的 `plan.scenario=ssh_anomaly_check`
-- safe task 的 plan steps 和 semantic tool trace
-- safe task 的 `diagnosis.risk_level`
-- safe/dangerous/run-eino task 的 `security_report`
+测试内容：audit-core-py health、Go Agent health、工具协议、SSH anomaly 任务、危险任务 deny、Eino runtime、OS sensing 工具、execproxy、reasoning trace、默认 LLM 配置检测。
 
 ## 开发测试
 
-Go：
-
 ```bash
-cd agent-go
-gofmt -w .
-go test ./...
+cd agent-go && go test ./...
+cd audit-core-py && python -m pytest -q
+cd frontend && npm run typecheck && npm run build
 ```
-
-Python：
-
-```bash
-cd audit-core-py
-python -m pytest -q
-```
-
-## TraceShield 接入说明
-
-TraceShield 是清洗后的论文核心方法来源，默认源码路径：
-
-```text
-D:\code\2026\TraceShield-Core
-```
-
-Linux 推荐路径：
-
-```text
-/opt/traceshield-core
-```
-
-当前采用策略 A：`audit-core-py` 通过 `TRACESHIELD_CORE_PATH` 动态加入 Python import 路径，并调用 `traceshield_experiment_core.TraceShieldEvaluator`。KylinGuard 不复制整个 TraceShield 仓库，不修改其内部逻辑。
-
-如果 TraceShield 无法 import 或运行失败，audit-core-py 会返回 `method=fallback-mock`，并在 `message` 中说明 fallback 原因。
-
-## 安全边界
-
-`intent_guard` 负责前置危险意图拦截，例如：
-
-- 清空系统日志
-- 删除审计记录
-- 关闭防火墙
-- 格式化磁盘
-- delete audit logs
-- clear system logs
-- rm -rf
-- curl | sh
-
-TraceShield 负责工具调用链审计，例如：
-
-- 工具动作是否超出用户目标
-- 是否访问敏感系统资源
-- 是否出现危险命令
-- 证据链和 risk graph 生成
-
-二者共同构成 KylinGuard 的安全护栏。
-
-## 工具语义字段
-
-每个 tool trace 会尽量包含：
-
-- `operation_type`
-- `resource_type`
-- `resource_path`
-- `permission_scope`
-- `boundary_level`
-- `tool_semantic`
-- `requires_privilege`
-- `allowed_by_policy`
-- `policy_reason`
-
-这些字段用于帮助 audit-core-py 生成更清晰的 `risk_graph.nodes`，也为后续报告和可视化做准备。
-
-## Rule-based Ops Planner
-
-当前支持四类场景：
-
-- `ssh_anomaly_check`：SSH 登录异常、登录失败、暴力破解、异常登录等任务。
-- `service_check`：检查 `sshd`、`nginx`、`docker` 等服务状态。
-- `port_check`：检查指定端口监听或开放状态。
-- `system_overview`：默认系统概览。
-
-例如“检查当前系统 SSH 登录异常”会生成：
-
-```text
-plan-001 os_info
-plan-002 service_status service_name=sshd
-plan-003 port_checker host=127.0.0.1 port=22
-plan-004 log_reader paths=/var/log/secure,/var/log/auth.log lines=100
-plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
-```
-
-`log_reader` 只允许读取白名单日志路径。如果路径不存在或权限不足，会生成 `status=error` 的 graceful trace，不会导致 Agent 崩溃。
-
-`ssh_login_analyzer` 会按 `/var/log/secure`、`/var/log/auth.log`、`journalctl -u sshd` 的顺序采集认证日志，并分析：
-
-- SSH 登录失败次数
-- 无效用户尝试次数
-- 成功登录次数
-- Top failed source IPs
-- `low` / `medium` / `high` / `unknown` 风险等级
-
-## Security Report
-
-`security_report` 由 Go Agent 侧的 deterministic report builder 生成，主要字段包括：
-
-- `title`
-- `scenario`
-- `overall_decision`
-- `risk_level`
-- `summary`
-- `evidence_chain`
-- `risk_explanation`
-- `recommendations`
-- `sensitive_resources`
-- `audit_metadata`
-
-它只解释现有诊断与审计结果，不负责裁决。最终 `decision` 仍来自 intent_guard / TraceShield / 现有 decision flow。
-
-## Eino Graph Runtime 状态
-
-当前已引入 CloudWeGo Eino core 依赖 `github.com/cloudwego/eino v0.9.8`，使用 `compose.Graph` 构建实验编排路径。
-
-Stage 12 默认：
-
-- `/api/agent/run-eino` 进入 Eino graph runtime
-- graph 第一节点为 `ChatModelAdapter`（当前实现：Deterministic ChatModel Stub）
-- graph 第二节点为 MCP-like Tool Adapter / Tool Policy 执行节点
-- `ChatModelAdapter` 接口支持未来替换为 `RemoteLLMMockAdapter` 或真实 LLM adapter
-- 新增 `EINO_LLM_PROVIDER`、`EINO_LLM_ENDPOINT`、`EINO_LLM_MODEL`、`EINO_LLM_API_KEY` 环境变量
-- 不绕过 intent_guard
-- 不绕过 Tool Policy
-- 不绕过 audit-core-py
-- 不绕过 TraceShield
-- 不改变 `/api/agent/run` 行为
-- 不接真实 LLM，`llm_enabled=false`
-- 不引入模型厂商 SDK、API key 或远程模型调用
-
-`EINO_RUNTIME_ENABLED=false` 会禁用 run-eino runtime；`EINO_GRAPH_ENABLED=true` 是默认值；`EINO_LLM_ENABLED=false` 是默认值。旧的 `EINO_ENABLED=false` 仅保留兼容含义，可理解为不启用真实 LLM，不再导致 run-eino fallback 到 stable runtime。`EINO_LLM_PROVIDER=deterministic` 是默认值；设为 `openai`、`anthropic` 等时会切换到 `RemoteLLMMockAdapter`（返回 not-implemented）。
-
-未来可以在不改变安全链路的前提下，把 `RemoteLLMMockAdapter` 替换为真实 LLM API adapter，但仍必须保留 intent_guard、Tool Policy、semantic trace 和 TraceShield 审计。
 
 ## 重要文档
 
 - `docs/architecture.md`：整体架构
 - `docs/agent_tool_design.md`：工具与 trace 语义设计
-- `docs/stage1_5_validation.md`：intent_guard 短路验证
-- `docs/stage2_tool_semantics.md`：工具语义映射说明
-- `docs/stage2_5_kylin_precheck.md`：麒麟预检查说明
-- `docs/stage3_eino_adapter.md`：Eino Adapter 接入说明
-- `docs/stage4_rule_based_planner.md`：Rule-based Ops Planner 说明
-- `docs/stage5_real_kylin_diagnosis_tools.md`：真实 SSH 登录异常诊断工具链说明
-- `docs/stage6_audit_report_evidence_chain.md`：审计报告与证据链说明
-- `docs/stage8_mcp_like_tool_protocol.md`：MCP-like 工具协议与插件注册说明
-- `docs/stage9a_eino_runtime_skeleton.md`：deterministic Eino Runtime Skeleton 说明
-- `docs/stage9b_eino_graph_runtime.md`：CloudWeGo Eino Graph Runtime 与 deterministic tool calling 说明
-- `docs/stage12_remote_llm_adapter_interface.md`：Remote LLM API Adapter 接口与前端元数据显示说明
-- `docs/todo.md`：后续计划
-- `frontend/README.md`：前端控制台启动与安全边界说明
+- `docs/stage10_os_deep_sensing_tools.md`：OS 深度感知工具说明
+- `docs/stage11_least_privilege_execution_proxy.md`：最小权限执行代理说明
+- `docs/stage12b_reasoning_trace.md`：推理链路与审计证据增强说明
+- `docs/stage13a_remote_llm_adapter.md`：远程 LLM Adapter 架构说明
+- `docs/stage13b_remote_llm_manual_verification.md`：远程 LLM 手动验证说明
+- `docs/stage15a_demo_runtime.md`：一键演示运行说明
+- `docs/demo_script_for_competition.md`：比赛推荐演示流程
+- `frontend/README.md`：前端说明
 
-## 后续 TODO
+## 安全边界
 
-- 在 LoongArch 环境完成最终验证。
-- 增加 systemd service 文件。
-- 扩展 Rule-based Ops Planner，让更多安全运维任务可以选择真实工具链。
-- 扩展 SSH 日志格式、时间窗口和用户名/IP 维度诊断。
-- 将 `security_report` 导出为前端页面或报告文件。
-- 扩展前端展示，例如 risk graph、报告导出和 Kylin VM 演示截图。
-- 将更多 TraceShield evidence 映射为用户可解释报告。
-- 实现真正的 RemoteLLMAdapter，对接 OpenAI / Anthropic 等 API。
-- 在 `ChatModelAdapter.GenerateToolCalls` 中传入 `toolDefs`，支持 LLM 工具选择。
-- 增强前端报告导出和演示视图。
+- `intent_guard`：危险意图前置拦截（删除日志、关闭防火墙、格式化磁盘等）
+- `Tool Policy`：工具参数白名单校验
+- `Exec Proxy`：命令白名单、禁止 shell/sudo、参数注入检测
+- `TraceShield`：工具调用链安全审计
+- `Decision Normalizer`：只读低风险 → allow，敏感资源 → review，危险 → deny
+- `Reasoning Trace`：完整推理链路溯源与脱敏
+- API_KEY / Authorization / Bearer 不进入前端、不进入日志、不进入 reasoning_trace

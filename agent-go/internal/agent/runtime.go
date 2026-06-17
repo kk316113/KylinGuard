@@ -27,15 +27,19 @@ type RunRequest struct {
 }
 
 type RunResponse struct {
-	Task           string                         `json:"task"`
-	Decision       string                         `json:"decision"`
-	Summary        string                         `json:"summary"`
-	Plan           *Plan                          `json:"plan,omitempty"`
-	Diagnosis      *Diagnosis                     `json:"diagnosis,omitempty"`
-	SecurityReport *report.SecurityReport         `json:"security_report,omitempty"`
-	ToolTrace      []logtrace.ToolTrace           `json:"tool_trace"`
-	AuditResult    auditclient.Result             `json:"audit_result"`
-	ReasoningTrace *reasoningtrace.ReasoningTrace `json:"reasoning_trace,omitempty"`
+	Task            string                         `json:"task"`
+	Decision        string                         `json:"decision"`
+	Summary         string                         `json:"summary"`
+	Plan            *Plan                          `json:"plan,omitempty"`
+	Diagnosis       *Diagnosis                     `json:"diagnosis,omitempty"`
+	SecurityReport  *report.SecurityReport         `json:"security_report,omitempty"`
+	ToolTrace       []logtrace.ToolTrace           `json:"tool_trace"`
+	AuditResult     auditclient.Result             `json:"audit_result"`
+	ReasoningTrace  *reasoningtrace.ReasoningTrace `json:"reasoning_trace,omitempty"`
+	AgentMode       string                         `json:"agent_mode,omitempty"`
+	TaskUnderstanding map[string]any               `json:"task_understanding,omitempty"`
+	AgentSteps      []map[string]any               `json:"agent_steps,omitempty"`
+	FinalAnswer     string                         `json:"final_answer,omitempty"`
 }
 
 type Diagnosis struct {
