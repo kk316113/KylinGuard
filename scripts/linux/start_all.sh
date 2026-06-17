@@ -89,9 +89,16 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-echo
-echo "== running Linux/Kylin E2E test =="
-bash scripts/linux/test_agent_e2e.sh | tee logs/e2e-latest.log
+if [ "${SKIP_E2E:-false}" = "true" ]; then
+  echo
+  echo "== SKIP_E2E=true, skipping Linux/Kylin E2E test =="
+  echo "Run manually: bash scripts/linux/test_agent_e2e.sh"
+  echo "Or for LLM verification: bash scripts/linux/test_stage13b_remote_llm_manual.sh"
+else
+  echo
+  echo "== running Linux/Kylin E2E test =="
+  bash scripts/linux/test_agent_e2e.sh | tee logs/e2e-latest.log
+fi
 
 echo
 echo "== all done =="

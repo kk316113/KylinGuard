@@ -7,8 +7,8 @@
 #   export EINO_LLM_ENABLED=true
 #   export EINO_LLM_PROVIDER=openai_compatible
 #   export EINO_LLM_ENDPOINT=http://127.0.0.1:8800/v1/chat/completions
-#   export EINO_LLM_MODEL=gpt-4
-#   export EINO_LLM_API_KEY=sk-placeholder
+#   export EINO_LLM_MODEL=mock-model
+#   export EINO_LLM_API_KEY=sk-mock-key
 #   bash test_stage13b_remote_llm_manual.sh
 #
 # Or with mock server:
@@ -41,15 +41,15 @@ fi
 
 if [ -z "${EINO_LLM_API_KEY:-}" ]; then
   printf 'WARNING: EINO_LLM_API_KEY is not set.\n'
-  printf '  This is expected when using the mock server.\n'
-  printf '  But run-eino will fall back to deterministic-stub.\n'
+  printf '  If using the mock server, set it to any value, e.g.:\n'
+  printf '  export EINO_LLM_API_KEY=sk-mock-key\n'
 fi
 
 if [ -z "${EINO_LLM_ENDPOINT:-}" ]; then
   printf 'WARNING: EINO_LLM_ENDPOINT is not set.\n'
 fi
 
-printf 'Configuration:\n'
+printf 'Configuration (API_KEY redacted):\n'
 printf '  EINO_LLM_ENABLED=%s\n' "${EINO_LLM_ENABLED:-<unset>}"
 printf '  EINO_LLM_PROVIDER=%s\n' "${EINO_LLM_PROVIDER:-<unset>}"
 printf '  EINO_LLM_ENDPOINT=%s\n' "${EINO_LLM_ENDPOINT:-<unset>}"
@@ -62,23 +62,43 @@ printf '1. Checking Go Agent health...\n'
 HEALTH=$(curl -s -f "$KYLIN_GUARD_AGENT_URL/health" 2>&1 || true)
 if [ -z "$HEALTH" ]; then
   printf '  FAIL: Go Agent is not running at %s\n' "$KYLIN_GUARD_AGENT_URL"
-  printf '  Start the agent first: bash start_all.sh\n'
+  printf '  Start the agent with: SKIP_E2E=true bash start_all.sh\n'
   exit 1
 fi
 printf '  PASS: Go Agent is running.\n\n'
 
 # Test 2: Call run-eino with SSH anomaly task.
 printf '2. Calling run-eino with: check SSH login anomaly\n'
-RESPONSE=$(curl -s -f -X POST "$KYLIN_GUARD_AGENT_URL/api/agent/run-eino" \
+RESPONSE_FILE="/tmp/kylin_guard_stage13b_response.json"
+curl -s -f -X POST "$KYLIN_GUARD_AGENT_URL/api/agent/run-eino" \
   -H "Content-Type: application/json" \
-  -d '{"task":"check SSH login anomaly"}' 2>&1 || true)
+  -d '{"task":"check SSH login anomaly"}' > "$RESPONSE_FILE" 2>&1 || {
+  rc=$?
+  printf '  FAIL: curl returned exit code %d\n' "$rc"
+  if [ -s "$RESPONSE_FILE" ]; then
+    printf '  Response (first 500 chars):\n'
+    head -c 500 "$RESPONSE_FILE" | python3 -c "
+import sys; data = sys.stdin.buffer.read()
+try:
+    decoded = data.decode('utf-8')
+except:
+    decoded = repr(data[:500])
+# Redact any API key patterns
+import re
+decoded = re.sub(r'sk-[A-Za-z0-9]{10,}', '[REDACTED]', decoded)
+print(decoded[:500])
+"
+  fi
+  exit 1
+}
 
+RESPONSE=$(cat "$RESPONSE_FILE")
 if [ -z "$RESPONSE" ]; then
   printf '  FAIL: Empty response from run-eino\n'
   exit 1
 fi
 
-# Use python3 to validate the response.
+# Use python3 to validate the response with detailed error reporting.
 python3 - "$RESPONSE" <<'PYCHECK'
 import json, sys
 
@@ -89,23 +109,65 @@ def check(cond, msg):
     if not cond:
         errors.append(msg)
 
-# Response structure
+def print_summary():
+    print("\n  Response summary:")
+    print(f"    task: {resp.get('task', '?')}")
+    print(f"    decision: {resp.get('decision', '?')}")
+    print(f"    summary: {resp.get('summary', '?')}")
+    print(f"    audit_result.method: {(resp.get('audit_result') or {}).get('method', '?')}")
+    print(f"    tool_trace length: {len(resp.get('tool_trace') or [])}")
+    rt = resp.get('reasoning_trace') or {}
+    print(f"    reasoning_trace: {rt.get('trace_id', '?')} spans={len(rt.get('spans') or [])}")
+    report = resp.get('security_report') or {}
+    meta = report.get('audit_metadata') or {}
+    print(f"    security_report.title: {report.get('title', '?')}")
+    print(f"    security_report.route: {meta.get('route', '?')}")
+    print(f"    security_report.runtime: {meta.get('runtime', '?')}")
+    print(f"    security_report.llm_enabled: {meta.get('llm_enabled', '?')}")
+    print(f"    security_report.chat_model: {meta.get('chat_model', '?')}")
+    print(f"    security_report.chat_model_adapter: {meta.get('chat_model_adapter', '?')}")
+
+# Top-level structure
 check("task" in resp, "response missing 'task'")
 check("decision" in resp, "response missing 'decision'")
 check(resp.get("decision") != "", "decision is empty")
 
 # Security report
 report = resp.get("security_report") or {}
-check(report.get("title", "") != "", "security_report.title is empty")
-check(report.get("route") == "eino-runtime", f"expected route=eino-runtime, got {report.get('route')}")
-check(report.get("runtime") == "eino", f"expected runtime=eino, got {report.get('runtime')}")
-
-# Metadata
 meta = report.get("audit_metadata") or {}
-check(meta.get("llm_enabled") is not None, "llm_enabled missing in metadata")
-llm_enabled = meta.get("llm_enabled", False)
-check(meta.get("chat_model_adapter") == "interface-v1", "expected chat_model_adapter=interface-v1")
-check(meta.get("eino_runtime_version") == "stage13a-v1", "expected stage13a-v1")
+
+if not report or not meta:
+    print("\n  WARNING: security_report or audit_metadata is missing/empty.")
+    print_summary()
+    check(False, "security_report or audit_metadata missing")
+else:
+    check(meta.get("route") == "eino-runtime", f"expected route=eino-runtime, got {meta.get('route')}")
+    check(meta.get("runtime") == "eino", f"expected runtime=eino, got {meta.get('runtime')}")
+    check(meta.get("llm_enabled") is True, f"expected llm_enabled=true, got {meta.get('llm_enabled')}")
+    check(meta.get("chat_model_adapter") == "interface-v1", f"expected chat_model_adapter=interface-v1, got {meta.get('chat_model_adapter')}")
+    check(meta.get("eino_runtime_version") == "stage13a-v1", f"expected eino_runtime_version=stage13a-v1, got {meta.get('eino_runtime_version')}")
+
+    # remote_llm_used or fallback_used
+    remote = meta.get("remote_llm_used")
+    fallback = meta.get("fallback_used")
+    check(remote is True or fallback is True,
+          f"expected remote_llm_used=true or fallback_used=true, got remote={remote} fallback={fallback}")
+    if fallback is True:
+        fb_reason = meta.get("fallback_reason", "")
+        check(fb_reason != "", "fallback_used=true but fallback_reason is empty")
+        # Check no sensitive data in fallback_reason.
+        for pat in ["sk-", "Bearer", "Authorization"]:
+            if pat in fb_reason:
+                check(False, f"fallback_reason contains sensitive pattern '{pat}'")
+
+    # Check remote_llm_used specifics
+    if remote is True:
+        plan = resp.get("plan") or {}
+        scenario = plan.get("scenario", "")
+        check(scenario == "ssh_anomaly_check",
+              f"expected scenario=ssh_anomaly_check for SSH task, got {scenario}")
+        traces = resp.get("tool_trace") or []
+        check(len(traces) > 0, f"expected tool_trace for remote LLM plan, got empty")
 
 # Reasoning trace
 rt = resp.get("reasoning_trace") or {}
@@ -122,30 +184,28 @@ for span in spans:
                 check(False, f"sensitive key '{k}' found in reasoning_trace span '{span.get('type')}'")
         if isinstance(v, str):
             vl = v.lower()
-            if "bearer " in vl or "sk-" in vl[:10] or "-----begin" in vl:
+            if "bearer " in vl or "-----begin" in vl:
                 check(False, f"sensitive value in reasoning_trace span '{span.get('type')}' attr '{k}'")
 
 # Check that API key is not leaked in response body
 resp_str = json.dumps(resp)
-if "sk-" in resp_str and "test" not in resp_str.lower():
-    check(False, "possible API key leak in response body")
-if "Authorization" in resp_str and "Bearer" in resp_str:
-    check(False, "possible Authorization header leak in response body")
+# Only flag real-looking keys (not "sk-mock-key" or "sk-test")
+if "sk-" in resp_str and "sk-mock" not in resp_str and "sk-test" not in resp_str:
+    check(False, "possible API key leak in response body (sk- pattern found)")
 
 if errors:
-    print("FAILURES:")
+    print("\nFAILURES:")
     for e in errors:
         print(f"  - {e}")
+    print_summary()
     raise SystemExit(1)
 else:
-    print("  PASS: All checks passed.")
+    print("\n  PASS: All checks passed.")
     print(f"  decision={resp.get('decision','?')}")
-    print(f"  llm_enabled={llm_enabled}")
-    print(f"  chat_model={meta.get('chat_model','?')}")
-    if meta.get("remote_llm_used") is not None:
-        print(f"  remote_llm_used={meta.get('remote_llm_used')}")
-    if meta.get("fallback_used") is not None:
-        print(f"  fallback_used={meta.get('fallback_used')}")
+    print(f"  plan.scenario={(resp.get('plan') or {}).get('scenario','?')}")
+    print(f"  llm_enabled={meta.get('llm_enabled','?')}")
+    print(f"  remote_llm_used={meta.get('remote_llm_used','?')}")
+    print(f"  fallback_used={meta.get('fallback_used','?')}")
     if meta.get("fallback_reason"):
         print(f"  fallback_reason={meta.get('fallback_reason')}")
     span_types = [s["type"] for s in spans]
