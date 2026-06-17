@@ -53,7 +53,7 @@ func NormalizeAgentDecision(auditDecision string, auditMethod string, traces []l
 
 	// All tools are read/inspect/analyze with allowed_by_policy=true.
 	// Check sensitivity level.
-	if containsSensitiveBoundary(traces) {
+	if ContainsSensitiveBoundary(traces) {
 		return string(security.DecisionReview)
 	}
 
@@ -96,8 +96,8 @@ func anyPolicyDenied(traces []logtrace.ToolTrace) bool {
 	return false
 }
 
-// containsSensitiveBoundary checks if any trace step touches sensitive system resources.
-func containsSensitiveBoundary(traces []logtrace.ToolTrace) bool {
+// ContainsSensitiveBoundary checks if any trace step touches sensitive system resources.
+func ContainsSensitiveBoundary(traces []logtrace.ToolTrace) bool {
 	for _, trace := range traces {
 		if trace.BoundaryLevel == "sensitive_system_resource" {
 			return true

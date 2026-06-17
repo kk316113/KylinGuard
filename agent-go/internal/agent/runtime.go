@@ -8,6 +8,7 @@ import (
 
 	"kylin-guard-agent/agent-go/internal/auditclient"
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/reasoningtrace"
 	"kylin-guard-agent/agent-go/internal/report"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
@@ -26,14 +27,15 @@ type RunRequest struct {
 }
 
 type RunResponse struct {
-	Task           string                 `json:"task"`
-	Decision       string                 `json:"decision"`
-	Summary        string                 `json:"summary"`
-	Plan           *Plan                  `json:"plan,omitempty"`
-	Diagnosis      *Diagnosis             `json:"diagnosis,omitempty"`
-	SecurityReport *report.SecurityReport `json:"security_report,omitempty"`
-	ToolTrace      []logtrace.ToolTrace   `json:"tool_trace"`
-	AuditResult    auditclient.Result     `json:"audit_result"`
+	Task           string                         `json:"task"`
+	Decision       string                         `json:"decision"`
+	Summary        string                         `json:"summary"`
+	Plan           *Plan                          `json:"plan,omitempty"`
+	Diagnosis      *Diagnosis                     `json:"diagnosis,omitempty"`
+	SecurityReport *report.SecurityReport         `json:"security_report,omitempty"`
+	ToolTrace      []logtrace.ToolTrace           `json:"tool_trace"`
+	AuditResult    auditclient.Result             `json:"audit_result"`
+	ReasoningTrace *reasoningtrace.ReasoningTrace `json:"reasoning_trace,omitempty"`
 }
 
 type Diagnosis struct {
@@ -70,8 +72,20 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		return RunResponse{}, errors.New("task is required")
 	}
 
+	// Initialize reasoning trace.
+	rtb := reasoningtrace.NewTraceBuilder("stable", task)
+	requestSpan := rtb.StartSpan("", reasoningtrace.SpanRequest, "Stable Runtime request")
+
+	// Intent guard.
 	intent := r.guard.Evaluate(task)
+	intentGuardSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanIntentGuard, "intent_guard evaluate")
+	rtb.SetAttr(intentGuardSpan.SpanID, "decision", string(intent.Decision))
 	if intent.Decision == security.DecisionDeny {
+		rtb.SetAttr(intentGuardSpan.SpanID, "blocked_reason", "dangerous task denied before tool execution")
+		rtb.EndSpan(intentGuardSpan.SpanID, "deny")
+		rtb.EndSpan(requestSpan.SpanID, "deny")
+		rtb.Finish()
+
 		audit := auditclient.Result{
 			Decision:  string(security.DecisionDeny),
 			RiskScore: 1.0,
@@ -103,42 +117,133 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 			SecurityReport: securityReport,
 			ToolTrace:      []logtrace.ToolTrace{},
 			AuditResult:    audit,
+			ReasoningTrace: rtb.Finish(),
 		}, nil
 	}
+	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
 
+	// Planner.
+	plannerSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanPlanner, "rule-based planner")
 	plan, err := r.planner.Plan(ctx, task)
 	if err != nil {
+		rtb.EndSpan(plannerSpan.SpanID, "error")
 		return RunResponse{}, err
 	}
+	toolList := make([]string, len(plan.Steps))
+	for i, s := range plan.Steps {
+		toolList[i] = s.ToolName
+	}
+	rtb.SetAttr(plannerSpan.SpanID, "planner_type", "stable-deterministic")
+	rtb.SetAttr(plannerSpan.SpanID, "scenario", plan.Scenario)
+	rtb.SetAttr(plannerSpan.SpanID, "selected_tools", reasoningtrace.StringSlice(toolList))
+	rtb.EndSpan(plannerSpan.SpanID, "ok")
 
+	// Tool execution.
 	traces := make([]logtrace.ToolTrace, 0, len(plan.Steps))
 	var diagnosis *Diagnosis
 	for _, step := range plan.Steps {
+		// Tool policy & exec proxy — we use the tool call result trace to capture execution context.
+		toolCallSpan := rtb.StartSpan(plannerSpan.SpanID, reasoningtrace.SpanToolCall, step.ToolName)
+		policySpan := rtb.StartSpan(toolCallSpan.SpanID, reasoningtrace.SpanToolPolicy, step.ToolName+" policy")
+
+		// Check metadata for Tool Policy info.
+		if md, ok := r.registry.GetTool(step.ToolName); ok {
+			rtb.SetAttr(policySpan.SpanID, "tool_name", step.ToolName)
+			rtb.SetAttr(policySpan.SpanID, "permission_scope", md.PermissionScope)
+			rtb.SetAttr(policySpan.SpanID, "boundary_level", md.BoundaryLevel)
+			rtb.SetAttr(policySpan.SpanID, "allowed_by_policy", md.AllowedByPolicy)
+			rtb.SetAttr(policySpan.SpanID, "risk_level", md.RiskLevel)
+		}
+		rtb.EndSpan(policySpan.SpanID, "ok")
+
+		// Tool execution.
 		result, _ := r.registry.InvokeWithStepID(ctx, step.StepID, step.ToolName, step.Input)
+		rtb.SetAttr(toolCallSpan.SpanID, "tool_name", step.ToolName)
+		rtb.SetAttr(toolCallSpan.SpanID, "operation_type", result.Trace.OperationType)
+		rtb.SetAttr(toolCallSpan.SpanID, "resource_type", result.Trace.ResourceType)
+		rtb.SetAttr(toolCallSpan.SpanID, "boundary_level", result.Trace.BoundaryLevel)
+		rtb.SetAttr(toolCallSpan.SpanID, "status", result.Trace.Status)
+
+		// Execution profile from context.
+		if ec := result.Trace.ExecutionContext; ec != nil {
+			execSpan := rtb.StartSpan(toolCallSpan.SpanID, reasoningtrace.SpanExecProxy, step.ToolName+" exec")
+			rtb.SetAttr(execSpan.SpanID, "tool_name", step.ToolName)
+			rtb.SetAttr(execSpan.SpanID, "execution_profile", ec.Profile)
+			rtb.SetAttr(execSpan.SpanID, "shell_used", ec.ShellUsed)
+			rtb.SetAttr(execSpan.SpanID, "sudo_used", ec.SudoUsed)
+			rtb.SetAttr(execSpan.SpanID, "allowed_by_exec_policy", ec.AllowedByExecPolicy)
+			rtb.EndSpan(execSpan.SpanID, "ok")
+		}
+
+		// Truncated result summary (no full log content).
+		rtb.SetAttr(toolCallSpan.SpanID, "result_summary", reasoningtrace.TruncatedSummary(result.Trace.OutputSummary, 200))
+
+		// Capture diagnosis from SSH analyzer or OS sensing tools.
 		if step.ToolName == "ssh_login_analyzer" {
 			diagnosis = diagnosisFromSSHLoginAnalyzer(plan.Scenario, result.Output)
 		}
 		if diagnosis == nil {
 			diagnosis = diagnosisFromToolOutput(plan.Scenario, step.ToolName, result.Output)
 		}
+
 		traces = append(traces, result.Trace)
 		r.traces.Add(result.Trace)
+		rtb.EndSpan(toolCallSpan.SpanID, "ok")
 	}
 
+	// Audit.
+	auditSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanAudit, "traceshield audit")
 	audit, err := r.auditor.AuditTrace(ctx, task, traces)
 	if err != nil {
+		rtb.EndSpan(auditSpan.SpanID, "error")
 		return RunResponse{}, err
 	}
 	if audit.Decision == "" {
 		audit.Decision = string(intent.Decision)
 	}
-	// Normalize TraceShield denial for read-only OS sensing tools.
+	rtb.SetAttr(auditSpan.SpanID, "audit_method", audit.Method)
+	rtb.SetAttr(auditSpan.SpanID, "audit_decision", audit.Decision)
+	rtb.SetAttr(auditSpan.SpanID, "risk_score", audit.RiskScore)
+	rtb.SetAttr(auditSpan.SpanID, "evidence_count", len(audit.EvidenceChain))
+	rtb.SetAttr(auditSpan.SpanID, "evidence_summary", fmt.Sprintf("%d evidence items", len(audit.EvidenceChain)))
+	rtb.EndSpan(auditSpan.SpanID, "ok")
+
+	// Decision normalizer.
+	dnSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanDecisionNormalizer, "decision normalizer")
 	diagRisk := ""
 	if diagnosis != nil {
 		diagRisk = diagnosis.RiskLevel
 	}
+	rawDecision := audit.Decision
 	audit.Decision = NormalizeAgentDecision(audit.Decision, audit.Method, traces, diagRisk)
+	rtb.SetAttr(dnSpan.SpanID, "raw_decision", rawDecision)
+	rtb.SetAttr(dnSpan.SpanID, "normalized_decision", audit.Decision)
+	rtb.SetAttr(dnSpan.SpanID, "traceshield_method", audit.Method)
+	rtb.SetAttr(dnSpan.SpanID, "diagnosis_risk_level", diagRisk)
+	if audit.Decision != rawDecision {
+		if ContainsSensitiveBoundary(traces) {
+			rtb.SetAttr(dnSpan.SpanID, "normalization_reason", "Traceshield deny overridden to review due to sensitive read-only tools with allowed_by_policy=true")
+		} else {
+			rtb.SetAttr(dnSpan.SpanID, "normalization_reason", "Traceshield deny overridden to allow due to all read-only low-boundary tools")
+		}
+	} else {
+		rtb.SetAttr(dnSpan.SpanID, "normalization_reason", "No normalization needed")
+	}
+	rtb.EndSpan(dnSpan.SpanID, "ok")
 
+	// Diagnosis span.
+	diagnosisSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanDiagnosis, "diagnosis builder")
+	if diagnosis != nil {
+		rtb.SetAttr(diagnosisSpan.SpanID, "diagnosis_scenario", diagnosis.Scenario)
+		rtb.SetAttr(diagnosisSpan.SpanID, "diagnosis_risk_level", diagnosis.RiskLevel)
+		rtb.SetAttr(diagnosisSpan.SpanID, "findings_count", len(diagnosis.Findings))
+	} else {
+		rtb.SetAttr(diagnosisSpan.SpanID, "diagnosis_risk_level", "none")
+	}
+	rtb.EndSpan(diagnosisSpan.SpanID, "ok")
+
+	// Security report.
+	srSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanSecurityReport, "security report builder")
 	securityReport := report.BuildSecurityReport(report.BuildInput{
 		Task:        task,
 		Decision:    audit.Decision,
@@ -149,6 +254,13 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		AuditResult: audit,
 		Route:       "stable",
 	})
+	rtb.SetAttr(srSpan.SpanID, "report_title", securityReport.Title)
+	rtb.SetAttr(srSpan.SpanID, "report_sections", len(securityReport.EvidenceChain)+len(securityReport.RiskExplanation)+len(securityReport.Recommendations))
+	rtb.EndSpan(srSpan.SpanID, "ok")
+
+	// Final.
+	rtb.EndSpan(requestSpan.SpanID, "completed")
+	rtb.Finish()
 
 	return RunResponse{
 		Task:           task,
@@ -159,6 +271,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		SecurityReport: securityReport,
 		ToolTrace:      traces,
 		AuditResult:    audit,
+		ReasoningTrace: rtb.Trace,
 	}, nil
 }
 

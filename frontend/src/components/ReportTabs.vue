@@ -23,6 +23,9 @@
       <el-tab-pane v-if="isEinoMode" label="Eino Metadata" name="metadata">
         <EinoMetadataPanel :report="report" />
       </el-tab-pane>
+      <el-tab-pane label="Reasoning Trace" name="trace">
+        <ReasoningTracePanel :trace="response?.reasoning_trace || null" />
+      </el-tab-pane>
       <el-tab-pane label="Raw JSON" name="raw">
         <RawJsonPanel :data="response" />
       </el-tab-pane>
@@ -38,6 +41,7 @@ import SensitiveResourceCards from './SensitiveResourceCards.vue'
 import RiskExplanationList from './RiskExplanationList.vue'
 import RecommendationList from './RecommendationList.vue'
 import EinoMetadataPanel from './EinoMetadataPanel.vue'
+import ReasoningTracePanel from './ReasoningTracePanel.vue'
 import RawJsonPanel from './RawJsonPanel.vue'
 
 const props = defineProps<{

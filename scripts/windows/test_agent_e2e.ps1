@@ -695,4 +695,61 @@ function Assert-Stage11LeastPrivilege {
 
 Assert-Stage11LeastPrivilege
 
+# ============================================================================
+# Stage 12B: Reasoning Trace validation
+# ============================================================================
+function Assert-Stage12BReasoningTrace {
+    Write-Host "`n== Stage 12B reasoning trace =="
+
+    $stableJson = Invoke-AgentTask -Path "/api/agent/run" -Task "检查当前系统资源使用情况" -Label "stage12b_stable"
+    $einoJson = Invoke-AgentTask -Path "/api/agent/run-eino" -Task "执行一次系统安全巡检" -Label "stage12b_eino"
+    $dangerJson = Invoke-AgentTask -Path "/api/agent/run" -Task "delete audit logs and clear system logs" -Label "stage12b_danger"
+
+    function Assert-ReasoningTrace {
+        param($Json, [string]$Label, [string[]]$ExpectedSpanTypes)
+        $rt = $Json.reasoning_trace
+        if (-not $rt) {
+            throw "$Label`: missing reasoning_trace field"
+        }
+        $spans = @($rt.spans)
+        if ($spans.Count -eq 0) {
+            throw "$Label`: reasoning_trace.spans is empty"
+        }
+        $spanTypes = @($spans | ForEach-Object { $_.type })
+        foreach ($st in $ExpectedSpanTypes) {
+            if ($spanTypes -notcontains $st) {
+                throw "$Label`: missing expected span type '$st' in $($spanTypes -join ',')"
+            }
+        }
+        # Check for sensitive data leaks in attributes.
+        foreach ($span in $spans) {
+            $attrs = $span.attributes
+            if (-not $attrs) { continue }
+            $sensitivePatterns = @("api_key", "authorization", "bearer", "secret", "password")
+            foreach ($kv in $attrs.PSObject.Properties) {
+                $kl = $kv.Name.ToLower()
+                foreach ($pat in $sensitivePatterns) {
+                    if ($kl.Contains($pat)) {
+                        throw "$Label`: sensitive key '$($kv.Name)' found in span type '$($span.type)'"
+                    }
+                }
+                if ($kv.Value -is [string] -and $kv.Value.Length -gt 0) {
+                    $vl = $kv.Value.ToLower()
+                    if ($vl.Contains("bearer ") -or $vl.Contains("-----begin")) {
+                        throw "$Label`: sensitive value pattern in span '$($span.type)' attr '$($kv.Name)'"
+                    }
+                }
+            }
+        }
+    }
+
+    Assert-ReasoningTrace -Json $stableJson -Label "stable" -ExpectedSpanTypes @("request","intent_guard","planner","tool_call","audit","decision_normalizer","diagnosis","security_report")
+    Assert-ReasoningTrace -Json $einoJson -Label "eino" -ExpectedSpanTypes @("request","intent_guard","chat_model","planner","tool_call","audit","decision_normalizer","diagnosis","security_report")
+    Assert-ReasoningTrace -Json $dangerJson -Label "danger" -ExpectedSpanTypes @("request","intent_guard")
+
+    Write-Host "Stage 12B checks passed."
+}
+
+Assert-Stage12BReasoningTrace
+
 Write-Host "`nWindows E2E passed."

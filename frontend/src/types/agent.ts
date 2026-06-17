@@ -22,6 +22,37 @@ export interface AgentRunResponse {
   audit_result: AuditResult
   risk_graph?: RiskGraph | null
   security_report?: SecurityReport | null
+  reasoning_trace?: ReasoningTrace | null
+}
+
+export interface ReasoningTrace {
+  trace_id: string
+  runtime: string
+  task_hash: string
+  task_summary: string
+  started_at: string
+  ended_at: string
+  duration_ms: number
+  spans: ReasoningSpan[]
+}
+
+export interface ReasoningSpan {
+  span_id: string
+  parent_span_id?: string
+  type: string
+  name: string
+  status: string
+  started_at: string
+  ended_at: string
+  duration_ms: number
+  attributes?: Record<string, unknown>
+  events?: ReasoningEvent[]
+}
+
+export interface ReasoningEvent {
+  name: string
+  timestamp: string
+  attributes?: Record<string, unknown>
 }
 
 export interface Plan {

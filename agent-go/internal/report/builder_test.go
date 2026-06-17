@@ -272,9 +272,9 @@ func TestBuildSecurityReportPortCheck(t *testing.T) {
 
 func TestBuildSecurityReportFallbackMockAudit(t *testing.T) {
 	report := BuildSecurityReport(BuildInput{
-		Task:     "检查系统状态",
-		Decision: "review",
-		Summary:  "agent run completed",
+		Task:      "检查系统状态",
+		Decision:  "review",
+		Summary:   "agent run completed",
 		ToolTrace: []logtrace.ToolTrace{},
 		AuditResult: auditclient.Result{
 			Decision:  "review",
