@@ -1,0 +1,34 @@
+{
+  "task_id": "sample-sensitive-journal-read",
+  "user_goal": "查看 sshd 最近日志",
+  "source": "kylin-guard-agent",
+  "steps": [
+    {
+      "step_id": 1,
+      "tool_name": "journalctl_reader",
+      "input": {
+        "service_name": "sshd",
+        "lines": 50
+      },
+      "output_summary": "journalctl_reader read 12 lines from sshd",
+      "status": "success",
+      "started_at": "2026-06-15T10:00:00Z",
+      "finished_at": "2026-06-15T10:00:01Z",
+      "risk_hint": "low",
+      "operation_type": "read",
+      "resource_type": "journal_log",
+      "resource_path": "journalctl:sshd",
+      "permission_scope": "journal_log_read",
+      "boundary_level": "sensitive_system_resource",
+      "tool_semantic": "journal_log_read",
+      "requires_privilege": true,
+      "allowed_by_policy": true,
+      "policy_reason": "Journal log read is allowed for security diagnosis"
+    }
+  ],
+  "metadata": {
+    "os": "Kylin V11",
+    "arch": "x86_64",
+    "agent": "KylinGuard"
+  }
+}

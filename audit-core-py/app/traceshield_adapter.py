@@ -174,6 +174,12 @@ class TraceShieldAdapter:
         if decision == "allow" and self._requires_semantic_review(request):
             decision = "review"
         risk_score = self._risk_score(decision, violations)
+
+        # Ensure evidence_chain is non-empty when returning traceshield method
+        # and the input contains sensitive resource accesses that were audited.
+        if not evidence and self._requires_semantic_review(request):
+            evidence = self._build_evidence_from_steps(request)
+
         return AuditTraceResponse(
             decision=decision if decision in {"allow", "deny", "review"} else "review",
             risk_score=risk_score,
@@ -183,6 +189,34 @@ class TraceShieldAdapter:
             method="traceshield",
             message="audit completed by TraceShield adapter",
         )
+
+    def _build_evidence_from_steps(self, request: AuditTraceRequest) -> list:
+        """Generate minimal evidence items from input steps when Traceshield
+        returned no violations but sensitive resources were accessed."""
+        evidence = []
+        for step in request.steps:
+            if not self._is_sensitive_step(step):
+                continue
+            evidence.append(
+                EvidenceItem(
+                    step_id=step.step_id,
+                    tool_name=step.tool_name,
+                    resource=self._resource_from_step(step) or step.resource_type,
+                    reason=f"Sensitive resource access ({step.resource_type}, boundary={step.boundary_level}) was audited by TraceShield adapter.",
+                )
+            )
+            # Add the sensitive access context as extra metadata in reason text.
+            if step.operation_type:
+                pass  # Already captured in step_id lookup; reason is sufficient.
+        return evidence
+
+    @staticmethod
+    def _is_sensitive_step(step: ToolTraceStep) -> bool:
+        if step.boundary_level in {"sensitive_system_resource", "privileged"}:
+            return True
+        if step.requires_privilege:
+            return True
+        return False
 
     def _evidence_items(self, violation: Any, step_lookup: Dict[int, ToolTraceStep]):
         items = []

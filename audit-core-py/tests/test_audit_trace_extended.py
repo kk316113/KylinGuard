@@ -78,6 +78,23 @@ def test_audit_trace_sensitive_log_read(server_url):
     # fallback-mock may return empty evidence_chain
     if body["method"] == "traceshield":
         assert len(body["evidence_chain"]) > 0
+        ev = body["evidence_chain"][0]
+        assert ev.get("tool_name") == "read_recent_logs" or ev.get("resource") is not None
+        assert "sensitive" in ev.get("reason", "").lower()
+
+
+def test_audit_trace_sensitive_journal_read(server_url):
+    payload = _load_sample("sample_journalctl_log_read.json")
+    status, body = _post_json(f"{server_url}/audit/trace", payload)
+
+    assert status == 200
+    assert body["decision"] in {"allow", "review"}
+    assert body["method"] in {"traceshield", "fallback-mock"}
+    if body["method"] == "traceshield":
+        assert len(body["evidence_chain"]) > 0
+        ev = body["evidence_chain"][0]
+        assert ev.get("tool_name") == "journalctl_reader" or ev.get("resource") is not None
+        assert "sensitive" in ev.get("reason", "").lower()
 
 
 def test_audit_trace_safe_system_check(server_url):
