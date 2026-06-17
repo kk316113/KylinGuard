@@ -1,0 +1,33 @@
+== Stage 14A Arco Agent Chat Workbench validation ==
+2026年 06月 17日 星期三 19:41:01 CST
+446f5e0 Merge branch 'dev-gsh'
+a3dd65f add Stage 14A Arco agent chat workbench
+6d40b57 add Stage 13B Kylin VM validation logs
+e227d3c Merge branch 'dev-gsh'
+a699ce0 fix Stage 13B remote LLM metadata validation
+c241307 Merge branch 'dev-gsh'
+efce7b0 fix Stage 13B mock remote LLM manual verification
+2157e02 Merge branch 'dev-gsh'
+68b8f1a add Stage 13B remote LLM verification hardening
+a93535d add Stage 13A Kylin VM validation logs
+
+Stage 14A manual validation result: PASS
+
+Validated features:
+- Arco Design Vue integrated successfully
+- Agent Chat Workbench page can be opened
+- Stable Runtime can execute agent tasks
+- Eino Runtime can execute agent tasks
+- Chat messages are displayed
+- Decision banner is displayed
+- Plan steps are displayed
+- Tool trace table is displayed
+- Reasoning trace timeline is displayed
+- Security report panel is displayed
+- Evidence chain / empty state is displayed
+- Raw JSON debug panel is displayed with sanitization
+- Dangerous intent deny scenario can be demonstrated
+
+No backend security logic changed.
+No TraceShield-Core changes.
+No database added.
