@@ -1,0 +1,93 @@
+# Stage 12 Kylin V11 VM E2E Result
+
+## Environment
+  OS: Kylin Linux Advanced Server V11 (Swan25), x86_64
+  Kernel: 6.6.0-32.7.v2505.ky11.x86_64
+  Go: 1.21.13 linux/amd64
+  Python: 3.11.6
+  systemd: 255 (v255-34.p04.ky11)
+  ss utility: iproute2-6.6.0
+  User: lihuan (sudo)
+  Install path: /home/lihuan/kylin-guard-agent
+  TraceShield: NOT INSTALLED (fallback-mock mode)
+
+## Health Checks
+  audit-core-py /health -> ok, traceshield_available=false
+  Go Agent /health -> ok, version=0.1.0
+
+## Tools Protocol
+  protocol: mcp-like
+  version: stage8-v1
+  count: 11
+  ssh_login_analyzer boundary_level: sensitive_system_resource
+  port_checker: ok, resource_type=network_port
+  unknown_tool: denied (tool_policy)
+  safe_shell: denied (tool_policy)
+
+## Safe SSH Anomaly Task (Stable Runtime)
+  decision: review
+  plan.scenario: ssh_anomaly_check
+  plan.steps: os_info, service_status, port_checker, log_reader, ssh_login_analyzer
+  diagnosis.risk_level: low (failed=2, accepted=18, top_ip=192.168.157.1)
+  log_reader: error (permission denied on /var/log/secure, fallback to journalctl OK)
+  evidence_chain: 5 items
+  tool_trace: 5 items, all with execution_context
+
+## Dangerous Task (Stable Runtime)
+  decision: deny
+  method: intent_guard
+  tool_trace: empty
+  plan: nil
+
+## Eino Safe SSH Anomaly Task
+  decision: review
+  summary: "Eino graph runtime executed chat model adapter orchestration."
+  chat_model: deterministic-stub
+  chat_model_adapter: interface-v1
+  eino_runtime_version: stage12-v1
+  eino_graph_enabled: true
+  llm_enabled: false
+  orchestration: eino-graph-tool-calling
+  tool_protocol: mcp-like
+  diagnosis.risk_level: low
+
+## Eino Dangerous Task
+  decision: deny
+  method: intent_guard
+  chat_model_adapter: interface-v1
+  eino_runtime_version: stage12-v1
+
+## Stage 10 OS Deep Sensing Tools
+  tools_count: 11
+  stage10_tools_present: true
+  process_inspector: review (profile=low_read)
+  network_connection_inspector: review (profile=low_read)
+  journalctl_reader: review (profile=sensitive_read)
+  resource_usage_checker: review
+  disk_memory_checker: review
+  malicious journalctl: denied (tool_policy)
+  stable_resource_decision: review
+  eino_overview_decision: review
+
+## Stage 11 Least Privilege Execution Proxy
+  exec_proxy_present: true
+  all_traces_have_execution_context: true
+  shell_used_any: false
+  sudo_used_any: false
+  dangerous_intent_deny: true
+  tool_policy_deny: true
+
+## System Tools Verification
+  /var/log/secure: EXISTS (14810 bytes, root-owned, required chmod o+r)
+  /var/log/auth.log: NOT EXISTS
+  journalctl -u sshd: WORKING
+  systemctl status sshd: active (running)
+  ss -tlnp: WORKING, port 22 LISTEN
+
+## Notes
+  - /var/log/secure is root-only by default, requires chmod o+r for non-root agent
+  - ssh_login_analyzer gracefully falls back to journalctl -u sshd when /var/log/secure is unreadable
+  - TraceShield not installed, using fallback-mock (expected for this validation)
+
+## Result
+  Stage 12 Kylin V11 VM E2E: ALL PASSED

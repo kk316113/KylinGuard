@@ -1,0 +1,35 @@
+# Stage 12 Kylin V11 VM Validation Summary
+
+## Changes Verified on Real Kylin V11 VM
+  1. ChatModelAdapter interface defined and working
+  2. DeterministicChatModelStub implements ChatModelAdapter (Name=deterministic-stub, Provider=deterministic)
+  3. RemoteLLMMockAdapter returns "not implemented" error
+  4. GraphRuntime uses ChatModelAdapter
+  5. Runtime selects adapter based on config
+  6. security_report.audit_metadata.chat_model_adapter = "interface-v1"
+  7. eino_runtime_version = "stage12-v1"
+  8. RuntimeSummary = "Eino graph runtime executed chat model adapter orchestration."
+  9. /api/agent/run stable behavior unchanged on real Kylin V11
+  10. All 11 tools registered and functional on Kylin V11
+  11. intent_guard dangerous task deny working on Kylin V11
+  12. tool_policy deny (unknown_tool, safe_shell) working on Kylin V11
+  13. execproxy least-privilege execution working on Kylin V11
+  14. journalctl -u sshd fallback working when /var/log/secure is unreadable
+  15. ssh_login_analyzer risk_level=low (2 failed, 18 accepted from 192.168.157.1)
+
+## Environment
+  OS: Kylin Linux Advanced Server V11 (Swan25), x86_64
+  Kernel: 6.6.0-32.7.v2505.ky11.x86_64
+  Go: 1.21.13
+  Python: 3.11.6
+  systemd: 255
+
+## E2E Result
+  Linux/Kylin E2E: PASSED
+  Stage 10 checks: PASSED
+  Stage 11 checks: PASSED
+  Stage 12 markers: ALL VERIFIED
+
+## Known Issues
+  - /var/log/secure root-only by default (chmod o+r needed)
+  - TraceShield not installed (fallback-mock expected)

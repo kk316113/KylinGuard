@@ -133,6 +133,241 @@ func TestBuildSecurityReportNoPanicWithEmptyInput(t *testing.T) {
 	}
 }
 
+func TestBuildSecurityReportServiceCheck(t *testing.T) {
+	now := time.Now().UTC()
+	report := BuildSecurityReport(BuildInput{
+		Task:     "检查 sshd 服务状态",
+		Decision: "allow",
+		Summary:  "agent run completed",
+		Plan: &Plan{
+			Task:     "检查 sshd 服务状态",
+			Scenario: "service_check",
+			Summary:  "Rule-based planner selected service status workflow",
+		},
+		ToolTrace: []logtrace.ToolTrace{
+			{
+				StepID:          "plan-001",
+				ToolName:        "os_info",
+				OperationType:   "read",
+				ResourceType:    "os_info",
+				ResourcePath:    "system:os",
+				BoundaryLevel:   "public",
+				Status:          "ok",
+				OutputSummary:   "os info collected",
+				StartedAt:       now,
+				FinishedAt:      now,
+				AllowedByPolicy: true,
+			},
+			{
+				StepID:          "plan-002",
+				ToolName:        "service_status",
+				OperationType:   "inspect",
+				ResourceType:    "system_service",
+				ResourcePath:    "systemd:sshd",
+				BoundaryLevel:   "low",
+				Status:          "ok",
+				OutputSummary:   "service sshd status=active",
+				StartedAt:       now,
+				FinishedAt:      now,
+				AllowedByPolicy: true,
+			},
+		},
+		AuditResult: auditclient.Result{
+			Decision:  "allow",
+			Method:    "traceshield",
+			RiskScore: 0.1,
+			Message:   "audit completed by TraceShield adapter",
+		},
+		Route: "stable",
+	})
+
+	if report == nil {
+		t.Fatal("expected report")
+	}
+	if report.Scenario != "service_check" {
+		t.Fatalf("expected service_check scenario, got %q", report.Scenario)
+	}
+	if report.OverallDecision != "allow" {
+		t.Fatalf("expected allow decision, got %q", report.OverallDecision)
+	}
+	if report.Title == "" {
+		t.Fatal("expected non-empty title")
+	}
+	if len(report.EvidenceChain) != 2 {
+		t.Fatalf("expected 2 evidence items, got %d", len(report.EvidenceChain))
+	}
+	assertCategory(t, report, "planner")
+	assertCategory(t, report, "boundary_audit")
+	if len(report.Recommendations) == 0 {
+		t.Fatal("expected recommendations")
+	}
+}
+
+func TestBuildSecurityReportPortCheck(t *testing.T) {
+	now := time.Now().UTC()
+	report := BuildSecurityReport(BuildInput{
+		Task:     "检查 22 端口是否开放",
+		Decision: "allow",
+		Summary:  "agent run completed",
+		Plan: &Plan{
+			Task:     "检查 22 端口是否开放",
+			Scenario: "port_check",
+			Summary:  "Rule-based planner selected port inspection workflow",
+		},
+		ToolTrace: []logtrace.ToolTrace{
+			{
+				StepID:          "plan-001",
+				ToolName:        "os_info",
+				OperationType:   "read",
+				ResourceType:    "os_info",
+				ResourcePath:    "system:os",
+				BoundaryLevel:   "public",
+				Status:          "ok",
+				OutputSummary:   "os info collected",
+				StartedAt:       now,
+				FinishedAt:      now,
+				AllowedByPolicy: true,
+			},
+			{
+				StepID:          "plan-002",
+				ToolName:        "port_checker",
+				OperationType:   "inspect",
+				ResourceType:    "network_port",
+				ResourcePath:    "tcp:127.0.0.1:22",
+				BoundaryLevel:   "low",
+				Status:          "ok",
+				OutputSummary:   "port 22 is open",
+				StartedAt:       now,
+				FinishedAt:      now,
+				AllowedByPolicy: true,
+			},
+		},
+		AuditResult: auditclient.Result{
+			Decision:  "allow",
+			Method:    "traceshield",
+			RiskScore: 0.1,
+			Message:   "audit completed by TraceShield adapter",
+		},
+		Route: "stable",
+	})
+
+	if report == nil {
+		t.Fatal("expected report")
+	}
+	if report.Scenario != "port_check" {
+		t.Fatalf("expected port_check scenario, got %q", report.Scenario)
+	}
+	if report.OverallDecision != "allow" {
+		t.Fatalf("expected allow decision, got %q", report.OverallDecision)
+	}
+	if len(report.EvidenceChain) != 2 {
+		t.Fatalf("expected 2 evidence items, got %d", len(report.EvidenceChain))
+	}
+	assertCategory(t, report, "planner")
+	assertCategory(t, report, "boundary_audit")
+	if len(report.Recommendations) == 0 {
+		t.Fatal("expected recommendations")
+	}
+}
+
+func TestBuildSecurityReportFallbackMockAudit(t *testing.T) {
+	report := BuildSecurityReport(BuildInput{
+		Task:     "检查系统状态",
+		Decision: "review",
+		Summary:  "agent run completed",
+		ToolTrace: []logtrace.ToolTrace{},
+		AuditResult: auditclient.Result{
+			Decision:  "review",
+			RiskScore: 0.5,
+			Method:    "fallback-mock",
+			Message:   "TraceShield core unavailable, using fallback mock",
+		},
+	})
+
+	if report == nil {
+		t.Fatal("expected non-nil report")
+	}
+	if report.OverallDecision != "review" {
+		t.Fatalf("expected review decision, got %q", report.OverallDecision)
+	}
+	if report.AuditMetadata["audit_method"] != "fallback-mock" {
+		t.Fatalf("expected fallback-mock method, got %#v", report.AuditMetadata["audit_method"])
+	}
+	if report.Summary == "" {
+		t.Fatal("expected summary")
+	}
+}
+
+func TestBuildSecurityReportSystemResourceCheck(t *testing.T) {
+	now := time.Now().UTC()
+	report := BuildSecurityReport(BuildInput{
+		Task:     "检查当前系统资源使用情况",
+		Decision: "allow",
+		Summary:  "agent run completed",
+		Plan: &Plan{
+			Task:     "检查当前系统资源使用情况",
+			Scenario: "system_resource_check",
+		},
+		ToolTrace: []logtrace.ToolTrace{
+			{
+				StepID:          "plan-001",
+				ToolName:        "os_info",
+				OperationType:   "read",
+				ResourceType:    "os_info",
+				BoundaryLevel:   "public",
+				Status:          "ok",
+				OutputSummary:   "os info",
+				StartedAt:       now,
+				FinishedAt:      now,
+				AllowedByPolicy: true,
+			},
+			{
+				StepID:          "plan-002",
+				ToolName:        "resource_usage_checker",
+				OperationType:   "read",
+				ResourceType:    "system_resource",
+				BoundaryLevel:   "low",
+				Status:          "ok",
+				OutputSummary:   "loadavg and memory checked",
+				StartedAt:       now,
+				FinishedAt:      now,
+				AllowedByPolicy: true,
+			},
+			{
+				StepID:          "plan-003",
+				ToolName:        "disk_memory_checker",
+				OperationType:   "read",
+				ResourceType:    "disk_memory",
+				BoundaryLevel:   "low",
+				Status:          "ok",
+				OutputSummary:   "disk usage checked",
+				StartedAt:       now,
+				FinishedAt:      now,
+				AllowedByPolicy: true,
+			},
+		},
+		AuditResult: auditclient.Result{
+			Decision:  "allow",
+			Method:    "traceshield",
+			RiskScore: 0.1,
+		},
+		Route: "stable",
+	})
+
+	if report == nil {
+		t.Fatal("expected report")
+	}
+	if report.Scenario != "system_resource_check" {
+		t.Fatalf("expected system_resource_check scenario, got %q", report.Scenario)
+	}
+	if len(report.EvidenceChain) != 3 {
+		t.Fatalf("expected 3 evidence items, got %d", len(report.EvidenceChain))
+	}
+	if report.RiskLevel != "low" {
+		t.Fatalf("expected low risk for allow decision, got %q", report.RiskLevel)
+	}
+}
+
 func assertCategory(t *testing.T, report *SecurityReport, category string) {
 	t.Helper()
 	for _, item := range report.RiskExplanation {

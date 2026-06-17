@@ -18,7 +18,7 @@ User Task
 -> Audit Result / Risk Graph
 ```
 
-当前阶段：Stage 9B：CloudWeGo Eino Graph Runtime + Deterministic ChatModel Stub。
+当前阶段：Stage 12：Remote LLM API Adapter Interface & Frontend Eino Metadata Display。
 
 ## 当前做了什么
 
@@ -42,7 +42,10 @@ User Task
 - `security_report.audit_metadata` 增加 `tool_protocol=mcp-like`、`tool_protocol_version=stage8-v1`、注册工具数和 `tools_used`。
 - 新增 deterministic ChatModel Stub，`/api/agent/run-eino` 默认进入 Eino graph tool-calling runtime，不再 fallback 到 stable runtime。
 - 新增 MCP-like Tool Adapter，Eino graph tool node 通过 Tool Policy 和 Tool Registry 执行工具调用，不直接执行 shell 或任意读取文件。
-- run-eino 路径的 `security_report.audit_metadata` 会标记 `runtime=eino`、`eino_graph_enabled=true`、`llm_enabled=false`、`chat_model=deterministic-stub`、`orchestration=eino-graph-tool-calling`、`eino_runtime_version=stage9b-v1`。
+- 新增 `ChatModelAdapter` 接口，支持 `DeterministicChatModelStub`（规则匹配）和 `RemoteLLMMockAdapter`（远程 LLM 占位符），为未来接入真实 LLM API 做准备。
+- 新增 `EINO_LLM_PROVIDER`、`EINO_LLM_ENDPOINT`、`EINO_LLM_MODEL`、`EINO_LLM_API_KEY` 环境变量，用于配置远程 LLM adapter。
+- 新增 `EinoMetadataPanel` 前端组件，在 Eino 模式下展示 runtime、chat_model、chat_model_adapter、orchestration 等元数据。
+- run-eino 路径的 `security_report.audit_metadata` 会标记 `runtime=eino`、`eino_graph_enabled=true`、`llm_enabled=false`、`chat_model=deterministic-stub`、`chat_model_adapter=interface-v1`、`orchestration=eino-graph-tool-calling`、`eino_runtime_version=stage12-v1`。
 - 加固了 Linux/麒麟部署脚本和 Windows/Linux E2E 测试脚本。
 - 已在 Windows 本机和银河麒麟高级服务器版 V11 x86_64 VM 上完成预验证。
 
@@ -51,7 +54,7 @@ User Task
 - 没有修改 `TraceShield-Core` 仓库。
 - 没有改变 TraceShield 核心算法语义。
 - 没有实现 Boundary Lattice、真实 Data-flow Evidence、真实 Provenance Contract。
-- 没有接入真实 LLM ChatModel、ReAct Agent、模型厂商 SDK 或远程模型 API；Stage 9B 使用 deterministic ChatModel Stub。
+- 没有接入真实 LLM ChatModel、ReAct Agent、模型厂商 SDK 或远程模型 API；Stage 12 定义了 `ChatModelAdapter` 接口和 `RemoteLLMMockAdapter`（占位符），但仍使用 `DeterministicChatModelStub`。
 - 没有接入真实 LLM 或本地大模型。
 - 没有引入 `torch`、`transformers`、`faiss`、`sentence-transformers` 等重依赖。
 - 没有实现前端页面。
@@ -108,7 +111,7 @@ Python audit-core：
 - `POST /audit/trace`
 
 `/api/agent/run` 是稳定主链路。
-`/api/agent/run-eino` 是实验链路；当前默认进入 CloudWeGo Eino graph runtime，并在 `summary` 中标记 `Eino graph runtime executed deterministic tool-calling orchestration.`。
+`/api/agent/run-eino` 是实验链路；当前默认进入 CloudWeGo Eino graph runtime，并在 `summary` 中标记 `Eino graph runtime executed chat model adapter orchestration.`。
 
 `/api/agent/run` 和 `/api/agent/run-eino` 当前都会返回可选字段 `plan`。危险任务被 `intent_guard` 短路时不会返回 plan。
 
@@ -132,6 +135,7 @@ $env:EINO_ENABLED = "false"
 $env:EINO_RUNTIME_ENABLED = "true"
 $env:EINO_GRAPH_ENABLED = "true"
 $env:EINO_LLM_ENABLED = "false"
+$env:EINO_LLM_PROVIDER = "deterministic"
 ```
 
 Linux/麒麟推荐：
@@ -146,6 +150,7 @@ export EINO_ENABLED=false
 export EINO_RUNTIME_ENABLED=true
 export EINO_GRAPH_ENABLED=true
 export EINO_LLM_ENABLED=false
+export EINO_LLM_PROVIDER=deterministic
 ```
 
 ## Windows 本机启动
@@ -340,14 +345,16 @@ curl -s -X POST http://127.0.0.1:8080/api/agent/run-eino \
 预期：
 
 - 返回结构与 `/api/agent/run` 一致
-- `summary` 包含 `Eino graph runtime executed deterministic tool-calling orchestration.`
-- 当前走 CloudWeGo Eino graph、Deterministic ChatModel Stub、MCP-like Tool Adapter、Tool Policy、SSH diagnosis 工具链和 TraceShield 审计
+- `summary` 包含 `Eino graph runtime executed chat model adapter orchestration.`
+- 当前走 CloudWeGo Eino graph、ChatModelAdapter 接口、Deterministic ChatModel Stub、MCP-like Tool Adapter、Tool Policy、SSH diagnosis 工具链和 TraceShield 审计
 - `security_report.audit_metadata.route=eino-runtime`
 - `security_report.audit_metadata.runtime=eino`
 - `security_report.audit_metadata.eino_graph_enabled=true`
 - `security_report.audit_metadata.llm_enabled=false`
 - `security_report.audit_metadata.chat_model=deterministic-stub`
+- `security_report.audit_metadata.chat_model_adapter=interface-v1`
 - `security_report.audit_metadata.orchestration=eino-graph-tool-calling`
+- `security_report.audit_metadata.eino_runtime_version=stage12-v1`
 - `security_report.audit_metadata.tool_protocol=mcp-like`
 
 工具发现：
@@ -552,11 +559,13 @@ plan-005 ssh_login_analyzer paths=/var/log/secure,/var/log/auth.log lines=200
 
 当前已引入 CloudWeGo Eino core 依赖 `github.com/cloudwego/eino v0.9.8`，使用 `compose.Graph` 构建实验编排路径。
 
-Stage 9B 默认：
+Stage 12 默认：
 
 - `/api/agent/run-eino` 进入 Eino graph runtime
-- graph 第一节点为 deterministic ChatModel Stub
+- graph 第一节点为 `ChatModelAdapter`（当前实现：Deterministic ChatModel Stub）
 - graph 第二节点为 MCP-like Tool Adapter / Tool Policy 执行节点
+- `ChatModelAdapter` 接口支持未来替换为 `RemoteLLMMockAdapter` 或真实 LLM adapter
+- 新增 `EINO_LLM_PROVIDER`、`EINO_LLM_ENDPOINT`、`EINO_LLM_MODEL`、`EINO_LLM_API_KEY` 环境变量
 - 不绕过 intent_guard
 - 不绕过 Tool Policy
 - 不绕过 audit-core-py
@@ -565,9 +574,9 @@ Stage 9B 默认：
 - 不接真实 LLM，`llm_enabled=false`
 - 不引入模型厂商 SDK、API key 或远程模型调用
 
-`EINO_RUNTIME_ENABLED=false` 会禁用 run-eino runtime；`EINO_GRAPH_ENABLED=true` 是默认值；`EINO_LLM_ENABLED=false` 是默认值。旧的 `EINO_ENABLED=false` 仅保留兼容含义，可理解为不启用真实 LLM，不再导致 run-eino fallback 到 stable runtime。
+`EINO_RUNTIME_ENABLED=false` 会禁用 run-eino runtime；`EINO_GRAPH_ENABLED=true` 是默认值；`EINO_LLM_ENABLED=false` 是默认值。旧的 `EINO_ENABLED=false` 仅保留兼容含义，可理解为不启用真实 LLM，不再导致 run-eino fallback 到 stable runtime。`EINO_LLM_PROVIDER=deterministic` 是默认值；设为 `openai`、`anthropic` 等时会切换到 `RemoteLLMMockAdapter`（返回 not-implemented）。
 
-未来可以在不改变安全链路的前提下，把 deterministic ChatModel Stub 替换为真实 Eino ChatModel / ReAct Agent，但仍必须保留 intent_guard、Tool Policy、semantic trace 和 TraceShield 审计。
+未来可以在不改变安全链路的前提下，把 `RemoteLLMMockAdapter` 替换为真实 LLM API adapter，但仍必须保留 intent_guard、Tool Policy、semantic trace 和 TraceShield 审计。
 
 ## 重要文档
 
@@ -583,6 +592,7 @@ Stage 9B 默认：
 - `docs/stage8_mcp_like_tool_protocol.md`：MCP-like 工具协议与插件注册说明
 - `docs/stage9a_eino_runtime_skeleton.md`：deterministic Eino Runtime Skeleton 说明
 - `docs/stage9b_eino_graph_runtime.md`：CloudWeGo Eino Graph Runtime 与 deterministic tool calling 说明
+- `docs/stage12_remote_llm_adapter_interface.md`：Remote LLM API Adapter 接口与前端元数据显示说明
 - `docs/todo.md`：后续计划
 - `frontend/README.md`：前端控制台启动与安全边界说明
 
@@ -590,12 +600,11 @@ Stage 9B 默认：
 
 - 在 LoongArch 环境完成最终验证。
 - 增加 systemd service 文件。
-- 在银河麒麟 V11 VM 上验证 Stage 8 `/api/tools`、`/api/tools/call` 和原 SSH anomaly 链路。
 - 扩展 Rule-based Ops Planner，让更多安全运维任务可以选择真实工具链。
 - 扩展 SSH 日志格式、时间窗口和用户名/IP 维度诊断。
 - 将 `security_report` 导出为前端页面或报告文件。
 - 扩展前端展示，例如 risk graph、报告导出和 Kylin VM 演示截图。
 - 将更多 TraceShield evidence 映射为用户可解释报告。
-- 接入真实 Eino runtime。
-- 接入远程 LLM API。
+- 实现真正的 RemoteLLMAdapter，对接 OpenAI / Anthropic 等 API。
+- 在 `ChatModelAdapter.GenerateToolCalls` 中传入 `toolDefs`，支持 LLM 工具选择。
 - 增强前端报告导出和演示视图。

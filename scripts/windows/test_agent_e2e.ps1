@@ -235,7 +235,7 @@ function Assert-AgentResponse {
     }
 
     if ($Case.ExpectEinoSummary) {
-        if ($Json.summary -notlike "*Eino graph runtime executed deterministic tool-calling orchestration*") {
+        if ($Json.summary -notlike "*Eino graph runtime executed chat model adapter orchestration*") {
             throw "$($Case.Name): summary missing Eino runtime marker: $($Json.summary)"
         }
         if ($Json.summary -like "*stable runtime fallback*") {
@@ -332,14 +332,17 @@ function Assert-AgentResponse {
         if ($report.audit_metadata.chat_model -ne "deterministic-stub") {
             throw "$($Case.Name): expected chat_model=deterministic-stub, got $($report.audit_metadata.chat_model)"
         }
+        if ($report.audit_metadata.chat_model_adapter -ne "interface-v1") {
+            throw "$($Case.Name): expected chat_model_adapter=interface-v1, got $($report.audit_metadata.chat_model_adapter)"
+        }
         if ($report.audit_metadata.orchestration -ne "eino-graph-tool-calling") {
             throw "$($Case.Name): expected eino-graph-tool-calling orchestration, got $($report.audit_metadata.orchestration)"
         }
         if ($report.audit_metadata.tool_protocol -ne "mcp-like") {
             throw "$($Case.Name): expected tool_protocol=mcp-like, got $($report.audit_metadata.tool_protocol)"
         }
-        if ($report.audit_metadata.eino_runtime_version -ne "stage9b-v1") {
-            throw "$($Case.Name): expected eino_runtime_version=stage9b-v1, got $($report.audit_metadata.eino_runtime_version)"
+        if ($report.audit_metadata.eino_runtime_version -ne "stage12-v1") {
+            throw "$($Case.Name): expected eino_runtime_version=stage12-v1, got $($report.audit_metadata.eino_runtime_version)"
         }
     }
 }
@@ -469,7 +472,7 @@ function Assert-Stage10 {
     $einoJson = Invoke-AgentTask -Path "/api/agent/run-eino" -Task "执行一次系统安全巡检" -Label "stage10_eino_overview"
 
     $einoSummary = $einoJson.summary
-    $marker = "Eino graph runtime executed deterministic tool-calling orchestration"
+    $marker = "Eino graph runtime executed chat model adapter orchestration"
     if ($einoSummary -notlike "*$marker*") {
         throw "eino: summary missing Eino graph runtime marker: $einoSummary"
     }
@@ -501,6 +504,9 @@ function Assert-Stage10 {
     }
     if ($einoMeta.chat_model -ne "deterministic-stub") {
         throw "eino: expected chat_model=deterministic-stub, got $($einoMeta.chat_model)"
+    }
+    if ($einoMeta.chat_model_adapter -ne "interface-v1") {
+        throw "eino: expected chat_model_adapter=interface-v1, got $($einoMeta.chat_model_adapter)"
     }
     if ($einoMeta.orchestration -ne "eino-graph-tool-calling") {
         throw "eino: expected orchestration=eino-graph-tool-calling, got $($einoMeta.orchestration)"
@@ -579,6 +585,7 @@ foreach ($case in $cases) {
         report_eino_graph_enabled   = $json.security_report.audit_metadata.eino_graph_enabled
         report_llm_enabled          = $json.security_report.audit_metadata.llm_enabled
         report_chat_model           = $json.security_report.audit_metadata.chat_model
+        report_chat_model_adapter   = $json.security_report.audit_metadata.chat_model_adapter
         report_orchestration        = $json.security_report.audit_metadata.orchestration
         report_tool_protocol        = $json.security_report.audit_metadata.tool_protocol
         report_eino_runtime_version = $json.security_report.audit_metadata.eino_runtime_version

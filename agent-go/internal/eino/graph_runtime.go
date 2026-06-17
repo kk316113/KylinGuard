@@ -34,13 +34,13 @@ type GraphOutput struct {
 }
 
 type GraphRuntime struct {
-	chatModel  ToolCallGenerator
+	chatModel  ChatModelAdapter
 	toolNode   *GraphToolNode
 	runnable   compose.Runnable[GraphInput, GraphOutput]
 	compileErr error
 }
 
-func NewGraphRuntime(chatModel ToolCallGenerator, toolAdapter PlanToolAdapter) *GraphRuntime {
+func NewGraphRuntime(chatModel ChatModelAdapter, toolAdapter PlanToolAdapter) *GraphRuntime {
 	runtime := &GraphRuntime{
 		chatModel: chatModel,
 		toolNode:  NewGraphToolNode(toolAdapter),
@@ -73,7 +73,7 @@ func (r *GraphRuntime) compile(ctx context.Context) (compose.Runnable[GraphInput
 	graph := compose.NewGraph[GraphInput, GraphOutput]()
 	if err := graph.AddLambdaNode(graphNodeChatModelStub, compose.InvokableLambda[GraphInput, GraphState](
 		func(ctx context.Context, input GraphInput) (GraphState, error) {
-			calls, plan, err := r.chatModel.GenerateToolCalls(ctx, input.Task)
+			calls, plan, err := r.chatModel.GenerateToolCalls(ctx, input.Task, nil)
 			if err != nil {
 				return GraphState{}, err
 			}

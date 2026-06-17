@@ -1,0 +1,23 @@
+# Stage 12 Kylin VM Environment
+
+OS: Kylin Linux Advanced Server V11 (Swan25), x86_64
+Go: 1.21.4 linux/amd64
+Python: 3.11.6
+GCC: 12.3.1 (kylin 12.3.1-62.p04.ky11)
+systemd: 255 (v255-34.p06.ky11)
+Network tool: ss utility, iproute2-6.6.0
+User: root
+Install path: /opt/kylin-guard-agent
+TraceShield path: /opt/traceshield-core
+
+Environment variables:
+  KYLINGUARD_HOME=/opt/kylin-guard-agent
+  TRACESHIELD_CORE_PATH=/opt/traceshield-core
+  AUDIT_CORE_URL=http://127.0.0.1:8001
+  AGENT_GO_PORT=8080
+  AUDIT_CORE_PORT=8001
+  EINO_ENABLED=false
+  EINO_RUNTIME_ENABLED=true
+  EINO_GRAPH_ENABLED=true
+  EINO_LLM_ENABLED=false
+  EINO_LLM_PROVIDER=deterministic
