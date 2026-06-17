@@ -47,6 +47,7 @@ export interface ReasoningSpan {
   duration_ms: number
   attributes?: Record<string, unknown>
   events?: ReasoningEvent[]
+  _open?: boolean
 }
 
 export interface ReasoningEvent {
@@ -67,6 +68,9 @@ export interface PlanStep {
   tool_name: string
   input: Record<string, unknown>
   reason: string
+  tool_category?: string
+  risk_level?: string
+  permission_scope?: string
 }
 
 export interface ToolTraceItem {
@@ -87,6 +91,15 @@ export interface ToolTraceItem {
   requires_privilege?: boolean
   allowed_by_policy?: boolean
   policy_reason?: string
+  execution_context?: {
+    executor?: string
+    profile?: string
+    command_name?: string
+    shell_used?: boolean
+    sudo_used?: boolean
+    allowed_by_exec_policy?: boolean
+    policy_reason?: string
+  }
 }
 
 export interface Diagnosis {

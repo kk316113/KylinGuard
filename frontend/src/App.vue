@@ -1,5 +1,19 @@
 <template>
-  <div class="app-shell">
+  <!-- Nav bar -->
+  <div class="nav-bar">
+    <div class="nav-left">
+      <span class="nav-brand">KylinGuard 麒盾</span>
+      <span class="nav-version">v0.1</span>
+    </div>
+    <div class="nav-tabs">
+      <button :class="['nav-tab', { active: view === 'console' }]" @click="view = 'console'">🛡️ 安全控制台</button>
+      <button :class="['nav-tab', { active: view === 'workbench' }]" @click="view = 'workbench'">🤖 Agent 工作台</button>
+    </div>
+    <div class="nav-right"></div>
+  </div>
+
+  <!-- Console view -->
+  <div v-if="view === 'console'" class="app-shell">
     <HealthBar :health="health" :health-error="healthError" :mode="mode" />
 
     <main class="dashboard">
@@ -46,6 +60,9 @@
       <ReportTabs :response="latestResponse" />
     </main>
   </div>
+
+  <!-- Workbench view -->
+  <AgentChatWorkbench v-else @back="view = 'console'" />
 </template>
 
 <script setup lang="ts">
@@ -55,9 +72,11 @@ import TaskRunner from './components/TaskRunner.vue'
 import PlanTimeline from './components/PlanTimeline.vue'
 import DecisionSummary from './components/DecisionSummary.vue'
 import ReportTabs from './components/ReportTabs.vue'
+import AgentChatWorkbench from './pages/AgentChatWorkbench.vue'
 import { getHealth, runAgent, runAgentEino } from './api/agent'
 import type { AgentRunResponse, HealthResponse, RuntimeMode } from './types/agent'
 
+const view = ref<'console' | 'workbench'>('console')
 const task = ref('检查当前系统 SSH 登录异常')
 const mode = ref<RuntimeMode>('stable')
 const loading = ref(false)
@@ -97,3 +116,27 @@ async function runTask() {
   }
 }
 </script>
+
+<style>
+/* Minimal nav bar overrides */
+.nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 20px;
+  background: #1d2129;
+  color: #fff;
+  font-size: 13px;
+}
+.nav-left { display: flex; align-items: center; gap: 8px; }
+.nav-brand { font-weight: 600; }
+.nav-version { color: #888; font-size: 11px; }
+.nav-tabs { display: flex; gap: 0; }
+.nav-tab {
+  background: transparent; border: none; color: #aaa; cursor: pointer;
+  padding: 8px 16px; font-size: 13px; transition: all 0.2s;
+}
+.nav-tab:hover { color: #fff; background: rgba(255,255,255,0.08); }
+.nav-tab.active { color: #fff; border-bottom: 2px solid #165dff; background: rgba(22,93,255,0.12); }
+</style>
