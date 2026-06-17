@@ -1,0 +1,54 @@
+
+== recommended environment ==
+KYLINGUARD_HOME=/opt/kylin-guard-agent
+TRACESHIELD_CORE_PATH=/opt/traceshield-core
+AUDIT_CORE_URL=http://127.0.0.1:8001
+AGENT_GO_PORT=8080
+AUDIT_CORE_PORT=8001
+EINO_ENABLED=false
+
+== current user ==
+uid=0(root) gid=0(root) 组=0(root)
+whoami: root
+
+== current working directory ==
+/opt/kylin-guard-agent
+
+== uname -m ==
+x86_64
+architecture: x86_64, suitable for Kylin VM precheck
+
+== /etc/os-release ==
+NAME="Kylin Linux Advanced Server"
+VERSION="V11 (Swan25)"
+ID="kylin"
+VERSION_ID="V11"
+PRETTY_NAME="Kylin Linux Advanced Server V11 (Swan25)"
+ANSI_COLOR="0;31"
+
+
+== go version ==
+go version go1.21.4 linux/amd64
+
+== python3 --version ==
+Python 3.11.6
+
+== pip3 --version ==
+pip 23.3.1 from /usr/lib/python3.11/site-packages/pip (python 3.11)
+
+== gcc --version ==
+gcc (GCC) 12.3.1 (kylin 12.3.1-62.p04.ky11)
+Copyright © 2022 Free Software Foundation, Inc.
+本程序是自由软件；请参看源代码的版权声明。本软件没有任何担保；
+包括没有适销性和某一专用目的下的适用性担保。
+
+== systemctl --version ==
+systemd 255 (v255-34.p06.ky11)
++PAM +AUDIT +SELINUX -APPARMOR +IMA -SMACK +SECCOMP +GCRYPT +GNUTLS -OPENSSL +ACL +BLKID -CURL -ELFUTILS -FIDO2 +IDN2 -IDN -IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT -QRENCODE -TPM2 +BZIP2 +LZ4 +XZ +ZLIB -ZSTD -BPF_FRAMEWORK +XKBCOMMON +UTMP +SYSVINIT default-hierarchy=legacy
+
+== journalctl --version ==
+systemd 255 (v255-34.p06.ky11)
++PAM +AUDIT +SELINUX -APPARMOR +IMA -SMACK +SECCOMP +GCRYPT +GNUTLS -OPENSSL +ACL +BLKID -CURL -ELFUTILS -FIDO2 +IDN2 -IDN -IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT -QRENCODE -TPM2 +BZIP2 +LZ4 +XZ +ZLIB -ZSTD -BPF_FRAMEWORK +XKBCOMMON +UTMP +SYSVINIT default-hierarchy=legacy
+
+== network inspection tool ==
+ss utility, iproute2-6.6.0
