@@ -1,6 +1,10 @@
 package eino
 
-import "kylin-guard-agent/agent-go/internal/tools"
+import (
+	"strings"
+
+	"kylin-guard-agent/agent-go/internal/tools"
+)
 
 const (
 	RuntimeVersion          = "stage13a-v1"
@@ -78,12 +82,28 @@ func NormalizeRuntimeConfig(config RuntimeConfig) RuntimeConfig {
 	return config
 }
 
+// ChatModelName returns the display name for the chat model based on configuration.
+func (c RuntimeConfig) ChatModelName() string {
+	normalized := NormalizeRuntimeConfig(c)
+	if !normalized.LLMEnabled || normalized.LLMProvider == "deterministic" {
+		return DefaultChatModel
+	}
+	// Detect mock mode: DEMO_MOCK_LLM=true sets key to "sk-mock-key".
+	if c.LLMAPIKey == "sk-mock-key" {
+		return "remote-llm-mock-" + normalized.LLMProvider
+	}
+	// Detect DeepSeek by endpoint URL or provider name.
+	endpoint := strings.ToLower(normalized.LLMEndpoint)
+	provider := strings.ToLower(normalized.LLMProvider)
+	if strings.Contains(endpoint, "deepseek") || provider == "deepseek" {
+		return "remote-llm-deepseek-" + normalized.LLMProvider
+	}
+	return "remote-llm-" + normalized.LLMProvider
+}
+
 func (c RuntimeConfig) Metadata(toolsUsed []string) RuntimeMetadata {
 	normalized := NormalizeRuntimeConfig(c)
-	chatModelName := DefaultChatModel
-	if normalized.LLMEnabled && normalized.LLMProvider != "deterministic" {
-		chatModelName = "remote-llm-mock-" + normalized.LLMProvider
-	}
+	chatModelName := c.ChatModelName()
 	return RuntimeMetadata{
 		Route:            normalized.Route,
 		Runtime:          normalized.RuntimeName,
