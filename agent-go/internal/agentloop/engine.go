@@ -118,6 +118,13 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 		steps = append(steps, step)
 	}
 
+	// Span: max steps reached (optional).
+	if rtb != nil && requestSpanID != "" {
+		ms := rtb.StartSpan(requestSpanID, reasoningtrace.SpanSecurityReport, "agent loop max steps reached")
+		rtb.SetAttr(ms.SpanID, "step_count", len(steps))
+		rtb.EndSpan(ms.SpanID, "warning")
+	}
+
 	// Max steps reached without final answer.
 	return &AgentResponse{
 		AgentMode:  ModeAgentLoop,
@@ -138,6 +145,8 @@ func (e *Engine) executeStep(ctx context.Context, index int, action *NextAction,
 		UserVisibleSummary: action.UserVisibleSummary,
 		Observation:        map[string]any{},
 	}
+
+	hasRT := rtb != nil && parentSpanID != ""
 
 	// Tool policy check.
 	allowed, reason := e.executor.CheckToolPolicy(action.ToolName, action.ToolArgs)
@@ -165,6 +174,26 @@ func (e *Engine) executeStep(ctx context.Context, index int, action *NextAction,
 		step.Observation["result"] = err.Error()
 	} else {
 		step.Observation = obs
+	}
+
+	// Add reasoning trace spans (optional).
+	if hasRT {
+		ps := rtb.StartSpan(parentSpanID, reasoningtrace.SpanToolPolicy, fmt.Sprintf("step %d: %s policy", index, action.ToolName))
+		rtb.SetAttr(ps.SpanID, "tool_name", action.ToolName)
+		rtb.SetAttr(ps.SpanID, "allowed_by_policy", allowed)
+		if !allowed {
+			rtb.SetAttr(ps.SpanID, "reason", reason)
+			rtb.EndSpan(ps.SpanID, "deny")
+		} else {
+			rtb.EndSpan(ps.SpanID, "ok")
+		}
+		es := rtb.StartSpan(parentSpanID, reasoningtrace.SpanExecProxy, fmt.Sprintf("step %d: %s exec", index, action.ToolName))
+		rtb.SetAttr(es.SpanID, "tool_name", action.ToolName)
+		rtb.SetAttr(es.SpanID, "operation_type", step.OperationType)
+		rtb.SetAttr(es.SpanID, "resource_type", step.ResourceType)
+		rtb.SetAttr(es.SpanID, "boundary_level", step.BoundaryLevel)
+		rtb.SetAttr(es.SpanID, "status", step.Observation["status"])
+		rtb.EndSpan(es.SpanID, "ok")
 	}
 	return step
 }
