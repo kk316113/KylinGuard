@@ -39,7 +39,7 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 	normalized := NormalizeRuntimeConfig(config)
 	toolAdapter := NewMCPToolAdapter(registry, security.NewToolPolicy())
 
-	var chatModel ChatModelAdapter
+	var primaryModel ChatModelAdapter
 	adapterCfg := ChatModelAdapterConfig{
 		Provider: normalized.LLMProvider,
 		Endpoint: normalized.LLMEndpoint,
@@ -47,10 +47,12 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 		APIKey:   normalized.LLMAPIKey,
 	}
 	if normalized.LLMEnabled && normalized.LLMProvider != "deterministic" {
-		chatModel = NewRemoteLLMMockAdapter(adapterCfg)
+		primaryModel = NewRemoteLLMAdapter(adapterCfg, registry)
 	} else {
-		chatModel = NewDeterministicChatModelStub(registry)
+		primaryModel = NewDeterministicChatModelStub(registry)
 	}
+	// Always wrap with fallback adapter for resilience.
+	chatModel := NewFallbackChatModelAdapter(primaryModel, registry)
 
 	return &Runtime{
 		config:       normalized,
@@ -133,8 +135,16 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 		rtb.EndSpan(chatModelSpan.SpanID, "error")
 		return agent.AgentRunResponse{}, err
 	}
-	rtb.SetAttr(chatModelSpan.SpanID, "output_type", "deterministic_tool_plan")
+	rtb.SetAttr(chatModelSpan.SpanID, "output_type", "structured_tool_plan")
 	rtb.SetAttr(chatModelSpan.SpanID, "tool_count", len(graphOutput.ToolCalls))
+	rtb.SetAttr(chatModelSpan.SpanID, "remote_llm_used", r.config.LLMEnabled && r.config.LLMProvider != "deterministic")
+	if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
+		used, reason := fb.FallbackInfo()
+		rtb.SetAttr(chatModelSpan.SpanID, "fallback_used", used)
+		if used && reason != "" {
+			rtb.SetAttr(chatModelSpan.SpanID, "fallback_reason", reason)
+		}
+	}
 	rtb.EndSpan(chatModelSpan.SpanID, "ok")
 
 	plan := graphOutput.Plan

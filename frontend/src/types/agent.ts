@@ -136,7 +136,14 @@ export interface SecurityReport {
   risk_explanation: RiskExplanationItem[]
   recommendations: RecommendationItem[]
   sensitive_resources: SensitiveResourceItem[]
-  audit_metadata?: Record<string, unknown>
+  audit_metadata?: Record<string, unknown> & {
+    llm_enabled?: boolean
+    chat_model?: string
+    chat_model_adapter?: string
+    remote_llm_used?: boolean
+    fallback_used?: boolean
+    fallback_reason?: string
+  }
 }
 
 export interface EvidenceItem {
