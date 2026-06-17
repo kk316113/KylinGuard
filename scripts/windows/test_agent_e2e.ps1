@@ -341,8 +341,8 @@ function Assert-AgentResponse {
         if ($report.audit_metadata.tool_protocol -ne "mcp-like") {
             throw "$($Case.Name): expected tool_protocol=mcp-like, got $($report.audit_metadata.tool_protocol)"
         }
-        if ($report.audit_metadata.eino_runtime_version -ne "stage12-v1") {
-            throw "$($Case.Name): expected eino_runtime_version=stage12-v1, got $($report.audit_metadata.eino_runtime_version)"
+        if ($report.audit_metadata.eino_runtime_version -ne "stage13a-v1") {
+            throw "$($Case.Name): expected eino_runtime_version=stage13a-v1, got $($report.audit_metadata.eino_runtime_version)"
         }
     }
 }

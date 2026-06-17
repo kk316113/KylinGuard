@@ -295,8 +295,8 @@ if runtime_expectation in {"eino_runtime", "eino_runtime_summary"}:
         raise SystemExit(f"expected eino-graph-tool-calling orchestration, got {metadata.get('orchestration')}")
     if metadata.get("tool_protocol") != "mcp-like":
         raise SystemExit(f"expected tool_protocol=mcp-like, got {metadata.get('tool_protocol')}")
-    if metadata.get("eino_runtime_version") != "stage12-v1":
-        raise SystemExit(f"expected eino_runtime_version=stage12-v1, got {metadata.get('eino_runtime_version')}")
+    if metadata.get("eino_runtime_version") != "stage13a-v1":
+        raise SystemExit(f"expected eino_runtime_version=stage13a-v1, got {metadata.get('eino_runtime_version')}")
 
 print("task:", body.get("task"))
 print("decision:", decision)
