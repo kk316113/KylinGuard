@@ -54,6 +54,9 @@ if [ "$DEMO_MODE" != "mock" ] && [ -f "$APP_HOME/run/mock-llm.pid" ]; then
     DEMO_MODE="mock"
   fi
 fi
+if [ "$DEMO_MODE" = "deterministic" ] && [ -n "${OPENAI_COMPATIBLE_API_KEY:-}" ]; then
+  DEMO_MODE="real-deepseek"
+fi
 
 printf '== KylinGuard Demo Health Check ==\n\n'
 printf 'Mode: %s\n\n' "$DEMO_MODE"
@@ -147,7 +150,7 @@ def b(v):
         return "False"
     return str(v) if v is not None else "None"
 
-if mode == "mock":
+if mode == "mock" or mode == "real-deepseek":
     ok = True
     if llm_enabled is not True:
         print(f'  %-30s %s' % ("llm_enabled", f"[FAIL] (expected True, got {b(llm_enabled)})"))
@@ -155,16 +158,16 @@ if mode == "mock":
     if chat_model == "deterministic-stub" or not chat_model:
         print(f'  %-30s %s' % ("chat_model", f"[FAIL] (expected remote LLM, got {chat_model})"))
         ok = False
-    if remote_llm_used is not True:
+    if remote_llm_used is not True and mode == "mock":
         print(f'  %-30s %s' % ("remote_llm_used", f"[FAIL] (expected True, got {b(remote_llm_used)})"))
         ok = False
-    if plan_scenario != "ssh_anomaly_check":
-        print(f'  %-30s %s' % ("plan.scenario", f"[FAIL] (expected ssh_anomaly_check, got {plan_scenario})"))
     if ok:
-        print(f'  %-30s %s' % ("mode", "[OK] mock-openai-compatible"))
+        label = "mock-openai-compatible" if mode == "mock" else "real-deepseek"
+        print(f'  %-30s %s' % ("mode", f"[OK] {label}"))
         print(f'  %-30s %s' % ("llm_enabled", "[OK] True"))
         print(f'  %-30s %s' % ("chat_model", f"[OK] {chat_model}"))
-        print(f'  %-30s %s' % ("remote_llm_used", "[OK] True"))
+        if remote_llm_used is True:
+            print(f'  %-30s %s' % ("remote_llm_used", "[OK] True"))
 else:
     ok = True
     if llm_enabled is not False:

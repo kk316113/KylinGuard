@@ -236,6 +236,55 @@ Allowed tools:
 %s`, string(toolDefsJSON))
 }
 
+// callChatCompletions sends a chat completion request and returns the response content.
+func (a *RemoteLLMAdapter) callChatCompletions(ctx context.Context, messages []map[string]any) (string, error) {
+	if a.config.APIKey == "" {
+		return "", fmt.Errorf("remote LLM API key is not configured")
+	}
+	endpoint := a.resolveEndpoint()
+	body := map[string]any{
+		"model":       a.config.Model,
+		"messages":    messages,
+		"temperature": 0.1,
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal LLM request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("failed to create LLM request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+a.config.APIKey)
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("LLM API call failed: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read LLM response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("LLM API returned HTTP %d: %s", resp.StatusCode, truncateLLMString(string(respBody), 200))
+	}
+	var openAIResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &openAIResp); err != nil {
+		return "", fmt.Errorf("failed to parse OpenAI response: %w", err)
+	}
+	if len(openAIResp.Choices) == 0 {
+		return "", fmt.Errorf("LLM returned zero choices")
+	}
+	return strings.TrimSpace(openAIResp.Choices[0].Message.Content), nil
+}
+
 func (a *RemoteLLMAdapter) resolveEndpoint() string {
 	ep := a.config.Endpoint
 	if ep == "" {

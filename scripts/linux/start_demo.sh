@@ -44,7 +44,30 @@ fi
 
 # --- Set LLM environment and start mock LLM if needed ---
 printf '== Setting LLM mode ==\n'
-if [ "$DEMO_MOCK_LLM" = "true" ]; then
+
+# Detect real DeepSeek key (Stage 16A).
+REAL_DEEPSEEK=false
+if [ -n "${OPENAI_COMPATIBLE_API_KEY:-}" ]; then
+  REAL_DEEPSEEK=true
+elif [ -n "${OPENAI_API_KEY:-}" ]; then
+  REAL_DEEPSEEK=true
+  OPENAI_COMPATIBLE_API_KEY="$OPENAI_API_KEY"
+fi
+
+if [ "$REAL_DEEPSEEK" = "true" ]; then
+  # Real DeepSeek mode — do NOT start mock server.
+  export EINO_LLM_ENABLED=true
+  export EINO_LLM_PROVIDER="${OPENAI_COMPATIBLE_PROVIDER:-openai_compatible}"
+  export EINO_LLM_ENDPOINT="${OPENAI_COMPATIBLE_BASE_URL:-https://api.deepseek.com}"
+  export EINO_LLM_MODEL="${OPENAI_COMPATIBLE_MODEL:-deepseek-chat}"
+  export EINO_LLM_API_KEY="$OPENAI_COMPATIBLE_API_KEY"
+  printf '  LLM mode: real-deepseek\n'
+  printf '  EINO_LLM_ENABLED=true\n'
+  printf '  EINO_LLM_PROVIDER=%s\n' "$EINO_LLM_PROVIDER"
+  printf '  EINO_LLM_ENDPOINT=%s\n' "$EINO_LLM_ENDPOINT"
+  printf '  EINO_LLM_MODEL=%s\n' "$EINO_LLM_MODEL"
+  printf '  EINO_LLM_API_KEY=[REDACTED]\n'
+elif [ "$DEMO_MOCK_LLM" = "true" ]; then
   # Start mock LLM server before Go Agent so it's ready when agent starts.
   printf '  Starting mock LLM server on port %s...\n' "$MOCK_LLM_PORT"
   nohup python3 "$APP_HOME/scripts/dev/mock_openai_compatible_server.py" "$MOCK_LLM_PORT" \
