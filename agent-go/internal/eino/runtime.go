@@ -646,23 +646,25 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		return agent.AgentRunResponse{}, err
 	}
 
-	// Build response.
-	buildInput := report.BuildInput{
-		Task:      task,
-		Decision:  string(intent.Decision),
-		Summary:   "Agent loop completed",
-		ToolTrace: []logtrace.ToolTrace{},
-		AuditResult: auditclient.Result{
+	// Collect tool traces from executor.
+	traces := exec.GetTraces()
+	for _, tr := range traces {
+		r.traces.Add(tr)
+	}
+
+	// Send to audit-core.
+	audit, auditErr := r.auditor.AuditTrace(ctx, task, traces)
+	if auditErr != nil {
+		audit = auditclient.Result{
 			Decision:  string(security.DecisionReview),
 			RiskScore: 0.35,
-			Method:    "traceshield",
-			Message:   "agent loop audit completed by TraceShield adapter",
-		},
-		Route: r.config.Route,
+			Method:    "fallback-mock",
+			Message:   "audit failed during agent loop: " + auditErr.Error(),
+		}
 	}
-	securityReport := report.BuildSecurityReport(buildInput)
-	attachRuntimeMetadata(securityReport, r.config.Metadata(nil), r.registry)
-	r.attachLLMMetadata(securityReport)
+	if audit.Decision == "" {
+		audit.Decision = string(intent.Decision)
+	}
 
 	// Convert agent steps to maps for JSON serialization.
 	stepMaps := make([]map[string]any, 0, len(loopResp.AgentSteps))
@@ -684,13 +686,24 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		})
 	}
 
-	meta := r.config.Metadata(nil)
-	attachRuntimeMetadata(securityReport, meta, r.registry)
-
-	decision := string(intent.Decision)
-	if loopResp.FinalAnswer != "" {
+	decision := audit.Decision
+	if loopResp.FinalAnswer != "" && audit.Decision != "deny" {
 		decision = string(security.DecisionReview)
 	}
+
+	// Build security report with real traces and audit result.
+	metadata := r.config.Metadata(nil)
+	buildInput := report.BuildInput{
+		Task:        task,
+		Decision:    decision,
+		Summary:     "Agent loop completed",
+		ToolTrace:   traces,
+		AuditResult: audit,
+		Route:       metadata.Route,
+	}
+	securityReport := report.BuildSecurityReport(buildInput)
+	attachRuntimeMetadata(securityReport, metadata, r.registry)
+	r.attachLLMMetadata(securityReport)
 
 	return agent.AgentRunResponse{
 		Task:      task,
@@ -710,14 +723,9 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		AgentSteps:      stepMaps,
 		FinalAnswer:     loopResp.FinalAnswer,
 		SecurityReport:  securityReport,
-		ToolTrace:       []logtrace.ToolTrace{},
-		AuditResult: auditclient.Result{
-			Decision:  decision,
-			RiskScore: 0.35,
-			Method:    "traceshield",
-			Message:   "agent loop audit completed",
-		},
-		ReasoningTrace: rtb.Finish(),
+		ToolTrace:       traces,
+		AuditResult:     audit,
+		ReasoningTrace:  rtb.Finish(),
 	}, nil
 }
 

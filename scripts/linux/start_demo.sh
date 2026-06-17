@@ -59,7 +59,7 @@ if [ "$REAL_DEEPSEEK" = "true" ]; then
   export EINO_LLM_ENABLED=true
   export EINO_LLM_PROVIDER="${OPENAI_COMPATIBLE_PROVIDER:-openai_compatible}"
   export EINO_LLM_ENDPOINT="${OPENAI_COMPATIBLE_BASE_URL:-https://api.deepseek.com}"
-  export EINO_LLM_MODEL="${OPENAI_COMPATIBLE_MODEL:-deepseek-chat}"
+  export EINO_LLM_MODEL="${OPENAI_COMPATIBLE_MODEL:-deepseek-v4-flash}"
   export EINO_LLM_API_KEY="$OPENAI_COMPATIBLE_API_KEY"
   printf '  LLM mode: real-deepseek\n'
   printf '  EINO_LLM_ENABLED=true\n'
