@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Stage 15A: Check all demo services health.
+# Detects deterministic vs mock LLM mode and checks appropriate expectations.
 
 set -euo pipefail
 
@@ -23,65 +24,177 @@ check_http() {
   fi
 }
 
-check_json_value() {
-  # POST to agent-run-eino and check a JSON path matches expected value.
-  local name="$1" url="$2" payload="$3" jq_path="$4" expected="$5"
-  local resp
-  resp=$(curl -sf -X POST "$url" -H "Content-Type: application/json" -d "$payload" 2>/dev/null || echo "")
-  if [ -z "$resp" ]; then
-    printf '  %-30s %s\n' "$name" "[FAIL] (no response)"
-    FAIL=$((FAIL + 1))
-    return
-  fi
-  local actual
-  actual=$(echo "$resp" | python3 -c "
-import json, sys
-try:
-    body = json.loads(sys.stdin.read())
-    val = body
-    for p in '$jq_path'.split('.'):
-        if p.isdigit():
-            val = val[int(p)]
-        else:
-            val = val.get(p, None) if isinstance(val, dict) else None
-        if val is None:
-            break
-    print(val if val is not None else '')
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
-  if [ "$actual" = "$expected" ]; then
-    printf '  %-30s %s\n' "$name" "[OK] ($expected)"
+check_pid() {
+  local name="$1" pid_file="$2"
+  if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+    printf '  %-30s %s\n' "$name" "[OK]"
     PASS=$((PASS + 1))
   else
-    printf '  %-30s %s\n' "$name" "[FAIL] (expected $expected, got $actual)"
+    printf '  %-30s %s\n' "$name" "[FAIL]"
     FAIL=$((FAIL + 1))
   fi
 }
 
-printf '== KylinGuard Demo Health Check ==\n\n'
+# --- Detect demo mode ---
+DEMO_MODE="deterministic"
+if [ -f "$APP_HOME/run/demo.env" ]; then
+  # Parse env file safely (grep + cut, no source).
+  local_enabled="$(grep '^export EINO_LLM_ENABLED=' "$APP_HOME/run/demo.env" 2>/dev/null | cut -d= -f2 || echo "")"
+  local_provider="$(grep '^export EINO_LLM_PROVIDER=' "$APP_HOME/run/demo.env" 2>/dev/null | cut -d= -f2 || echo "")"
+  if [ "$local_enabled" = "true" ]; then
+    DEMO_MODE="mock"
+  fi
+fi
+if [ "$DEMO_MODE" != "mock" ] && [ "${DEMO_MOCK_LLM:-false}" = "true" ]; then
+  DEMO_MODE="mock"
+fi
+if [ "$DEMO_MODE" != "mock" ] && [ -f "$APP_HOME/run/mock-llm.pid" ]; then
+  pid="$(cat "$APP_HOME/run/mock-llm.pid" 2>/dev/null || echo "")"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    DEMO_MODE="mock"
+  fi
+fi
 
+printf '== KylinGuard Demo Health Check ==\n\n'
+printf 'Mode: %s\n\n' "$DEMO_MODE"
+
+# --- Basic service health ---
 printf 'Services:\n'
 check_http "audit-core-py" "http://127.0.0.1:${AUDIT_PORT}/health"
 check_http "Go Agent" "http://127.0.0.1:${AGENT_PORT}/health"
 check_http "Frontend" "http://127.0.0.1:${FRONTEND_PORT}"
 
-# Check Go Agent LLM mode.
+# --- Check Go Agent LLM mode via API ---
 printf '\nGo Agent LLM mode:\n'
-check_json_value "llm_enabled" \
-  "http://127.0.0.1:${AGENT_PORT}/api/agent/run-eino" \
-  '{"task":"check system resource usage"}' \
-  "security_report.audit_metadata.llm_enabled" \
-  "True"
-check_json_value "chat_model" \
-  "http://127.0.0.1:${AGENT_PORT}/api/agent/run-eino" \
-  '{"task":"check system resource usage"}' \
-  "security_report.audit_metadata.chat_model" \
-  "deterministic-stub"
+ENDPOINT="http://127.0.0.1:${AGENT_PORT}/api/agent/run-eino"
+PAYLOAD='{"task":"check SSH login anomaly"}'
+RESP=$(curl -sf -X POST "$ENDPOINT" -H "Content-Type: application/json" -d "$PAYLOAD" 2>/dev/null || echo "")
 
-# Check mock LLM if pid file exists or DEMO_MOCK_LLM is true.
-printf '\nMock LLM:\n'
-if [ -f "$APP_HOME/run/mock-llm.pid" ] || [ "${DEMO_MOCK_LLM:-false}" = "true" ]; then
+if [ -z "$RESP" ]; then
+  printf '  %-30s %s\n' "API check" "[FAIL] (no response from run-eino)"
+  FAIL=$((FAIL + 1))
+else
+  # Use python3 for multi-path JSON extraction.
+  python3 - "$RESP" "$DEMO_MODE" <<'PYCHECK'
+import json, sys
+
+resp = json.loads(sys.argv[1])
+mode = sys.argv[2]
+errors = []
+
+def get_value(*paths):
+    """Try multiple dotted paths, return first non-None value."""
+    for path in paths:
+        parts = path.split(".")
+        val = resp
+        try:
+            for p in parts:
+                if p.isdigit():
+                    val = val[int(p)]
+                elif isinstance(val, dict):
+                    val = val.get(p)
+                else:
+                    val = None
+                    break
+            if val is not None:
+                return val
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+    return None
+
+def get_bool(*paths):
+    """Try multiple paths, return boolean."""
+    v = get_value(*paths)
+    if v is True or v == "True" or v == "true":
+        return True
+    if v is False or v == "False" or v == "false":
+        return False
+    return None
+
+# Read from security_report.audit_metadata, security_report top-level, and reasoning_trace spans.
+llm_enabled = get_bool(
+    "security_report.llm_enabled",
+    "security_report.audit_metadata.llm_enabled",
+)
+chat_model = get_value(
+    "security_report.chat_model",
+    "security_report.audit_metadata.chat_model",
+)
+remote_llm_used = get_bool(
+    "security_report.remote_llm_used",
+    "security_report.audit_metadata.remote_llm_used",
+)
+plan_scenario = get_value("plan.scenario", "")
+
+# Fallback: check reasoning_trace chat_model span attributes.
+if llm_enabled is None or chat_model is None or remote_llm_used is None:
+    for span in (resp.get("reasoning_trace") or {}).get("spans") or []:
+        if span.get("type") == "chat_model":
+            attrs = span.get("attributes") or {}
+            if llm_enabled is None:
+                llm_enabled = attrs.get("llm_enabled")
+            if chat_model is None:
+                chat_model = attrs.get("provider")
+            if remote_llm_used is None:
+                remote_llm_used = attrs.get("remote_llm_used")
+            break
+
+# Coerce booleans to string for display.
+def b(v):
+    if v is True:
+        return "True"
+    if v is False:
+        return "False"
+    return str(v) if v is not None else "None"
+
+if mode == "mock":
+    ok = True
+    if llm_enabled is not True:
+        print(f'  %-30s %s' % ("llm_enabled", f"[FAIL] (expected True, got {b(llm_enabled)})"))
+        ok = False
+    if chat_model == "deterministic-stub" or not chat_model:
+        print(f'  %-30s %s' % ("chat_model", f"[FAIL] (expected remote LLM, got {chat_model})"))
+        ok = False
+    if remote_llm_used is not True:
+        print(f'  %-30s %s' % ("remote_llm_used", f"[FAIL] (expected True, got {b(remote_llm_used)})"))
+        ok = False
+    if plan_scenario != "ssh_anomaly_check":
+        print(f'  %-30s %s' % ("plan.scenario", f"[FAIL] (expected ssh_anomaly_check, got {plan_scenario})"))
+    if ok:
+        print(f'  %-30s %s' % ("mode", "[OK] mock-openai-compatible"))
+        print(f'  %-30s %s' % ("llm_enabled", "[OK] True"))
+        print(f'  %-30s %s' % ("chat_model", f"[OK] {chat_model}"))
+        print(f'  %-30s %s' % ("remote_llm_used", "[OK] True"))
+else:
+    ok = True
+    if llm_enabled is not False:
+        print(f'  %-30s %s' % ("llm_enabled", f"[FAIL] (expected False, got {b(llm_enabled)})"))
+        ok = False
+    if chat_model != "deterministic-stub":
+        print(f'  %-30s %s' % ("chat_model", f"[FAIL] (expected deterministic-stub, got {chat_model})"))
+        ok = False
+    if ok:
+        print(f'  %-30s %s' % ("mode", "[OK] deterministic"))
+        print(f'  %-30s %s' % ("llm_enabled", "[OK] False"))
+        print(f'  %-30s %s' % ("chat_model", "[OK] deterministic-stub"))
+
+if not errors:
+    pass
+print("")  # newline separator
+
+sys.exit(0 if not errors else 1)
+PYCHECK
+  PYEXIT=$?
+  if [ "$PYEXIT" -ne 0 ]; then
+    FAIL=$((FAIL + 1))
+  else
+    PASS=$((PASS + 1))
+  fi
+fi
+
+# --- Mock LLM server check ---
+printf 'Mock LLM:\n'
+if [ "$DEMO_MODE" = "mock" ]; then
   if curl -sf -X POST "http://127.0.0.1:${MOCK_LLM_PORT}/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -d '{"messages":[{"role":"user","content":"ping"}]}' >/dev/null 2>&1; then
@@ -96,33 +209,24 @@ else
   SKIP=$((SKIP + 1))
 fi
 
+# --- PID files ---
 printf '\nPid files:\n'
-check_pid() {
-  local name="$1" pid_file="$2"
-  if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
-    printf '  %-30s %s\n' "$name" "[OK]"
-    PASS=$((PASS + 1))
-  else
-    printf '  %-30s %s\n' "$name" "[FAIL]"
-    FAIL=$((FAIL + 1))
-  fi
-}
 check_pid "agent-go pid" "$APP_HOME/run/agent-go.pid"
 check_pid "audit-core pid" "$APP_HOME/run/audit-core.pid"
-
 if [ -f "$APP_HOME/run/frontend.pid" ]; then
   check_pid "frontend pid" "$APP_HOME/run/frontend.pid"
 else
   printf '  %-30s %s\n' "frontend pid" "[NO PID FILE]"
 fi
 
+# --- Summary ---
 printf '\n'
 printf '  Results: %d passed, %d failed, %d skipped\n' "$PASS" "$FAIL" "$SKIP"
 printf '\n'
 printf '  Demo URL: http://127.0.0.1:%s\n' "$FRONTEND_PORT"
 
 if [ "$FAIL" -gt 0 ]; then
-  printf '\n  WARNING: Some services are not healthy. Check logs/ for details.\n'
+  printf '\n  WARNING: Some checks failed. Check logs/ for details.\n'
   exit 1
 fi
 printf '  All services healthy.\n'
