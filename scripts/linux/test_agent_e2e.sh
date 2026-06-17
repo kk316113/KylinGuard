@@ -729,4 +729,66 @@ assert_stage11
 assert_stage12b
 
 
+assert_stage13b_default() {
+  printf '\n== Stage 13B default LLM config ==\n'
+
+  local eino_raw
+  eino_raw="$(post_agent_task /api/agent/run-eino stage13b_default "check system resource usage")"
+
+  python3 - "$eino_raw" <<'PYEND'
+import json, sys
+body = json.loads(sys.argv[1])
+errors = []
+def fail(m):
+    errors.append(m)
+    print(f"  Stage13B FAIL: {m}")
+
+report = body.get("security_report") or {}
+meta = report.get("audit_metadata") or {}
+rt = body.get("reasoning_trace") or {}
+spans = rt.get("spans") or []
+
+# llm_enabled must be false by default.
+if meta.get("llm_enabled") is not False:
+    fail(f"expected llm_enabled=false, got {meta.get('llm_enabled')}")
+
+# chat_model must be deterministic-stub by default.
+if meta.get("chat_model") != "deterministic-stub":
+    fail(f"expected chat_model=deterministic-stub, got {meta.get('chat_model')}")
+
+# chat_model_adapter must be interface-v1.
+if meta.get("chat_model_adapter") != "interface-v1":
+    fail(f"expected chat_model_adapter=interface-v1, got {meta.get('chat_model_adapter')}")
+
+# remote_llm_used should not be true when llm is disabled.
+if meta.get("remote_llm_used") is True:
+    fail("remote_llm_used should not be true with default config")
+
+# Verify chat_model span exists and shows deterministic.
+for span in spans:
+    if span.get("type") == "chat_model":
+        attrs = span.get("attributes") or {}
+        if attrs.get("provider") != "deterministic":
+            fail(f"expected chat_model provider=deterministic, got {attrs.get('provider')}")
+        if attrs.get("remote_llm_used") is True:
+            fail("chat_model span should not have remote_llm_used=true in default config")
+        break
+
+# Check no sensitive data in reasoning_trace.
+resp_str = json.dumps(body)
+for pat in ["api_key", "authorization", "bearer"]:
+    lp = pat.lower()
+    if lp in resp_str.lower() and "test" not in resp_str.lower():
+        fail(f"possible sensitive key pattern '{pat}' found in response")
+
+if errors:
+    for e in errors:
+        print(f"  - {e}")
+    raise SystemExit(f"Stage 13B: {len(errors)} FAILED")
+print("Stage 13B default checks passed.")
+PYEND
+}
+
+assert_stage13b_default
+
 printf '\nLinux/Kylin E2E passed.\n'

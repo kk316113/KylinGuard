@@ -752,4 +752,39 @@ function Assert-Stage12BReasoningTrace {
 
 Assert-Stage12BReasoningTrace
 
+# ============================================================================
+# Stage 13B: Default LLM configuration checks
+# ============================================================================
+function Assert-Stage13BDefault {
+    Write-Host "`n== Stage 13B default LLM config =="
+
+    $response = Invoke-AgentTask -Path "/api/agent/run-eino" -Task "check system resource usage" -Label "stage13b_default"
+    $meta = $response.security_report.audit_metadata
+    $spans = @($response.reasoning_trace.spans)
+
+    if ($meta.llm_enabled -ne $false) {
+        throw "Stage 13B: expected llm_enabled=false, got $($meta.llm_enabled)"
+    }
+    if ($meta.chat_model -ne "deterministic-stub") {
+        throw "Stage 13B: expected chat_model=deterministic-stub, got $($meta.chat_model)"
+    }
+    if ($meta.chat_model_adapter -ne "interface-v1") {
+        throw "Stage 13B: expected chat_model_adapter=interface-v1, got $($meta.chat_model_adapter)"
+    }
+    if ($meta.remote_llm_used -eq $true) {
+        throw "Stage 13B: remote_llm_used should not be true with default config"
+    }
+    # Check for no sensitive data in response body.
+    $bodyStr = $response | ConvertTo-Json -Depth 10
+    foreach ($pat in @("api_key", "authorization", "bearer")) {
+        if ($bodyStr.ToLower().Contains($pat)) {
+            throw "Stage 13B: possible sensitive key pattern '$pat' found in response"
+        }
+    }
+
+    Write-Host "Stage 13B default checks passed."
+}
+
+Assert-Stage13BDefault
+
 Write-Host "`nWindows E2E passed."

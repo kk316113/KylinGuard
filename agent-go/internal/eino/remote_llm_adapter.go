@@ -38,6 +38,8 @@ type LLMResponse struct {
 }
 
 // NewRemoteLLMAdapter creates a new RemoteLLMAdapter.
+// It validates the config: if LLM is enabled but API key or endpoint is missing,
+// the adapter will still be created but GenerateToolCalls will return a clear error.
 func NewRemoteLLMAdapter(config ChatModelAdapterConfig, registry *tools.Registry) *RemoteLLMAdapter {
 	timeout := config.Timeout
 	if timeout <= 0 {
@@ -48,6 +50,24 @@ func NewRemoteLLMAdapter(config ChatModelAdapterConfig, registry *tools.Registry
 		registry: registry,
 		client:   &http.Client{Timeout: time.Duration(timeout) * time.Second},
 	}
+}
+
+// ValidateLLMConfig checks whether the LLM config is usable for a real remote call.
+// Returns an empty string if valid, or a descriptive reason if not.
+func ValidateLLMConfig(provider string, endpoint string, apiKey string) string {
+	if provider == "" || provider == "deterministic" {
+		return "LLM provider is not configured for remote calls"
+	}
+	if apiKey == "" {
+		return "EINO_LLM_API_KEY is not set"
+	}
+	if provider == "deepseek" && endpoint == "" {
+		return "EINO_LLM_ENDPOINT is required for deepseek provider"
+	}
+	if provider == "openai_compatible" && endpoint == "" {
+		return "EINO_LLM_ENDPOINT is required for openai_compatible provider"
+	}
+	return ""
 }
 
 // Name returns the adapter identifier.
@@ -65,8 +85,9 @@ func (a *RemoteLLMAdapter) Provider() string {
 
 // GenerateToolCalls calls the remote LLM API and returns structured tool calls.
 func (a *RemoteLLMAdapter) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
-	if a.config.APIKey == "" {
-		return nil, agent.Plan{}, fmt.Errorf("remote LLM API key is not configured")
+	// Validate config before making any request.
+	if reason := ValidateLLMConfig(a.config.Provider, a.config.Endpoint, a.config.APIKey); reason != "" {
+		return nil, agent.Plan{}, fmt.Errorf("remote LLM config invalid: %s", reason)
 	}
 
 	endpoint := a.resolveEndpoint()
@@ -218,15 +239,23 @@ Allowed tools:
 func (a *RemoteLLMAdapter) resolveEndpoint() string {
 	ep := a.config.Endpoint
 	if ep == "" {
-		return "http://localhost:8000" + chatCompletionsPath
+		return ""
 	}
+	// Remove trailing slash for clean concatenation.
 	ep = strings.TrimRight(ep, "/")
-	if strings.Contains(ep, "/chat/completions") {
+	// If it already ends with /chat/completions, return as-is.
+	if strings.HasSuffix(ep, "/chat/completions") {
 		return ep
 	}
+	// If it's a base /v1 path (e.g., https://api.openai.com/v1), append.
 	if strings.HasSuffix(ep, "/v1") {
 		return ep + "/chat/completions"
 	}
+	// Check if the URL contains /v1/chat/completions anywhere (e.g., https://api.deepseek.com/v1/chat/completions).
+	if strings.Contains(ep, "/v1/chat/completions") || strings.Contains(ep, "/chat/completions") {
+		return ep
+	}
+	// Default: treat as base URL, append /v1/chat/completions.
 	return ep + chatCompletionsPath
 }
 
