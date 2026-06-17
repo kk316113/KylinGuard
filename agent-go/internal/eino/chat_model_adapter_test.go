@@ -680,7 +680,7 @@ func TestRemoteLLMAdapterSSHTaskReturnsSSHPlan(t *testing.T) {
 					{"tool_name": "service_status", "reason": "check sshd", "arguments": map[string]any{"service_name": "sshd"}},
 					{"tool_name": "ssh_login_analyzer", "reason": "analyze", "arguments": map[string]any{"lines": 200}},
 				},
-				"risk_hint": "medium",
+				"risk_hint":       "medium",
 				"requires_review": true,
 			}
 		} else {
@@ -691,7 +691,7 @@ func TestRemoteLLMAdapterSSHTaskReturnsSSHPlan(t *testing.T) {
 					{"tool_name": "os_info", "reason": "collect", "arguments": map[string]any{}},
 					{"tool_name": "resource_usage_checker", "reason": "check", "arguments": map[string]any{}},
 				},
-				"risk_hint": "low",
+				"risk_hint":       "low",
 				"requires_review": false,
 			}
 		}
@@ -754,7 +754,7 @@ func TestRemoteLLMAdapterSystemResourceTaskReturnsResourcePlan(t *testing.T) {
 					{"tool_name": "resource_usage_checker", "reason": "check", "arguments": map[string]any{}},
 					{"tool_name": "disk_memory_checker", "reason": "check disk", "arguments": map[string]any{"include_tmpfs": false}},
 				},
-				"risk_hint": "low",
+				"risk_hint":       "low",
 				"requires_review": false,
 			}
 		} else {
@@ -764,7 +764,7 @@ func TestRemoteLLMAdapterSystemResourceTaskReturnsResourcePlan(t *testing.T) {
 				"tool_plan": []map[string]any{
 					{"tool_name": "os_info", "reason": "collect", "arguments": map[string]any{}},
 				},
-				"risk_hint": "medium",
+				"risk_hint":       "medium",
 				"requires_review": true,
 			}
 		}
