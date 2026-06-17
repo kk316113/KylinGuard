@@ -335,7 +335,13 @@ func isDeterministicSystemResourceCheckTask(task string) bool {
 		strings.Contains(task, "查看系统负载") ||
 		strings.Contains(task, "查看 cpu 内存状态") ||
 		strings.Contains(task, "检查内存和负载") ||
-		strings.Contains(task, "system resource check")
+		strings.Contains(task, "system resource check") ||
+		strings.Contains(task, "system resource usage") ||
+		strings.Contains(task, "check cpu and memory") ||
+		strings.Contains(task, "check cpu memory") ||
+		strings.Contains(task, "disk and memory usage") ||
+		strings.Contains(task, "check system load") ||
+		strings.Contains(task, "check system performance")
 }
 
 func isDeterministicNetworkConnectionCheckTask(task string) bool {

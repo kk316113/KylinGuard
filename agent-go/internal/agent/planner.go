@@ -226,13 +226,24 @@ func isSystemResourceCheckTask(task string) bool {
 		"检查内存",
 		"检查负载",
 		"资源使用情况",
+		"资源使用",
+		"系统负载",
 		"system resource check",
+		"system resource usage",
+		"check resource usage",
+		"check system resource",
+		"check cpu and memory",
+		"check cpu memory",
+		"disk and memory usage",
+		"check system load",
+		"check system performance",
 		"check resource",
 		"load check",
 		"memory check",
-	}) || containsAny(task, []string{
-		"资源使用",
-		"系统负载",
+		"resource usage check",
+		"inspect disk",
+		"inspect resource",
+		"analyze resource",
 	})
 }
 

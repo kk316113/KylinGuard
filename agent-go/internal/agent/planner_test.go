@@ -88,6 +88,32 @@ func TestRuleBasedPlannerSSHAnomalyEnglish(t *testing.T) {
 	}
 }
 
+func TestRuleBasedPlannerSystemResourceCheckEnglish(t *testing.T) {
+	planner := NewRuleBasedPlanner()
+
+	tests := []string{
+		"check system resource usage",
+		"check CPU and memory usage",
+		"inspect disk and memory usage",
+		"system resource check",
+		"check system load",
+		"check cpu memory disk usage",
+		"resource usage check",
+	}
+	for _, task := range tests {
+		plan, err := planner.Plan(context.Background(), task)
+		if err != nil {
+			t.Fatalf("plan returned error for %q: %v", task, err)
+		}
+		if plan.Scenario != "system_resource_check" {
+			t.Fatalf("expected system_resource_check for %q, got %q", task, plan.Scenario)
+		}
+		if len(plan.Steps) < 2 {
+			t.Fatalf("expected >=2 steps for %q, got %d", task, len(plan.Steps))
+		}
+	}
+}
+
 func TestRuleBasedPlannerDefaultSystemOverview(t *testing.T) {
 	planner := NewRuleBasedPlanner()
 
