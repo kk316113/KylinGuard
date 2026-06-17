@@ -55,7 +55,7 @@ func TestRemoteLLMAdapterRequiresAPIKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when API key is empty")
 	}
-	if !strings.Contains(err.Error(), "API key") {
+	if !strings.Contains(err.Error(), "API_KEY") && !strings.Contains(err.Error(), "config invalid") {
 		t.Fatalf("expected error about missing API key, got: %v", err)
 	}
 }
@@ -426,5 +426,230 @@ func TestBuildToolDefsForPrompt(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected os_info in tool defs")
+	}
+}
+
+// --- Stage 13B: Endpoint normalization ---
+
+func TestResolveEndpointFullURL(t *testing.T) {
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Endpoint: "https://api.deepseek.com/v1/chat/completions",
+		APIKey:   "test",
+	}, tools.NewDefaultRegistry())
+
+	ep := adapter.resolveEndpoint()
+	if ep != "https://api.deepseek.com/v1/chat/completions" {
+		t.Fatalf("expected full URL unchanged, got %q", ep)
+	}
+}
+
+func TestResolveEndpointBaseURL(t *testing.T) {
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Endpoint: "https://api.deepseek.com",
+		APIKey:   "test",
+	}, tools.NewDefaultRegistry())
+
+	ep := adapter.resolveEndpoint()
+	expected := "https://api.deepseek.com" + chatCompletionsPath
+	if ep != expected {
+		t.Fatalf("expected %q, got %q", expected, ep)
+	}
+}
+
+func TestResolveEndpointTrailingSlash(t *testing.T) {
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Endpoint: "https://api.deepseek.com/",
+		APIKey:   "test",
+	}, tools.NewDefaultRegistry())
+
+	ep := adapter.resolveEndpoint()
+	expected := "https://api.deepseek.com" + chatCompletionsPath
+	if ep != expected {
+		t.Fatalf("expected %q, got %q", expected, ep)
+	}
+}
+
+func TestResolveEndpointV1Base(t *testing.T) {
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Endpoint: "https://api.openai.com/v1",
+		APIKey:   "test",
+	}, tools.NewDefaultRegistry())
+
+	ep := adapter.resolveEndpoint()
+	if ep != "https://api.openai.com/v1/chat/completions" {
+		t.Fatalf("expected /v1/chat/completions, got %q", ep)
+	}
+}
+
+func TestResolveEndpointEmpty(t *testing.T) {
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Endpoint: "",
+		APIKey:   "test",
+	}, tools.NewDefaultRegistry())
+
+	ep := adapter.resolveEndpoint()
+	if ep != "" {
+		t.Fatalf("expected empty endpoint to resolve to empty, got %q", ep)
+	}
+}
+
+// --- Stage 13B: ValidateLLMConfig ---
+
+func TestValidateLLMConfigDeterministic(t *testing.T) {
+	if r := ValidateLLMConfig("deterministic", "", ""); r == "" {
+		t.Fatal("expected validation to fail for deterministic provider without remote config")
+	}
+}
+
+func TestValidateLLMConfigMissingAPIKey(t *testing.T) {
+	r := ValidateLLMConfig("openai_compatible", "https://api.openai.com/v1", "")
+	if r == "" {
+		t.Fatal("expected validation to fail when API key is missing")
+	}
+}
+
+func TestValidateLLMConfigMissingEndpoint(t *testing.T) {
+	if r := ValidateLLMConfig("deepseek", "", "sk-test"); r == "" {
+		t.Fatal("expected validation to fail for deepseek without endpoint")
+	}
+	if r := ValidateLLMConfig("openai_compatible", "", "sk-test"); r == "" {
+		t.Fatal("expected validation to fail for openai_compatible without endpoint")
+	}
+}
+
+func TestValidateLLMConfigValid(t *testing.T) {
+	if r := ValidateLLMConfig("openai_compatible", "https://api.openai.com/v1", "sk-test"); r != "" {
+		t.Fatalf("expected valid config, got: %s", r)
+	}
+}
+
+// --- Stage 13B: GenerateToolCalls fails gracefully with missing config ---
+
+func TestRemoteLLMAdapterFailsGracefullyOnMissingConfig(t *testing.T) {
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		Endpoint: "",
+		APIKey:   "",
+	}, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "test", nil)
+	if err == nil {
+		t.Fatal("expected error when config is missing")
+	}
+	if !strings.Contains(err.Error(), "config invalid") {
+		t.Fatalf("expected config invalid error, got: %v", err)
+	}
+}
+
+// --- Stage 13B: Mock server integration tests ---
+
+func TestRemoteLLMAdapterRejectsHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "test", nil)
+	if err == nil {
+		t.Fatal("expected error for HTTP 401")
+	}
+}
+
+func TestRemoteLLMAdapterFallsBackOnHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+	fallback := NewFallbackChatModelAdapter(adapter, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	calls, plan, err := fallback.GenerateToolCalls(ctx, "check system resource usage", nil)
+	if err != nil {
+		t.Fatalf("fallback adapter should not propagate error: %v", err)
+	}
+	if len(calls) == 0 {
+		t.Fatal("expected fallback adapter to produce tool calls")
+	}
+	if plan.Scenario == "" {
+		t.Fatal("expected fallback adapter to produce plan")
+	}
+
+	used, reason := fallback.FallbackInfo()
+	if !used {
+		t.Fatal("expected fallback to be used")
+	}
+	if reason == "" {
+		t.Fatal("expected fallback reason to be non-empty")
+	}
+	if strings.Contains(reason, "test-key") || strings.Contains(reason, "Bearer") {
+		t.Fatal("fallback reason should not contain API key")
+	}
+}
+
+func TestRemoteLLMAdapterEndpointRequirement(t *testing.T) {
+	// Without endpoint but with key, should get clear error for openai_compatible.
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		APIKey:   "sk-test",
+	}, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "test", nil)
+	if err == nil {
+		t.Fatal("expected error when endpoint is empty")
+	}
+	if !strings.Contains(err.Error(), "ENDPOINT") && !strings.Contains(err.Error(), "config invalid") {
+		t.Fatalf("expected error mentioning endpoint or config, got: %v", err)
+	}
+}
+
+func TestValidateLLMConfigCustomProvider(t *testing.T) {
+	if r := ValidateLLMConfig("custom", "https://custom.example.com/v1", "sk-test"); r != "" {
+		t.Fatalf("expected 'custom' provider with endpoint and key to be valid, got: %s", r)
+	}
+}
+
+func TestRemoteLLMAdapterDeepSeekMissingEndpoint(t *testing.T) {
+	r := ValidateLLMConfig("deepseek", "", "sk-test")
+	if r == "" {
+		t.Fatal("expected deepseek without endpoint to be invalid")
+	}
+	if !strings.Contains(r, "ENDPOINT") {
+		t.Fatalf("expected error about missing endpoint, got: %s", r)
+	}
+}
+
+func TestRemoteLLMAdapterRejectsRequestError(t *testing.T) {
+	// Use an unreachable endpoint to simulate network error.
+	config := ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		Endpoint: "http://127.0.0.1:1/v1/chat/completions",
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "test", nil)
+	if err == nil {
+		t.Fatal("expected error for unreachable endpoint")
 	}
 }
