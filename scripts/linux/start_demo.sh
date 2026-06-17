@@ -42,6 +42,61 @@ if [ ! -d "$TRACE_HOME" ]; then
   printf '  audit-core-py will run in fallback mode.\n'
 fi
 
+# --- Set LLM environment and start mock LLM if needed ---
+printf '== Setting LLM mode ==\n'
+if [ "$DEMO_MOCK_LLM" = "true" ]; then
+  # Start mock LLM server before Go Agent so it's ready when agent starts.
+  printf '  Starting mock LLM server on port %s...\n' "$MOCK_LLM_PORT"
+  nohup python3 "$APP_HOME/scripts/dev/mock_openai_compatible_server.py" "$MOCK_LLM_PORT" \
+    > "$APP_HOME/logs/mock-llm.log" 2>&1 &
+  echo $! > "$APP_HOME/run/mock-llm.pid"
+  printf '  Mock LLM pid: %s\n' "$(cat "$APP_HOME/run/mock-llm.pid")"
+
+  for i in $(seq 1 15); do
+    if curl -s -X POST "http://127.0.0.1:${MOCK_LLM_PORT}/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -d '{"messages":[{"role":"user","content":"ping"}]}' >/dev/null 2>&1; then
+      printf '  Mock LLM: OK\n'
+      break
+    fi
+    if [ "$i" -eq 15 ]; then
+      printf '  WARNING: mock LLM may not be ready, continuing...\n'
+    fi
+    sleep 1
+  done
+
+  export EINO_LLM_ENABLED=true
+  export EINO_LLM_PROVIDER=openai_compatible
+  export EINO_LLM_ENDPOINT="http://127.0.0.1:${MOCK_LLM_PORT}/v1/chat/completions"
+  export EINO_LLM_MODEL=mock-model
+  export EINO_LLM_API_KEY=sk-mock-key
+  printf '  LLM mode: mock-openai-compatible\n'
+  printf '  EINO_LLM_ENABLED=true\n'
+  printf '  EINO_LLM_PROVIDER=openai_compatible\n'
+  printf '  EINO_LLM_ENDPOINT=%s\n' "$EINO_LLM_ENDPOINT"
+  printf '  EINO_LLM_API_KEY=[REDACTED]\n'
+else
+  export EINO_LLM_ENABLED=false
+  export EINO_LLM_PROVIDER=deterministic
+  unset EINO_LLM_ENDPOINT
+  unset EINO_LLM_MODEL
+  unset EINO_LLM_API_KEY
+  printf '  LLM mode: deterministic\n'
+  printf '  EINO_LLM_ENABLED=false\n'
+fi
+printf '\n'
+
+# --- Save env for manual verification scripts ---
+cat > "$APP_HOME/run/demo.env" << EOF
+export EINO_LLM_ENABLED=${EINO_LLM_ENABLED:-false}
+export EINO_LLM_PROVIDER=${EINO_LLM_PROVIDER:-deterministic}
+export EINO_LLM_ENDPOINT=${EINO_LLM_ENDPOINT:-}
+export EINO_LLM_MODEL=${EINO_LLM_MODEL:-}
+export EINO_LLM_API_KEY=${EINO_LLM_API_KEY:-}
+EOF
+printf '  Saved env to run/demo.env\n'
+printf '\n'
+
 # --- Start audit-core-py ---
 printf '== Starting audit-core-py ==\n'
 export TRACESHIELD_CORE_PATH="$TRACE_HOME"
@@ -64,17 +119,12 @@ for i in $(seq 1 30); do
 done
 printf '\n'
 
-# --- Start Go Agent ---
+# --- Start Go Agent (env vars already set) ---
 printf '== Starting Go Agent ==\n'
 export AUDIT_CORE_URL="$AUDIT_URL"
 export AGENT_GO_PORT="$AGENT_PORT"
 export EINO_RUNTIME_ENABLED=true
 export EINO_GRAPH_ENABLED=true
-export EINO_LLM_ENABLED=false
-
-if [ "$DEMO_MOCK_LLM" = "true" ]; then
-  printf '  [DEMO_MOCK_LLM=true] Will start mock LLM after agent.\n'
-fi
 
 nohup bash "$APP_HOME/deploy/kylin/run_agent_go.sh" > "$APP_HOME/logs/agent-go.log" 2>&1 &
 echo $! > "$APP_HOME/run/agent-go.pid"
@@ -94,40 +144,13 @@ for i in $(seq 1 30); do
 done
 printf '\n'
 
-# --- Start Mock LLM (optional) ---
-if [ "$DEMO_MOCK_LLM" = "true" ]; then
-  printf '== Starting mock LLM server ==\n'
-  export EINO_LLM_ENABLED=true
-  export EINO_LLM_PROVIDER=openai_compatible
-  export EINO_LLM_ENDPOINT="http://127.0.0.1:${MOCK_LLM_PORT}/v1/chat/completions"
-  export EINO_LLM_MODEL=mock-model
-  export EINO_LLM_API_KEY=sk-mock-key
-
-  nohup python3 "$APP_HOME/scripts/dev/mock_openai_compatible_server.py" "$MOCK_LLM_PORT" \
-    > "$APP_HOME/logs/mock-llm.log" 2>&1 &
-  echo $! > "$APP_HOME/run/mock-llm.pid"
-  printf '  pid: %s\n' "$(cat "$APP_HOME/run/mock-llm.pid")"
-  printf '  API_KEY: [REDACTED]\n'
-  sleep 1
-  if curl -s "http://127.0.0.1:${MOCK_LLM_PORT}/v1/chat/completions" -X POST \
-    -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"ping"}]}' >/dev/null 2>&1; then
-    printf '  mock LLM: OK\n'
-  else
-    printf '  WARNING: mock LLM might not be ready yet\n'
-  fi
-  printf '\n'
-fi
-
 # --- Start frontend ---
 printf '== Starting frontend ==\n'
-# Check for node/npm.
 NODE_CMD=""
 if command -v node &>/dev/null; then
   NODE_CMD="node"
-  npm_cmd="npm"
 elif command -v nodejs &>/dev/null; then
   NODE_CMD="nodejs"
-  npm_cmd="npm"
 else
   printf '  ERROR: Node.js not found. Please install Node.js 18+ before starting frontend.\n'
   printf '  The backend is already running. You can start frontend manually:\n'
@@ -163,10 +186,11 @@ printf '\n'
 printf '  Run health check:\n'
 printf '    bash scripts/linux/check_demo.sh\n'
 printf '\n'
+printf '  Manual LLM verification:\n'
+printf '    source run/demo.env\n'
+printf '    bash scripts/linux/test_stage13b_remote_llm_manual.sh\n'
+printf '\n'
 printf '  Stop demo:\n'
 printf '    bash scripts/linux/stop_demo.sh\n'
-printf '\n'
-printf '  To run E2E tests:\n'
-printf '    bash scripts/linux/test_agent_e2e.sh\n'
 printf '\n'
 printf '========================================\n'
