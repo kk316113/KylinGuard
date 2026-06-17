@@ -200,8 +200,10 @@ class MockHandler(BaseHTTPRequestHandler):
                 content_text = str(msg.get("content", ""))
                 if "Step history:" in content_text:
                     is_agent_loop = True
-                    # Count steps from the Step history.
-                    step_count = content_text.count("Step ")
+                    # Count actual executed steps: lines matching "Step N:" where N is a number.
+                    # "Step history:" itself does not match.
+                    import re
+                    step_count = len(re.findall(r"Step \d+:", content_text))
                 if msg.get("role") == "user" and content_text:
                     user_text = content_text
 
