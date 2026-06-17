@@ -152,6 +152,13 @@ def b(v):
 
 if mode == "mock" or mode == "real-deepseek":
     ok = True
+    # Extract agent loop fields.
+    agent_mode = get_value("agent_mode", "")
+    agent_steps = resp.get("agent_steps") or []
+    tool_trace = resp.get("tool_trace") or []
+    final_answer = get_value("final_answer", "")
+    audit_result = resp.get("audit_result") or {}
+
     if llm_enabled is not True:
         print(f'  %-30s %s' % ("llm_enabled", f"[FAIL] (expected True, got {b(llm_enabled)})"))
         ok = False
@@ -161,6 +168,28 @@ if mode == "mock" or mode == "real-deepseek":
     if remote_llm_used is not True and mode == "mock":
         print(f'  %-30s %s' % ("remote_llm_used", f"[FAIL] (expected True, got {b(remote_llm_used)})"))
         ok = False
+    if agent_mode != "agent_loop":
+        print(f'  %-30s %s' % ("agent_mode", f"[FAIL] (expected agent_loop, got {agent_mode})"))
+        ok = False
+    if not final_answer:
+        print(f'  %-30s %s' % ("final_answer", "[FAIL] (expected non-empty)"))
+        ok = False
+    if mode == "mock":
+        if len(agent_steps) < 3:
+            print(f'  %-30s %s' % ("agent_steps", f"[FAIL] (expected >=3, got {len(agent_steps)})"))
+            ok = False
+        if len(tool_trace) < 3:
+            print(f'  %-30s %s' % ("tool_trace", f"[FAIL] (expected >=3, got {len(tool_trace)})"))
+            ok = False
+        # Check that SSH steps include expected tools.
+        step_tools = [s.get("tool_name") for s in agent_steps]
+        for required in ["service_status", "port_checker"]:
+            if required not in step_tools:
+                print(f'  %-30s %s' % ("step_tools", f"[FAIL] (missing {required} in {step_tools})"))
+                ok = False
+    if not audit_result.get("decision"):
+        print(f'  %-30s %s' % ("audit_result", "[FAIL] (missing decision)"))
+        ok = False
     if ok:
         label = "mock-openai-compatible" if mode == "mock" else "real-deepseek"
         print(f'  %-30s %s' % ("mode", f"[OK] {label}"))
@@ -168,6 +197,9 @@ if mode == "mock" or mode == "real-deepseek":
         print(f'  %-30s %s' % ("chat_model", f"[OK] {chat_model}"))
         if remote_llm_used is True:
             print(f'  %-30s %s' % ("remote_llm_used", "[OK] True"))
+        if mode == "mock":
+            print(f'  %-30s %s' % ("agent_steps", f"[OK] {len(agent_steps)} steps"))
+            print(f'  %-30s %s' % ("tool_trace", f"[OK] {len(tool_trace)} tools"))
 else:
     ok = True
     if llm_enabled is not False:
