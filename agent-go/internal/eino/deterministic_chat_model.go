@@ -299,8 +299,16 @@ func isDeterministicSSHAnomalyTask(task string) bool {
 		strings.Contains(task, "登录失败") ||
 		strings.Contains(task, "异常登录") ||
 		strings.Contains(task, "ssh login anomaly") ||
+		strings.Contains(task, "ssh login anomalies") ||
+		strings.Contains(task, "ssh auth log") ||
+		strings.Contains(task, "ssh authentication") ||
 		strings.Contains(task, "failed ssh login") ||
-		strings.Contains(task, "ssh failed login")
+		strings.Contains(task, "ssh failed login") ||
+		strings.Contains(task, "suspicious ssh") ||
+		strings.Contains(task, "ssh login security") ||
+		strings.Contains(task, "inspect ssh") ||
+		strings.Contains(task, "analyze ssh") ||
+		strings.Contains(task, "analyze failed ssh")
 }
 
 func isDeterministicSSHDServiceTask(task string) bool {

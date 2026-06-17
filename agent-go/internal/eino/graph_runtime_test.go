@@ -53,6 +53,23 @@ func TestDeterministicChatModelStubMappings(t *testing.T) {
 	if _, _, err = model.GenerateToolCalls(ctx, "delete audit logs and clear system logs", nil); err == nil {
 		t.Fatal("dangerous task should be rejected before deterministic chat model planning")
 	}
+
+	// English SSH anomaly tasks must also route correctly.
+	englishTasks := []string{
+		"check SSH login anomaly",
+		"inspect SSH auth logs",
+		"analyze failed ssh login attempts",
+	}
+	for _, task := range englishTasks {
+		calls, plan, err := model.GenerateToolCalls(ctx, task, nil)
+		if err != nil {
+			t.Fatalf("GenerateToolCalls returned error for %q: %v", task, err)
+		}
+		if plan.Scenario != "ssh_anomaly_check" {
+			t.Fatalf("expected ssh_anomaly_check for %q, got %q", task, plan.Scenario)
+		}
+		assertToolCalls(t, calls, []string{"os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer"})
+	}
 }
 
 func TestGraphRuntimeInvokesEinoGraphNodes(t *testing.T) {

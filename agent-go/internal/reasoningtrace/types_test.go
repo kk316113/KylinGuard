@@ -101,13 +101,13 @@ func TestSanitizeSensitiveKeys(t *testing.T) {
 	sp := tb.StartSpan("", SpanRequest, "test")
 
 	sensitive := map[string]string{
-		"api_key":     "sk-1234567890abcdef",
+		"api_key":       "sk-1234567890abcdef",
 		"authorization": "Bearer eyJhbGciOiJIUzI1NiIs...",
-		"token":       "my-secret-token",
-		"password":    "supersecret",
-		"secret":      "my-secret-value",
-		"credential":  "user:pass",
-		"private_key": "-----BEGIN RSA PRIVATE KEY-----\nMII",
+		"token":         "my-secret-token",
+		"password":      "supersecret",
+		"secret":        "my-secret-value",
+		"credential":    "user:pass",
+		"private_key":   "-----BEGIN RSA PRIVATE KEY-----\nMII",
 	}
 	for k, v := range sensitive {
 		tb.SetAttr(sp.SpanID, k, v)
@@ -174,10 +174,10 @@ func TestTruncatedSummary(t *testing.T) {
 
 func TestSanitizeAttributes(t *testing.T) {
 	attrs := map[string]any{
-		"tool":      "port_checker",
-		"api_key":   "sk-abc",
+		"tool":          "port_checker",
+		"api_key":       "sk-abc",
 		"authorization": "Bearer token123",
-		"safe_key":  "safe_value",
+		"safe_key":      "safe_value",
 	}
 	sanitized := SanitizeAttributes(attrs)
 	if sanitized["tool"] != "port_checker" {

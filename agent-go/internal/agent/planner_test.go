@@ -65,6 +65,29 @@ func TestRuleBasedPlannerPortCheck(t *testing.T) {
 	}
 }
 
+func TestRuleBasedPlannerSSHAnomalyEnglish(t *testing.T) {
+	planner := NewRuleBasedPlanner()
+
+	tests := []string{
+		"check SSH login anomaly",
+		"inspect SSH auth logs",
+		"analyze failed ssh login attempts",
+		"analyze SSH login failures",
+		"check suspicious SSH logins",
+		"check ssh login security",
+	}
+	for _, task := range tests {
+		plan, err := planner.Plan(context.Background(), task)
+		if err != nil {
+			t.Fatalf("plan returned error for %q: %v", task, err)
+		}
+		if plan.Scenario != "ssh_anomaly_check" {
+			t.Fatalf("expected ssh_anomaly_check for %q, got %q", task, plan.Scenario)
+		}
+		assertPlanTools(t, plan, []string{"os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer"})
+	}
+}
+
 func TestRuleBasedPlannerDefaultSystemOverview(t *testing.T) {
 	planner := NewRuleBasedPlanner()
 

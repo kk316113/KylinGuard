@@ -166,10 +166,18 @@ func isSSHAnomalyTask(task string) bool {
 		"异常登录",
 		"远程登录",
 		"ssh login anomaly",
+		"ssh login anomalies",
+		"ssh auth log",
+		"ssh authentication",
 		"failed ssh login",
+		"ssh failed login",
 		"brute force",
 		"suspicious login",
-		"ssh failed login",
+		"suspicious ssh",
+		"ssh login security",
+		"inspect ssh",
+		"analyze ssh",
+		"analyze failed ssh",
 	})
 }
 
