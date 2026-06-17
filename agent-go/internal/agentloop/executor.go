@@ -2,15 +2,20 @@ package agentloop
 
 import (
 	"context"
+	"sync"
 
+	"kylin-guard-agent/agent-go/internal/logtrace"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
-// ToolStepExecutor implements StepExecutor using the real tool registry and security policy.
+// ToolStepExecutor implements StepExecutor using the real tool registry and security policy,
+// and collects tool traces for audit.
 type ToolStepExecutor struct {
-	registry   *tools.Registry
-	policy     security.ToolPolicy
+	registry *tools.Registry
+	policy   security.ToolPolicy
+	mu       sync.Mutex
+	traces   []logtrace.ToolTrace
 }
 
 func NewToolStepExecutor(registry *tools.Registry) *ToolStepExecutor {
@@ -30,9 +35,14 @@ func (e *ToolStepExecutor) CheckToolPolicy(toolName string, args map[string]any)
 	return true, ""
 }
 
-// ExecuteTool invokes a tool through the registry and returns the observation.
+// ExecuteTool invokes a tool through the registry, records the trace, and returns the observation.
 func (e *ToolStepExecutor) ExecuteTool(ctx context.Context, toolName string, args map[string]any) (map[string]any, error) {
 	result, err := e.registry.Invoke(ctx, toolName, args)
+	// Record trace.
+	e.mu.Lock()
+	e.traces = append(e.traces, result.Trace)
+	e.mu.Unlock()
+
 	if err != nil {
 		return map[string]any{
 			"status": "error",
@@ -50,6 +60,15 @@ func (e *ToolStepExecutor) ExecuteTool(ctx context.Context, toolName string, arg
 		obs["output"] = truncateOutput(result.Output)
 	}
 	return obs, nil
+}
+
+// GetTraces returns all collected tool traces and clears the buffer.
+func (e *ToolStepExecutor) GetTraces() []logtrace.ToolTrace {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	result := make([]logtrace.ToolTrace, len(e.traces))
+	copy(result, e.traces)
+	return result
 }
 
 func truncateOutput(output any) any {
