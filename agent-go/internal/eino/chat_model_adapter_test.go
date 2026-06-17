@@ -653,3 +653,159 @@ func TestRemoteLLMAdapterRejectsRequestError(t *testing.T) {
 		t.Fatal("expected error for unreachable endpoint")
 	}
 }
+
+func TestRemoteLLMAdapterSSHTaskReturnsSSHPlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Decode request to verify task-aware routing.
+		var reqBody struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&reqBody)
+		userMsg := ""
+		for _, m := range reqBody.Messages {
+			if m.Content != "" {
+				userMsg = m.Content
+			}
+		}
+
+		var plan map[string]any
+		if containsAny(userMsg, []string{"ssh", "login", "auth"}) {
+			plan = map[string]any{
+				"scenario": "ssh_anomaly_check",
+				"intent":   "check SSH login anomaly",
+				"tool_plan": []map[string]any{
+					{"tool_name": "os_info", "reason": "collect OS context", "arguments": map[string]any{}},
+					{"tool_name": "service_status", "reason": "check sshd", "arguments": map[string]any{"service_name": "sshd"}},
+					{"tool_name": "ssh_login_analyzer", "reason": "analyze", "arguments": map[string]any{"lines": 200}},
+				},
+				"risk_hint": "medium",
+				"requires_review": true,
+			}
+		} else {
+			plan = map[string]any{
+				"scenario": "system_resource_check",
+				"intent":   "check resources",
+				"tool_plan": []map[string]any{
+					{"tool_name": "os_info", "reason": "collect", "arguments": map[string]any{}},
+					{"tool_name": "resource_usage_checker", "reason": "check", "arguments": map[string]any{}},
+				},
+				"risk_hint": "low",
+				"requires_review": false,
+			}
+		}
+		content, _ := json.Marshal(plan)
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": string(content)}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+
+	// SSH task should get ssh_anomaly_check.
+	calls, plan, err := adapter.GenerateToolCalls(ctx, "check SSH login anomaly", nil)
+	if err != nil {
+		t.Fatalf("SSH task error: %v", err)
+	}
+	if plan.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("SSH task: expected ssh_anomaly_check, got %q", plan.Scenario)
+	}
+	if len(calls) == 0 {
+		t.Fatal("SSH task: expected tool calls")
+	}
+}
+
+func TestRemoteLLMAdapterSystemResourceTaskReturnsResourcePlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&reqBody)
+		userMsg := ""
+		for _, m := range reqBody.Messages {
+			if m.Content != "" {
+				userMsg = m.Content
+			}
+		}
+
+		var plan map[string]any
+		if containsAny(userMsg, []string{"resource", "cpu", "memory", "disk", "load"}) {
+			plan = map[string]any{
+				"scenario": "system_resource_check",
+				"intent":   "check resources",
+				"tool_plan": []map[string]any{
+					{"tool_name": "os_info", "reason": "collect", "arguments": map[string]any{}},
+					{"tool_name": "resource_usage_checker", "reason": "check", "arguments": map[string]any{}},
+					{"tool_name": "disk_memory_checker", "reason": "check disk", "arguments": map[string]any{"include_tmpfs": false}},
+				},
+				"risk_hint": "low",
+				"requires_review": false,
+			}
+		} else {
+			plan = map[string]any{
+				"scenario": "system_security_overview",
+				"intent":   "security check",
+				"tool_plan": []map[string]any{
+					{"tool_name": "os_info", "reason": "collect", "arguments": map[string]any{}},
+				},
+				"risk_hint": "medium",
+				"requires_review": true,
+			}
+		}
+		content, _ := json.Marshal(plan)
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": string(content)}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+
+	calls, plan, err := adapter.GenerateToolCalls(ctx, "check system resource usage", nil)
+	if err != nil {
+		t.Fatalf("resource task error: %v", err)
+	}
+	if plan.Scenario != "system_resource_check" {
+		t.Fatalf("resource task: expected system_resource_check, got %q", plan.Scenario)
+	}
+	if len(calls) < 2 {
+		t.Fatalf("resource task: expected >=2 tool calls, got %d", len(calls))
+	}
+}
+
+func containsAny(s string, items []string) bool {
+	for _, item := range items {
+		if strings.Contains(s, item) {
+			return true
+		}
+	}
+	return false
+}
