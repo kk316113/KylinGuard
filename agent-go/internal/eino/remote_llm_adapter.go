@@ -1,42 +1,238 @@
 package eino
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
 
 	"kylin-guard-agent/agent-go/internal/agent"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
-// RemoteLLMMockAdapter is a placeholder that demonstrates the ChatModelAdapter interface
-// but returns "not implemented" errors when called.
-// It is intended for future integration with remote LLM APIs (OpenAI, Anthropic, etc.).
-type RemoteLLMMockAdapter struct {
-	config ChatModelAdapterConfig
+const (
+	defaultLLMTimeout   = 15 * time.Second
+	chatCompletionsPath = "/v1/chat/completions"
+)
+
+// RemoteLLMAdapter calls an OpenAI-compatible API for structured tool plan generation.
+type RemoteLLMAdapter struct {
+	config   ChatModelAdapterConfig
+	registry *tools.Registry
+	client   *http.Client
 }
 
-func NewRemoteLLMMockAdapter(config ChatModelAdapterConfig) *RemoteLLMMockAdapter {
-	return &RemoteLLMMockAdapter{config: config}
+// LLMResponse holds metadata about the LLM call outcome.
+type LLMResponse struct {
+	ToolPlan       *ToolPlan
+	RawOutput      string
+	UsedFallback   bool
+	FallbackReason string
+	Provider       string
+	Model          string
+	Error          error
 }
 
-// GenerateToolCalls returns a not-implemented error.
-// Future implementation will call the remote LLM API with tool definitions.
-func (m *RemoteLLMMockAdapter) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
-	return nil, agent.Plan{}, fmt.Errorf(
-		"remote LLM adapter not implemented: provider=%s, endpoint=%s, model=%s",
-		m.config.Provider, m.config.Endpoint, m.config.Model,
-	)
+// NewRemoteLLMAdapter creates a new RemoteLLMAdapter.
+func NewRemoteLLMAdapter(config ChatModelAdapterConfig, registry *tools.Registry) *RemoteLLMAdapter {
+	timeout := config.Timeout
+	if timeout <= 0 {
+		timeout = int(defaultLLMTimeout.Seconds())
+	}
+	return &RemoteLLMAdapter{
+		config:   config,
+		registry: registry,
+		client:   &http.Client{Timeout: time.Duration(timeout) * time.Second},
+	}
 }
 
 // Name returns the adapter identifier.
-func (m *RemoteLLMMockAdapter) Name() string {
-	if m.config.AdapterName != "" {
-		return m.config.AdapterName
+func (a *RemoteLLMAdapter) Name() string {
+	if a.config.AdapterName != "" {
+		return a.config.AdapterName
 	}
-	return fmt.Sprintf("remote-llm-mock-%s", m.config.Provider)
+	return fmt.Sprintf("remote-llm-%s", a.config.Provider)
 }
 
 // Provider returns the LLM provider type.
-func (m *RemoteLLMMockAdapter) Provider() string {
-	return m.config.Provider
+func (a *RemoteLLMAdapter) Provider() string {
+	return a.config.Provider
+}
+
+// GenerateToolCalls calls the remote LLM API and returns structured tool calls.
+func (a *RemoteLLMAdapter) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
+	if a.config.APIKey == "" {
+		return nil, agent.Plan{}, fmt.Errorf("remote LLM API key is not configured")
+	}
+
+	endpoint := a.resolveEndpoint()
+	prompt := a.buildSystemPrompt()
+	messages := []map[string]any{
+		{"role": "system", "content": prompt},
+		{"role": "user", "content": task},
+	}
+
+	body := map[string]any{
+		"model":       a.config.Model,
+		"messages":    messages,
+		"temperature": 0.1,
+		"response_format": map[string]string{
+			"type": "json_object",
+		},
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, agent.Plan{}, fmt.Errorf("failed to marshal LLM request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, agent.Plan{}, fmt.Errorf("failed to create LLM request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+a.config.APIKey)
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, agent.Plan{}, fmt.Errorf("LLM API call failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, agent.Plan{}, fmt.Errorf("failed to read LLM response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, agent.Plan{}, fmt.Errorf("LLM API returned HTTP %d: %s", resp.StatusCode, truncateLLMString(string(respBody), 200))
+	}
+
+	return a.parseLLMResponse(respBody, task)
+}
+
+func (a *RemoteLLMAdapter) parseLLMResponse(respBody []byte, task string) ([]ToolCall, agent.Plan, error) {
+	var openAIResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &openAIResp); err != nil {
+		return nil, agent.Plan{}, fmt.Errorf("failed to parse OpenAI response: %w", err)
+	}
+	if len(openAIResp.Choices) == 0 {
+		return nil, agent.Plan{}, fmt.Errorf("LLM returned zero choices")
+	}
+	content := strings.TrimSpace(openAIResp.Choices[0].Message.Content)
+	if content == "" {
+		return nil, agent.Plan{}, fmt.Errorf("LLM returned empty content")
+	}
+
+	toolPlan, err := ParseToolPlanJSON([]byte(content))
+	if err != nil {
+		return nil, agent.Plan{}, fmt.Errorf("LLM output is not valid JSON tool plan: %w", err)
+	}
+
+	validation := ValidateToolPlan(toolPlan, a.registry)
+	if !validation.Valid {
+		return nil, agent.Plan{}, fmt.Errorf("tool plan validation failed: %s", validation.FallbackReason)
+	}
+
+	calls := make([]ToolCall, 0, len(validation.ValidTools))
+	validIndex := 0
+	for _, item := range toolPlan.ToolPlan {
+		toolName := strings.TrimSpace(item.ToolName)
+		// Check if this tool was rejected.
+		rejected := false
+		for _, rejectedTool := range validation.RejectedTools {
+			if toolName == rejectedTool {
+				rejected = true
+				break
+			}
+		}
+		if rejected {
+			continue
+		}
+		if item.Arguments == nil {
+			item.Arguments = map[string]any{}
+		}
+		validIndex++
+		call := ToolCall{
+			ID:       fmt.Sprintf("llm-call-%03d", validIndex),
+			ToolName: toolName,
+			Input:    item.Arguments,
+			Reason:   item.Reason,
+		}
+		calls = append(calls, call)
+	}
+
+	scenario := toolPlan.Scenario
+	if scenario == "" {
+		scenario = "llm_generated"
+	}
+	plan := planFromToolCalls(task, scenario, "Remote LLM adapter selected tool plan", calls, a.registry)
+
+	return calls, plan, nil
+}
+
+func (a *RemoteLLMAdapter) buildSystemPrompt() string {
+	toolDefs := BuildToolDefsForPrompt(a.registry)
+	toolDefsJSON, _ := json.MarshalIndent(toolDefs, "", "  ")
+
+	return fmt.Sprintf(`You are a security operations assistant that generates structured tool plans. Rules:
+
+1. Output ONLY valid JSON. No markdown, no code fences, no explanation.
+2. You cannot execute shell commands. You cannot output shell commands.
+3. You cannot bypass security policies.
+4. You can only select tools from the allowed tool registry below.
+5. You cannot decide the final allow/deny — the system decides.
+6. If the task involves sensitive logs (auth logs, journal logs, system logs), set requires_review=true.
+7. If the task is dangerous (deletion, firewall, kill, privilege escalation), return empty tool_plan.
+
+Output JSON schema:
+{
+  "scenario": "string — e.g. ssh_anomaly_check, system_resource_check, system_security_overview",
+  "intent": "string — brief intent",
+  "tool_plan": [
+    {
+      "tool_name": "string — must be from allowed tool list",
+      "reason": "string",
+      "arguments": {}
+    }
+  ],
+  "risk_hint": "low|medium|high",
+  "requires_review": false,
+  "user_explanation": "string"
+}
+
+Allowed tools:
+%s`, string(toolDefsJSON))
+}
+
+func (a *RemoteLLMAdapter) resolveEndpoint() string {
+	ep := a.config.Endpoint
+	if ep == "" {
+		return "http://localhost:8000" + chatCompletionsPath
+	}
+	ep = strings.TrimRight(ep, "/")
+	if strings.Contains(ep, "/chat/completions") {
+		return ep
+	}
+	if strings.HasSuffix(ep, "/v1") {
+		return ep + "/chat/completions"
+	}
+	return ep + chatCompletionsPath
+}
+
+func truncateLLMString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

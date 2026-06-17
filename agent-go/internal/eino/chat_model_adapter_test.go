@@ -2,6 +2,9 @@ package eino
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -37,50 +40,287 @@ func TestDeterministicChatModelStubGenerateToolCallsWithNilToolDefs(t *testing.T
 	}
 }
 
-func TestRemoteLLMMockAdapterReturnsNotImplemented(t *testing.T) {
+func TestRemoteLLMAdapterRequiresAPIKey(t *testing.T) {
 	config := ChatModelAdapterConfig{
 		Provider: "openai",
 		Endpoint: "https://api.openai.com/v1",
 		Model:    "gpt-4",
+		APIKey:   "",
 	}
-	adapter := NewRemoteLLMMockAdapter(config)
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
 
 	ctx := context.Background()
 	_, _, err := adapter.GenerateToolCalls(ctx, "test task", nil)
 
 	if err == nil {
-		t.Fatal("expected error from mock adapter")
+		t.Fatal("expected error when API key is empty")
 	}
-	if !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected 'not implemented' error, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "openai") {
-		t.Fatalf("expected error to mention provider, got: %v", err)
+	if !strings.Contains(err.Error(), "API key") {
+		t.Fatalf("expected error about missing API key, got: %v", err)
 	}
 }
 
-func TestRemoteLLMMockAdapterName(t *testing.T) {
+func TestRemoteLLMAdapterParsesValidToolPlan(t *testing.T) {
+	// Create a mock HTTP server that returns a valid tool plan.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify request has auth header.
+		if r.Header.Get("Authorization") != "Bearer test-key-123" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		// Return a valid tool plan response.
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{
+							"scenario": "system_resource_check",
+							"intent": "check system resources",
+							"tool_plan": [
+								{"tool_name": "os_info", "reason": "collect OS context", "arguments": {}},
+								{"tool_name": "resource_usage_checker", "reason": "check load and memory", "arguments": {}},
+								{"tool_name": "disk_memory_checker", "reason": "check disk and memory", "arguments": {"include_tmpfs": false}}
+							],
+							"risk_hint": "low",
+							"requires_review": false,
+							"user_explanation": "Checking system resources"
+						}`,
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key-123",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	calls, plan, err := adapter.GenerateToolCalls(ctx, "check system resource usage", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 tool calls, got %d", len(calls))
+	}
+	if plan.Scenario != "system_resource_check" {
+		t.Fatalf("expected system_resource_check, got %q", plan.Scenario)
+	}
+	if calls[0].ToolName != "os_info" {
+		t.Fatalf("expected first tool os_info, got %q", calls[0].ToolName)
+	}
+}
+
+func TestRemoteLLMAdapterRejectsNonJSONOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "this is not json"}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "test task", nil)
+	if err == nil {
+		t.Fatal("expected error for non-JSON output")
+	}
+	if !strings.Contains(err.Error(), "not valid JSON") {
+		t.Fatalf("expected 'not valid JSON' error, got: %v", err)
+	}
+}
+
+func TestRemoteLLMAdapterRejectsUnknownTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{
+							"scenario": "test",
+							"intent": "test",
+							"tool_plan": [
+								{"tool_name": "unknown_tool_xyz", "reason": "test", "arguments": {}}
+							],
+							"risk_hint": "low",
+							"requires_review": false
+						}`,
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "test task", nil)
+	if err == nil {
+		t.Fatal("expected error for unknown tool")
+	}
+	if !strings.Contains(err.Error(), "all tools rejected") {
+		t.Fatalf("expected 'all tools rejected', got: %v", err)
+	}
+}
+
+func TestRemoteLLMAdapterRejectsDangerousTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{
+							"scenario": "test",
+							"intent": "delete everything",
+							"tool_plan": [
+								{"tool_name": "rm", "reason": "delete files", "arguments": {}}
+							],
+							"risk_hint": "high",
+							"requires_review": true
+						}`,
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "rm -rf /", nil)
+	if err == nil {
+		t.Fatal("expected error for dangerous tool rm")
+	}
+}
+
+func TestRemoteLLMAdapterRejectsSafeShell(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{
+							"scenario": "test",
+							"intent": "run command",
+							"tool_plan": [
+								{"tool_name": "safe_shell", "reason": "execute command", "arguments": {"command": "whoami"}}
+							],
+							"risk_hint": "medium",
+							"requires_review": true
+						}`,
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "run whoami", nil)
+	if err == nil {
+		t.Fatal("expected error for safe_shell in tool plan")
+	}
+}
+
+func TestRemoteLLMAdapterRejectsEmptyToolPlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"scenario": "test", "tool_plan": []}`,
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	config := ChatModelAdapterConfig{
+		Provider: "openai",
+		Endpoint: server.URL,
+		Model:    "gpt-4",
+		APIKey:   "test-key",
+	}
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
+
+	ctx := context.Background()
+	_, _, err := adapter.GenerateToolCalls(ctx, "test", nil)
+	if err == nil {
+		t.Fatal("expected error for empty tool plan")
+	}
+}
+
+func TestRemoteLLMAdapterName(t *testing.T) {
 	config := ChatModelAdapterConfig{
 		Provider:    "anthropic",
 		AdapterName: "custom-adapter",
 	}
-	adapter := NewRemoteLLMMockAdapter(config)
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
 
 	if adapter.Name() != "custom-adapter" {
 		t.Fatalf("expected 'custom-adapter', got %q", adapter.Name())
 	}
 
 	config2 := ChatModelAdapterConfig{Provider: "openai"}
-	adapter2 := NewRemoteLLMMockAdapter(config2)
+	adapter2 := NewRemoteLLMAdapter(config2, tools.NewDefaultRegistry())
 
-	if adapter2.Name() != "remote-llm-mock-openai" {
-		t.Fatalf("expected 'remote-llm-mock-openai', got %q", adapter2.Name())
+	if adapter2.Name() != "remote-llm-openai" {
+		t.Fatalf("expected 'remote-llm-openai', got %q", adapter2.Name())
 	}
 }
 
-func TestRemoteLLMMockAdapterProvider(t *testing.T) {
+func TestRemoteLLMAdapterProvider(t *testing.T) {
 	config := ChatModelAdapterConfig{Provider: "anthropic"}
-	adapter := NewRemoteLLMMockAdapter(config)
+	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
 
 	if adapter.Provider() != "anthropic" {
 		t.Fatalf("expected 'anthropic', got %q", adapter.Provider())
@@ -117,16 +357,74 @@ func TestRuntimeMetadataIncludesChatModelAdapter(t *testing.T) {
 	}
 }
 
-func TestRuntimeMetadataWithLLMProvider(t *testing.T) {
-	config := DefaultRuntimeConfig()
-	config.LLMEnabled = true
-	config.LLMProvider = "openai"
-	metadata := config.Metadata(nil)
+func TestFallbackChatModelAdapter(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	primary := NewDeterministicChatModelStub(registry)
+	wrapper := NewFallbackChatModelAdapter(primary, registry)
 
-	if metadata.ChatModel != "remote-llm-mock-openai" {
-		t.Fatalf("expected chat_model=remote-llm-mock-openai, got %q", metadata.ChatModel)
+	ctx := context.Background()
+	calls, plan, err := wrapper.GenerateToolCalls(ctx, "检查当前系统 SSH 登录异常", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if metadata.LLMEnabled != true {
-		t.Fatal("expected llm_enabled=true")
+	if len(calls) == 0 {
+		t.Fatal("expected tool calls from fallback wrapper")
+	}
+	if plan.Scenario != "ssh_anomaly_check" {
+		t.Fatalf("expected ssh_anomaly_check, got %q", plan.Scenario)
+	}
+
+	used, reason := wrapper.FallbackInfo()
+	if used {
+		t.Fatalf("expected no fallback for working primary, reason: %s", reason)
+	}
+}
+
+func TestToolPlanValidationRejectsEmpty(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	result := ValidateToolPlan(nil, registry)
+	if result.Valid {
+		t.Fatal("expected nil plan to be invalid")
+	}
+
+	result2 := ValidateToolPlan(&ToolPlan{Scenario: "", ToolPlan: []ToolPlanItem{}}, registry)
+	if result2.Valid {
+		t.Fatal("expected empty scenario to be invalid")
+	}
+
+	result3 := ValidateToolPlan(&ToolPlan{Scenario: "test", ToolPlan: []ToolPlanItem{}}, registry)
+	if result3.Valid {
+		t.Fatal("expected empty tool_plan to be invalid")
+	}
+}
+
+func TestBuildToolDefsForPrompt(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	defs := BuildToolDefsForPrompt(registry)
+
+	if len(defs) == 0 {
+		t.Fatal("expected non-empty tool defs")
+	}
+
+	// Check that sensitive fields are not present.
+	for _, def := range defs {
+		if _, ok := def["api_key"]; ok {
+			t.Fatal("api_key should not be in tool defs")
+		}
+		if _, ok := def["command"]; ok {
+			t.Fatal("command should not be in tool defs")
+		}
+	}
+
+	// Should contain os_info.
+	found := false
+	for _, def := range defs {
+		if def["tool_name"] == "os_info" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected os_info in tool defs")
 	}
 }

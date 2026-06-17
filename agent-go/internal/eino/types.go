@@ -3,7 +3,7 @@ package eino
 import "kylin-guard-agent/agent-go/internal/tools"
 
 const (
-	RuntimeVersion          = "stage12-v1"
+	RuntimeVersion          = "stage13a-v1"
 	RuntimeSummary          = "Eino graph runtime executed chat model adapter orchestration."
 	DefaultRuntimeName      = "eino"
 	DefaultRoute            = "eino-runtime"
