@@ -122,6 +122,9 @@ func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 	if metadata["chat_model"] != einoruntime.DefaultChatModel {
 		t.Fatalf("expected deterministic stub chat model, got %#v", metadata["chat_model"])
 	}
+	if metadata["chat_model_adapter"] != einoruntime.DefaultChatModelAdapter {
+		t.Fatalf("expected chat_model_adapter=interface-v1, got %#v", metadata["chat_model_adapter"])
+	}
 	if metadata["orchestration"] != einoruntime.DefaultOrchestration {
 		t.Fatalf("expected Eino graph orchestration, got %#v", metadata["orchestration"])
 	}

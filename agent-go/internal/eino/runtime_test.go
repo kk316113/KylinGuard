@@ -180,6 +180,9 @@ func assertRuntimeMetadata(t *testing.T, metadata map[string]any, registry *tool
 	if metadata["chat_model"] != DefaultChatModel {
 		t.Fatalf("expected chat_model=%s, got %#v", DefaultChatModel, metadata["chat_model"])
 	}
+	if metadata["chat_model_adapter"] != DefaultChatModelAdapter {
+		t.Fatalf("expected chat_model_adapter=%s, got %#v", DefaultChatModelAdapter, metadata["chat_model_adapter"])
+	}
 	if metadata["orchestration"] != DefaultOrchestration {
 		t.Fatalf("expected orchestration=%s, got %#v", DefaultOrchestration, metadata["orchestration"])
 	}

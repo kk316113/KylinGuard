@@ -21,7 +21,7 @@ type Runtime struct {
 	auditor      auditclient.Client
 	traces       *logtrace.Store
 	toolAdapter  PlanToolAdapter
-	chatModel    ToolCallGenerator
+	chatModel    ChatModelAdapter
 	graphRuntime *GraphRuntime
 }
 
@@ -37,7 +37,20 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 	}
 	normalized := NormalizeRuntimeConfig(config)
 	toolAdapter := NewMCPToolAdapter(registry, security.NewToolPolicy())
-	chatModel := NewDeterministicChatModelStub(registry)
+
+	var chatModel ChatModelAdapter
+	adapterCfg := ChatModelAdapterConfig{
+		Provider: normalized.LLMProvider,
+		Endpoint: normalized.LLMEndpoint,
+		Model:    normalized.LLMModel,
+		APIKey:   normalized.LLMAPIKey,
+	}
+	if normalized.LLMEnabled && normalized.LLMProvider != "deterministic" {
+		chatModel = NewRemoteLLMMockAdapter(adapterCfg)
+	} else {
+		chatModel = NewDeterministicChatModelStub(registry)
+	}
+
 	return &Runtime{
 		config:       normalized,
 		registry:     registry,
@@ -461,6 +474,7 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 	securityReport.AuditMetadata["eino_graph_enabled"] = metadata.EinoGraph
 	securityReport.AuditMetadata["llm_enabled"] = metadata.LLMEnabled
 	securityReport.AuditMetadata["chat_model"] = metadata.ChatModel
+	securityReport.AuditMetadata["chat_model_adapter"] = metadata.ChatModelAdapter
 	securityReport.AuditMetadata["orchestration"] = metadata.Orchestration
 	securityReport.AuditMetadata["tool_protocol"] = metadata.ToolProtocol
 	securityReport.AuditMetadata["tool_protocol_version"] = tools.ToolProtocolVersion

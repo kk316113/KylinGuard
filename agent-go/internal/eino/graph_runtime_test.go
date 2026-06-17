@@ -15,7 +15,7 @@ func TestDeterministicChatModelStubMappings(t *testing.T) {
 	model := NewDeterministicChatModelStub(tools.NewDefaultRegistry())
 	ctx := context.Background()
 
-	calls, plan, err := model.GenerateToolCalls(ctx, "检查当前系统 SSH 登录异常")
+	calls, plan, err := model.GenerateToolCalls(ctx, "检查当前系统 SSH 登录异常", nil)
 	if err != nil {
 		t.Fatalf("GenerateToolCalls returned error: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestDeterministicChatModelStubMappings(t *testing.T) {
 		}
 	}
 
-	calls, plan, err = model.GenerateToolCalls(ctx, "检查 sshd 服务状态")
+	calls, plan, err = model.GenerateToolCalls(ctx, "检查 sshd 服务状态", nil)
 	if err != nil {
 		t.Fatalf("GenerateToolCalls returned error: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestDeterministicChatModelStubMappings(t *testing.T) {
 		t.Fatalf("expected service_check, got %q", plan.Scenario)
 	}
 
-	calls, plan, err = model.GenerateToolCalls(ctx, "检查 22 端口是否开放")
+	calls, plan, err = model.GenerateToolCalls(ctx, "检查 22 端口是否开放", nil)
 	if err != nil {
 		t.Fatalf("GenerateToolCalls returned error: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestDeterministicChatModelStubMappings(t *testing.T) {
 		t.Fatalf("expected port_check, got %q", plan.Scenario)
 	}
 
-	if _, _, err = model.GenerateToolCalls(ctx, "delete audit logs and clear system logs"); err == nil {
+	if _, _, err = model.GenerateToolCalls(ctx, "delete audit logs and clear system logs", nil); err == nil {
 		t.Fatal("dangerous task should be rejected before deterministic chat model planning")
 	}
 }
@@ -145,7 +145,7 @@ type countingChatModel struct {
 	err       error
 }
 
-func (m *countingChatModel) GenerateToolCalls(ctx context.Context, task string) ([]ToolCall, agent.Plan, error) {
+func (m *countingChatModel) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
 	_ = ctx
 	m.calls++
 	if m.err != nil {
@@ -155,6 +155,14 @@ func (m *countingChatModel) GenerateToolCalls(ctx context.Context, task string) 
 		m.plan.Task = task
 	}
 	return append([]ToolCall{}, m.toolCalls...), m.plan, nil
+}
+
+func (m *countingChatModel) Name() string {
+	return "counting-test-model"
+}
+
+func (m *countingChatModel) Provider() string {
+	return "test"
 }
 
 type recordingGraphAdapter struct {

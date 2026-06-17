@@ -8,6 +8,10 @@ type Config struct {
 	EinoRuntimeEnabled bool
 	EinoGraphEnabled   bool
 	EinoLLMEnabled     bool
+	EinoLLMProvider    string
+	EinoLLMEndpoint    string
+	EinoLLMModel       string
+	EinoLLMAPIKey      string
 }
 
 func Load() Config {
@@ -23,6 +27,10 @@ func Load() Config {
 		EinoRuntimeEnabled: getenvBool("EINO_RUNTIME_ENABLED", true),
 		EinoGraphEnabled:   getenvBool("EINO_GRAPH_ENABLED", true),
 		EinoLLMEnabled:     getenvBool("EINO_LLM_ENABLED", getenvBool("EINO_ENABLED", false)),
+		EinoLLMProvider:    getenv("EINO_LLM_PROVIDER", "deterministic"),
+		EinoLLMEndpoint:    os.Getenv("EINO_LLM_ENDPOINT"),
+		EinoLLMModel:       os.Getenv("EINO_LLM_MODEL"),
+		EinoLLMAPIKey:      os.Getenv("EINO_LLM_API_KEY"),
 	}
 }
 

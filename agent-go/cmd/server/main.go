@@ -31,6 +31,10 @@ func main() {
 		Route:          einoruntime.DefaultRoute,
 		ToolProtocol:   tools.ToolProtocol,
 		Version:        einoruntime.RuntimeVersion,
+		LLMProvider:    cfg.EinoLLMProvider,
+		LLMEndpoint:    cfg.EinoLLMEndpoint,
+		LLMModel:       cfg.EinoLLMModel,
+		LLMAPIKey:      cfg.EinoLLMAPIKey,
 	}))
 	toolPolicy := security.NewToolPolicy()
 

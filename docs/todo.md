@@ -5,7 +5,12 @@
 - Stage 8 已实现 MCP-like Tool Registry、ToolMetadata、Tool Policy 和 `/api/tools*` 接口。
 - Stage 9A 已实现 deterministic Eino runtime skeleton 和 MCP-like Tool Adapter。
 - Stage 9B 已引入 CloudWeGo Eino `compose.Graph`，并用 deterministic ChatModel Stub 执行 tool-calling 编排。
+- Stage 12 已定义 `ChatModelAdapter` 接口，支持 `DeterministicChatModelStub` 和 `RemoteLLMMockAdapter`。
+- Stage 12 已添加 `EINO_LLM_PROVIDER`、`EINO_LLM_ENDPOINT`、`EINO_LLM_MODEL`、`EINO_LLM_API_KEY` 环境变量配置。
+- Stage 12 已添加 `EinoMetadataPanel` 前端组件，展示 Eino 运行时元数据。
 - 后续把 deterministic ChatModel Stub 替换为真实 Eino ChatModel / ReAct Agent，但必须保留 intent_guard、Tool Policy、semantic trace 和 TraceShield 审计。
+- 后续可实现真正的 RemoteLLMAdapter，对接 OpenAI / Anthropic 等 API。
+- 后续可在 `ChatModelAdapter.GenerateToolCalls` 中传入 `toolDefs`，支持 LLM 工具选择。
 - 扩展 Rule-based Ops Planner / deterministic stub 的场景覆盖，例如磁盘容量、CPU/内存、进程异常、网络连接、审计日志异常。
 - 为 planner 增加更严格的服务名、端口和日志意图解析测试集。
 - 后续可扩展动态插件加载、工具 marketplace 和更细的 schema 校验。
@@ -22,7 +27,7 @@
 
 ## Kylin
 
-- 在银河麒麟高级服务器版 V11 上继续验证 Stage 9B `/api/agent/run-eino`：`eino_graph_enabled=true`、`chat_model=deterministic-stub`、`eino_runtime_version=stage9b-v1`。
+- 在银河麒麟高级服务器版 V11 上继续验证 Stage 12 `/api/agent/run-eino`：`eino_graph_enabled=true`、`chat_model=deterministic-stub`、`chat_model_adapter=interface-v1`、`eino_runtime_version=stage12-v1`。
 - 验证 LoongArch 构建与运行。
 - 补充 systemd service 文件。
 - 验证 TraceShield-Core 在 LoongArch Python 环境中的依赖安装。
@@ -44,10 +49,11 @@
 - Stage 8 已补充 ToolMetadata、Tool Policy、tools API handler 和 planner metadata 测试。
 - Stage 9A 已补充 Eino runtime skeleton、Tool Adapter 和 run-eino handler 测试。
 - Stage 9B 已补充 deterministic ChatModel Stub、Eino graph runtime、run-eino handler metadata 和危险任务前置短路测试。
-- 增加更多 SSH 认证日志样例测试，覆盖 Kylin/OpenSSH 常见格式。
-- 扩展 Python FastAPI endpoint 测试，覆盖 risky samples 和 fallback 行为。
+- Stage 12 已补充 ChatModelAdapter 接口测试、RemoteLLMMockAdapter 测试和 metadata marker 测试。
+- 已补充 report builder 场景测试：service_check、port_check、system_resource_check、fallback-mock。
+- 已补充 SSH 认证日志样例测试：Kylin secure log、auth.log、journalctl、IPv6、多 IP 暴力破解、高低风险、混合 accepted/failed。
+- 已补充 Python FastAPI endpoint 测试：capabilities、risky samples（log_delete、privilege_escalation、sensitive_log_read）、backward compat（traces/tool_trace 字段）、malformed JSON、mixed risk steps。
 - 增加 Linux E2E 脚本在 Kylin V11 / LoongArch 上的实机验证记录。
-- 增加 report builder 的更多场景测试，例如 service_check、port_check 和 fallback mock。
 - 增加最小 CI。
 
 ## Current Fallback Note

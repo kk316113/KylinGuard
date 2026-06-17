@@ -21,10 +21,6 @@ type ToolCall struct {
 	SchemaCall schema.ToolCall `json:"schema_tool_call"`
 }
 
-type ToolCallGenerator interface {
-	GenerateToolCalls(ctx context.Context, task string) ([]ToolCall, agent.Plan, error)
-}
-
 type DeterministicChatModelStub struct {
 	registry *tools.Registry
 	planner  agent.Planner
@@ -42,7 +38,9 @@ func NewDeterministicChatModelStub(registry *tools.Registry) *DeterministicChatM
 	}
 }
 
-func (m *DeterministicChatModelStub) GenerateToolCalls(ctx context.Context, task string) ([]ToolCall, agent.Plan, error) {
+// GenerateToolCalls implements ChatModelAdapter.
+// The toolDefs parameter is accepted but not used by the deterministic stub.
+func (m *DeterministicChatModelStub) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
 	trimmed := strings.TrimSpace(task)
 	if trimmed == "" {
 		return nil, agent.Plan{}, fmt.Errorf("task is required")
@@ -137,6 +135,16 @@ func (m *DeterministicChatModelStub) GenerateToolCalls(ctx context.Context, task
 
 	plan := planFromToolCalls(trimmed, scenario, summary, calls, m.registry)
 	return calls, plan, nil
+}
+
+// Name returns the adapter identifier.
+func (m *DeterministicChatModelStub) Name() string {
+	return "deterministic-stub"
+}
+
+// Provider returns the LLM provider type.
+func (m *DeterministicChatModelStub) Provider() string {
+	return "deterministic"
 }
 
 func (m *DeterministicChatModelStub) toolCall(index int, toolName string, input map[string]any, reason string) ToolCall {
