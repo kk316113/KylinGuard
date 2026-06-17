@@ -110,12 +110,13 @@ fi
 printf '\n'
 
 # --- Save env for manual verification scripts ---
+# Write demo.env with API key redacted for security.
 cat > "$APP_HOME/run/demo.env" << EOF
 export EINO_LLM_ENABLED=${EINO_LLM_ENABLED:-false}
 export EINO_LLM_PROVIDER=${EINO_LLM_PROVIDER:-deterministic}
 export EINO_LLM_ENDPOINT=${EINO_LLM_ENDPOINT:-}
 export EINO_LLM_MODEL=${EINO_LLM_MODEL:-}
-export EINO_LLM_API_KEY=${EINO_LLM_API_KEY:-}
+export EINO_LLM_API_KEY=${EINO_LLM_API_KEY:+[REDACTED]}
 EOF
 printf '  Saved env to run/demo.env\n'
 printf '\n'
