@@ -7,8 +7,13 @@
         <span class="header-tagline">安全智能运维 Agent</span>
       </div>
       <div class="header-right">
+        <a-switch v-model="demoMode" size="small" style="margin-right:4px">
+          <template #checked>演示</template>
+          <template #unchecked>演示</template>
+        </a-switch>
         <a-tag :color="healthOk ? 'green' : 'red'" size="small">{{ healthOk ? 'Agent OK' : 'Offline' }}</a-tag>
         <a-segmented v-model="runtimeMode" :options="runtimeOpts" size="small" />
+        <a-button size="mini" shape="round" @click="newSession">新会话</a-button>
         <a-button size="mini" shape="round" @click="$emit('back')">← 控制台</a-button>
       </div>
     </header>
@@ -16,70 +21,51 @@
     <!-- Chat Area -->
     <div class="chat-scroll" ref="scrollRef">
       <div class="chat-container">
-        <!-- Empty state -->
-        <div v-if="messages.length === 1" class="empty-state">
+        <!-- Empty state with scenario cards -->
+        <div v-if="messages.length === 0" class="empty-state">
           <div class="empty-title">今天想检查什么系统安全问题？</div>
-          <div class="empty-subtitle">
-            你可以让我检查 SSH 登录异常、系统资源使用、端口监听状态，或验证危险操作是否会被拦截。
-          </div>
-          <div class="suggestion-chips">
-            <a-tag v-for="s in suggestions" :key="s.text" :color="s.color" checkable class="sugg-chip"
-              @click="applySuggestion(s.text)">
-              {{ s.label }}
-            </a-tag>
-          </div>
+          <div class="empty-subtitle">选择下方场景快速体验安全智能运维能力，或在输入框中直接描述任务。</div>
+          <ScenarioCards @select="fillScenario" @run="runScenario" />
+          <DemoGuideNote v-if="demoMode" :show="true" :items="demoItems" />
         </div>
 
         <!-- Messages -->
         <div v-for="(msg, i) in messages" :key="i" :class="['msg-row', msg.role]">
-          <!-- User message -->
           <div v-if="msg.role === 'user'" class="msg user-msg">
             <div class="msg-text">{{ msg.content }}</div>
+            <div class="msg-meta">{{ msg.sub }}</div>
           </div>
 
-          <!-- Assistant message -->
           <div v-else-if="msg.role === 'assistant'" class="msg assistant-msg">
             <div class="msg-text" v-html="msg.content"></div>
-
-            <!-- Decision card -->
             <DecisionCard v-if="msg.decision" v-bind="msg.decision" />
-
-            <!-- Execution accordion -->
             <ExecutionAccordion v-if="msg.traces" :traces="msg.traces" :plan="msg.plan"
               :recommendations="msg.recommendations" :evidence-items="msg.evidenceItems" />
-
-            <!-- Inspector button -->
-            <a-button v-if="msg.hasInspector" size="mini" type="outline" @click="openInspector(i)" style="margin-top:8px">
-              打开 Inspector 查看详情
-            </a-button>
+            <DemoGuideNote v-if="demoMode && msg.demoItems" :show="true" :items="msg.demoItems" />
+            <FollowUpSuggestions v-if="msg.followUps" :decision="msg.followUps.decision"
+              :scenario="msg.followUps.scenario" :task="msg.followUps.task"
+              :has-evidence="msg.followUps.hasEvidence" @pick="(s) => handleFollowUp(s, i)" />
+            <a-button v-if="msg.hasInspector" size="mini" type="outline"
+              @click="openInspector(i)" style="margin-top:8px">打开 Inspector</a-button>
           </div>
 
-          <!-- Error message -->
           <div v-else-if="msg.role === 'error'" class="msg error-msg">
             <a-alert type="error" :title="msg.content" :closable="false" />
           </div>
 
-          <!-- System / status message -->
-          <div v-else class="msg system-msg">
+          <div v-else-if="msg.role === 'system'" class="msg system-msg">
             <a-alert type="info" :title="msg.content" :closable="false" show-icon />
+          </div>
+
+          <div v-else-if="msg.role === 'explain'" class="msg explain-msg">
+            <a-alert type="warning" :title="msg.content" :closable="false" show-icon />
           </div>
         </div>
 
-        <!-- Running status -->
-        <div v-if="running" class="msg-row assistant">
+        <!-- Running narrative -->
+        <div v-if="running && runStep >= 0" class="msg-row assistant">
           <div class="msg assistant-msg">
-            <div class="running-card">
-              <a-space>
-                <a-spin :size="16" />
-                <span>Agent 正在执行…</span>
-              </a-space>
-              <a-steps :current="runStep" size="small" style="margin-top:8px">
-                <a-step description="理解任务" />
-                <a-step description="选择工具" />
-                <a-step description="执行工具" />
-                <a-step description="审计与报告" />
-              </a-steps>
-            </div>
+            <AgentRunningNarrative :step="runStep" />
           </div>
         </div>
       </div>
@@ -95,7 +81,8 @@
     </div>
 
     <!-- Inspector Drawer -->
-    <InspectorDrawer :visible="inspectorVisible" :resp="inspectorResp" @close="inspectorVisible = false" />
+    <InspectorDrawer :visible="inspectorVisible" :resp="inspectorResp" :initial-tab="inspectorTab"
+      @close="inspectorVisible = false" />
   </div>
 </template>
 
@@ -106,60 +93,83 @@ import type { AgentRunResponse, ToolTraceItem, Plan, RecommendationItem, Evidenc
 import DecisionCard from '../components/agent/DecisionCard.vue'
 import ExecutionAccordion from '../components/agent/ExecutionAccordion.vue'
 import InspectorDrawer from '../components/agent/InspectorDrawer.vue'
+import ScenarioCards from '../components/agent/ScenarioCards.vue'
+import type { ScenarioDef } from '../components/agent/ScenarioCards.vue'
+import AgentRunningNarrative from '../components/agent/AgentRunningNarrative.vue'
+import FollowUpSuggestions from '../components/agent/FollowUpSuggestions.vue'
+import type { FollowUpItem } from '../components/agent/FollowUpSuggestions.vue'
+import DemoGuideNote from '../components/agent/DemoGuideNote.vue'
 
 defineEmits<{ back: [] }>()
 
-// --- Runtime ---
+// --- state ---
 const runtimeMode = ref<'stable' | 'eino'>('stable')
 const runtimeOpts = [
   { label: 'Stable', value: 'stable' },
   { label: 'Eino', value: 'eino' },
 ]
 const healthOk = ref(true)
+const demoMode = ref(false)
+const taskInput = ref('')
+const running = ref(false)
+const runStep = ref(-1)
+const scrollRef = ref<HTMLElement | null>(null)
 
-// --- Chat ---
+const demoItems = [
+  'intent_guard 安全意图校验',
+  'Rule-based / Deterministic Planner',
+  'MCP-like Tool Registry',
+  'Tool Policy 参数安全校验',
+  'Least-Privilege Execution Proxy',
+  'TraceShield 工具链审计',
+  'Decision Normalizer',
+  '推理链路 (Reasoning Trace)',
+]
+
+// --- Chat messages ---
 interface ChatMessage {
-  role: 'user' | 'assistant' | 'error' | 'system'
+  role: 'user' | 'assistant' | 'error' | 'system' | 'explain'
   content: string
+  sub?: string
   decision?: any
   traces?: ToolTraceItem[]
   plan?: Plan | null
   recommendations?: RecommendationItem[]
   evidenceItems?: EvidenceItem[]
   hasInspector?: boolean
+  followUps?: { decision: string; scenario: string; task: string; hasEvidence: boolean }
+  demoItems?: string[]
 }
 
-const messages = ref<ChatMessage[]>([
-  { role: 'system', content: 'KylinGuard 安全智能运维 Agent 已就绪。' }
-])
-
-const taskInput = ref('')
-const running = ref(false)
-const runStep = ref(0)
-const scrollRef = ref<HTMLElement | null>(null)
-
-// --- Suggestions ---
-const suggestions = [
-  { text: 'check SSH login anomaly', label: '检查 SSH 登录异常', color: 'orange' },
-  { text: 'check system resource usage', label: '检查系统资源', color: 'green' },
-  { text: 'run system security overview', label: '执行安全巡检', color: 'blue' },
-  { text: 'check port 22', label: '检查 22 端口', color: 'cyan' },
-  { text: 'delete audit logs and clear system logs', label: '危险任务演示', color: 'red' },
-]
-
-function applySuggestion(text: string) {
-  taskInput.value = text
-  send()
-}
+const messages = ref<ChatMessage[]>([])
 
 // --- Inspector ---
 const inspectorVisible = ref(false)
 const inspectorResp = ref<AgentRunResponse | null>(null)
-const inspectorIndex = ref(-1)
+const inspectorTab = ref('overview')
+const lastResponse = ref<AgentRunResponse | null>(null)
 
-function openInspector(msgIndex: number) {
-  inspectorIndex.value = msgIndex
-  inspectorVisible.value = true
+// --- Session ---
+function newSession() {
+  messages.value = []
+  taskInput.value = ''
+  running.value = false
+  runStep.value = -1
+  inspectorVisible.value = false
+  inspectorResp.value = null
+  lastResponse.value = null
+}
+
+// --- Scenario ---
+function fillScenario(s: ScenarioDef) {
+  taskInput.value = s.task
+  runtimeMode.value = s.runtime
+}
+
+function runScenario(s: ScenarioDef) {
+  taskInput.value = s.task
+  runtimeMode.value = s.runtime
+  send()
 }
 
 // --- Send ---
@@ -167,20 +177,20 @@ async function send() {
   const task = taskInput.value.trim()
   if (!task || running.value) return
 
-  messages.value.push({ role: 'user', content: task })
+  messages.value.push({ role: 'user', content: task, sub: 'via ' + runtimeMode.value })
   taskInput.value = ''
   running.value = true
   runStep.value = 0
 
-  // Simulate progress steps.
   const stepTimer = setInterval(() => {
-    if (runStep.value < 3) runStep.value++
-  }, 600)
+    if (runStep.value < 4) runStep.value++
+  }, 700)
 
   try {
     const resp = runtimeMode.value === 'eino' ? await runAgentEino(task) : await runAgent(task)
     clearInterval(stepTimer)
     runStep.value = 4
+    lastResponse.value = resp
 
     const dec = resp.decision || 'unknown'
     const scenario = resp.plan?.scenario || ''
@@ -188,17 +198,31 @@ async function send() {
     const evidence = resp.security_report?.evidence_chain ?? []
     const recs = resp.security_report?.recommendations ?? []
 
-    // Build natural language summary.
+    // Build narrative.
     let summary = ''
+    let scenarioNote = ''
+    if (scenario === 'ssh_anomaly_check') scenarioNote = '本次检查覆盖 sshd 服务、端口监听和认证日志。'
+    else if (scenario === 'system_resource_check') scenarioNote = '本次检查覆盖 CPU、内存和磁盘使用情况。'
+    else if (scenario === 'system_security_overview') scenarioNote = '本次巡检覆盖系统状态、网络连接和安全日志。'
+    else if (scenario === 'port_check') scenarioNote = '本次检查聚焦指定网络端口状态。'
+
     if (dec === 'deny') {
-      summary = '🚫 该请求包含危险意图，已由 **intent_guard** 在工具执行前阻断，未执行任何系统操作。'
+      summary = '🚫 我已拦截该请求。任务包含删除、清空日志或破坏审计证据等危险意图，已在 intent_guard 阶段阻断，未执行任何系统工具。'
     } else if (dec === 'review') {
-      summary = '⚠️ 已完成检查。任务涉及敏感系统资源访问（认证日志、系统日志等），结果标记为需要审查。工具调用已通过 Tool Policy、Exec Proxy 和 TraceShield 审计。'
+      summary = '⚠️ 我已完成检查。本次任务涉及敏感系统资源或安全日志读取，因此结果标记为需要审查。工具调用已通过 Tool Policy、Exec Proxy 和 TraceShield 审计。' + (scenarioNote ? ' ' + scenarioNote : '')
     } else {
-      summary = '✅ 已完成。该任务仅涉及低风险只读信息采集，所有安全检查均已通过。'
+      summary = '✅ 我已完成这次系统检查。该任务仅涉及低风险只读信息采集，安全策略允许执行。' + (scenarioNote ? ' ' + scenarioNote : '')
     }
 
     const meta = resp.security_report?.audit_metadata || {}
+
+    const msgDemoItems: string[] = []
+    if (demoMode.value) {
+      msgDemoItems.push('intent_guard', 'Planner', 'Tool Registry', 'Tool Policy')
+      if (tools.some((t: any) => t.execution_context)) msgDemoItems.push('Exec Proxy')
+      msgDemoItems.push('TraceShield audit', 'Decision Normalizer', 'Reasoning Trace')
+    }
+
     messages.value.push({
       role: 'assistant',
       content: summary,
@@ -216,62 +240,94 @@ async function send() {
       recommendations: recs,
       evidenceItems: evidence,
       hasInspector: true,
+      demoItems: msgDemoItems.length ? msgDemoItems : undefined,
+      followUps: { decision: dec, scenario, task, hasEvidence: evidence.length > 0 },
     })
 
     inspectorResp.value = resp
   } catch (err: any) {
     clearInterval(stepTimer)
-    messages.value.push({
-      role: 'error',
-      content: '请求失败: ' + (err.message || '未知错误'),
-    })
+    messages.value.push({ role: 'error', content: '请求失败: ' + (err.message || '未知错误') })
   } finally {
     running.value = false
+    runStep.value = -1
     await nextTick()
     if (scrollRef.value) scrollRef.value.scrollTop = scrollRef.value.scrollHeight
   }
+}
+
+// --- Follow up ---
+function handleFollowUp(s: FollowUpItem, msgIndex: number) {
+  if (s.action === 'open-tab') {
+    const tabMap: Record<string, string> = { evidence: 'evidence', trace: 'trace', overview: 'overview' }
+    inspectorTab.value = tabMap[s.payload || ''] || 'overview'
+    inspectorVisible.value = true
+  } else if (s.action === 'retry') {
+    const targetMsg = messages.value[msgIndex]
+    if (targetMsg?.role === 'assistant') {
+      runtimeMode.value = (s.payload as 'stable' | 'eino') || 'stable'
+      // Extract the original task from the user message before this assistant msg.
+      for (let i = msgIndex - 1; i >= 0; i--) {
+        if (messages.value[i]?.role === 'user') {
+          taskInput.value = messages.value[i].content
+          break
+        }
+      }
+      send()
+    }
+  } else if (s.action === 'fill-task') {
+    if (s.payload) {
+      taskInput.value = s.payload
+      // If it's a "why" question, show explanation instead of sending.
+      if (s.payload.startsWith('why ')) {
+        const explanations: Record<string, string> = {
+          'why was this task denied': '任务被拦截是因为它匹配了危险关键词规则（delete audit logs / clear system logs），intent_guard 在工具执行前完成阻断。',
+          'why is the result review required': '结果标记为 review 是因为任务访问了敏感系统资源（如认证日志、系统日志），需要人工关注。',
+          'why was this task allowed': '任务被允许是因为它仅涉及低风险只读信息采集（如 os_info、process_inspector），所有安全检查均已通过。',
+        }
+        const explanation = explanations[s.payload] || '已收到你的问题。'
+        messages.value.push({ role: 'explain', content: explanation })
+        nextTick().then(() => {
+          if (scrollRef.value) scrollRef.value.scrollTop = scrollRef.value.scrollHeight
+        })
+      } else {
+        send()
+      }
+    }
+  }
+}
+
+// --- Inspector ---
+function openInspector(msgIndex: number) {
+  inspectorTab.value = 'overview'
+  inspectorVisible.value = true
 }
 </script>
 
 <style scoped>
 .agent-shell { display: flex; flex-direction: column; height: 100vh; background: #fff; }
-
-/* Header — darker, stronger presence */
 .agent-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px; border-bottom: 1px solid #e5e6eb; background: #f7f8fa; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
 .header-left { display: flex; align-items: center; gap: 10px; }
 .header-brand { font-size: 20px; font-weight: 700; color: #1d2129; letter-spacing: 0.3px; }
 .header-tagline { font-size: 14px; color: #4e5969; font-weight: 500; }
-.header-right { display: flex; align-items: center; gap: 12px; }
+.header-right { display: flex; align-items: center; gap: 10px; }
 
-/* Chat scroll area */
 .chat-scroll { flex: 1; overflow-y: auto; background: #fff; }
 .chat-container { max-width: 760px; margin: 0 auto; padding: 16px 16px 12px; }
 
-/* Empty state — bigger, bolder, tighter */
 .empty-state { text-align: center; padding: 48px 20px 32px; }
-.empty-title { font-size: 32px; font-weight: 700; color: #1d2129; margin-bottom: 12px; line-height: 1.25; }
-.empty-subtitle { font-size: 16px; color: #4e5969; max-width: 520px; margin: 0 auto 28px; line-height: 1.6; font-weight: 400; }
-.suggestion-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
-.sugg-chip { cursor: pointer; padding: 8px 18px; font-size: 15px; font-weight: 600; color: #1d2129; border: 1px solid #c9cdd4; background: #f7f8fa; border-radius: 20px; transition: all 0.15s; }
-.sugg-chip:hover { background: #e8e9ed; border-color: #86909c; }
+.empty-title { font-size: 32px; font-weight: 700; color: #1d2129; margin-bottom: 12px; }
+.empty-subtitle { font-size: 16px; color: #4e5969; max-width: 520px; margin: 0 auto 28px; line-height: 1.6; }
 
-/* Messages */
 .msg-row { margin-bottom: 18px; }
 .msg-row.user { display: flex; justify-content: flex-end; }
 .msg { max-width: 680px; }
 
-.user-msg .msg-text {
-  background: #e8f3ff; padding: 12px 18px; border-radius: 18px 18px 4px 18px;
-  font-size: 15px; line-height: 1.5; color: #1d2129; font-weight: 500;
-}
+.user-msg .msg-text { background: #e8f3ff; padding: 12px 18px; border-radius: 18px 18px 4px 18px; font-size: 15px; line-height: 1.5; color: #1d2129; font-weight: 500; }
+.user-msg .msg-meta { font-size: 11px; color: #86909c; margin-top: 4px; text-align: right; padding-right: 4px; }
 .assistant-msg .msg-text { font-size: 15px; line-height: 1.65; white-space: pre-wrap; color: #1d2129; }
-.system-msg .msg-text { }
-.error-msg .msg-text { }
+.explain-msg { max-width: 600px; }
 
-/* Running card — better contrast */
-.running-card { background: #f7f8fa; padding: 18px; border-radius: 12px; border: 1px solid #e5e6eb; color: #1d2129; font-size: 15px; font-weight: 500; }
-
-/* Composer */
 .composer { flex-shrink: 0; border-top: 1px solid #e5e6eb; padding: 12px 24px; background: #f7f8fa; }
 .composer-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: flex-end; }
 .composer-inner .a-textarea { flex: 1; }

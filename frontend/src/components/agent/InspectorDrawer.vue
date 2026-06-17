@@ -1,6 +1,6 @@
 <template>
   <a-drawer :visible="visible" :width="580" placement="right" @cancel="$emit('close')" :footer="false" :title="'Inspector — ' + (resp?.decision || '')">
-    <a-tabs v-if="resp" default-active-tab="overview" size="small">
+    <a-tabs v-if="resp" :default-active-tab="initialTab" :active-key="activeTab" @change="activeTab = $event as string" size="small">
       <a-tab-pane key="overview" title="Overview">
         <a-descriptions :data="overviewFields" size="mini" :column="1" layout="inline-horizontal" />
       </a-tab-pane>
@@ -70,15 +70,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { AgentRunResponse, ReasoningSpan } from '../../types/agent'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   visible: boolean
   resp: AgentRunResponse | null
-}>()
+  initialTab?: string
+}>(), { initialTab: 'overview' })
 
 defineEmits<{ close: [] }>()
+
+const activeTab = ref<string>(props.initialTab)
+watch(() => props.visible, (v) => {
+  if (v) activeTab.value = props.initialTab
+})
 
 const sensitiveKeys = ['api_key', 'api-key', 'apikey', 'authorization', 'auth', 'bearer', 'token', 'password', 'passwd', 'secret', 'credential', 'private_key', 'private-key', 'access_key', 'access-key']
 
