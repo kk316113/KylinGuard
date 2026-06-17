@@ -23,6 +23,31 @@ export interface AgentRunResponse {
   risk_graph?: RiskGraph | null
   security_report?: SecurityReport | null
   reasoning_trace?: ReasoningTrace | null
+  agent_mode?: string
+  task_understanding?: {
+    user_goal?: string
+    intent_type?: string
+    risk_level?: string
+  }
+  agent_steps?: AgentStep[]
+  final_answer?: string
+}
+
+export interface AgentStep {
+  step_index?: number
+  action_type?: string
+  tool_name?: string
+  tool_args?: Record<string, unknown>
+  reason?: string
+  user_visible_summary?: string
+  policy_decision?: string
+  observation?: Record<string, unknown>
+  operation_type?: string
+  resource_type?: string
+  resource_path?: string
+  boundary_level?: string
+  allowed_by_policy?: boolean
+  policy_reason?: string
 }
 
 export interface ReasoningTrace {

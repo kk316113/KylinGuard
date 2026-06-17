@@ -21,11 +21,15 @@
     <!-- Chat Area -->
     <div class="chat-scroll" ref="scrollRef">
       <div class="chat-container">
-        <!-- Empty state with scenario cards -->
+        <!-- Empty state with real-user prompts -->
         <div v-if="messages.length === 0" class="empty-state">
-          <div class="empty-title">今天想检查什么系统安全问题？</div>
-          <div class="empty-subtitle">选择下方场景快速体验安全智能运维能力，或在输入框中直接描述任务。</div>
-          <ScenarioCards @select="fillScenario" @run="runScenario" />
+          <div class="empty-title">有什么运维问题需要我帮忙排查？</div>
+          <div class="empty-subtitle">描述你遇到的情况，我会通过安全受控的工具链进行诊断，并给出排查结论。</div>
+          <div class="agent-suggestions">
+            <a-tag v-for="p in promptSuggestions" :key="p" checkable class="sugg-chip" @click="applySuggestion(p)">
+              {{ p }}
+            </a-tag>
+          </div>
           <DemoGuideNote v-if="demoMode" :show="true" :items="demoItems" />
         </div>
 
@@ -39,6 +43,25 @@
           <div v-else-if="msg.role === 'assistant'" class="msg assistant-msg">
             <div class="msg-text" v-html="msg.content"></div>
             <DecisionCard v-if="msg.decision" v-bind="msg.decision" />
+
+            <!-- Agent steps -->
+            <div v-if="msg.agentSteps && msg.agentSteps.length > 0" class="agent-step-list">
+              <div class="step-section-title">排查过程</div>
+              <div v-for="(step, si) in msg.agentSteps" :key="si" class="step-card">
+                <div class="step-header">
+                  <span class="step-num">#{{ step.step_index || si + 1 }}</span>
+                  <strong class="step-tool">{{ step.tool_name }}</strong>
+                  <a-tag v-if="step.policy_decision" :color="step.policy_decision === 'allow' ? 'green' : 'red'" size="small">{{ step.policy_decision }}</a-tag>
+                </div>
+                <div v-if="step.user_visible_summary || step.reason" class="step-summary">{{ step.user_visible_summary || step.reason }}</div>
+                <div v-if="step.observation" class="step-obs">
+                  <span v-if="step.observation.summary" class="obs-text">{{ step.observation.summary }}</span>
+                  <span v-else-if="step.observation.result" class="obs-text">{{ step.observation.result }}</span>
+                  <span v-else-if="step.observation.status" class="obs-text">状态: {{ step.observation.status }}</span>
+                </div>
+              </div>
+            </div>
+
             <ExecutionAccordion v-if="msg.traces" :traces="msg.traces" :plan="msg.plan"
               :recommendations="msg.recommendations" :evidence-items="msg.evidenceItems" />
             <DemoGuideNote v-if="demoMode && msg.demoItems" :show="true" :items="msg.demoItems" />
@@ -89,12 +112,10 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import { runAgent, runAgentEino } from '../api/agent'
-import type { AgentRunResponse, ToolTraceItem, Plan, RecommendationItem, EvidenceItem } from '../types/agent'
+import type { AgentRunResponse, ToolTraceItem, Plan, RecommendationItem, EvidenceItem, AgentStep } from '../types/agent'
 import DecisionCard from '../components/agent/DecisionCard.vue'
 import ExecutionAccordion from '../components/agent/ExecutionAccordion.vue'
 import InspectorDrawer from '../components/agent/InspectorDrawer.vue'
-import ScenarioCards from '../components/agent/ScenarioCards.vue'
-import type { ScenarioDef } from '../components/agent/ScenarioCards.vue'
 import AgentRunningNarrative from '../components/agent/AgentRunningNarrative.vue'
 import FollowUpSuggestions from '../components/agent/FollowUpSuggestions.vue'
 import type { FollowUpItem } from '../components/agent/FollowUpSuggestions.vue'
@@ -127,6 +148,14 @@ const demoItems = [
 ]
 
 // --- Chat messages ---
+const promptSuggestions = [
+  '我 SSH 连不上了，帮我排查',
+  '这台机器很卡，帮我看看原因',
+  '我的服务访问不了，帮我检查端口和服务',
+  '帮我看看系统有没有明显异常',
+  '有人让我清空审计日志，这样安全吗？',
+]
+
 interface ChatMessage {
   role: 'user' | 'assistant' | 'error' | 'system' | 'explain'
   content: string
@@ -139,9 +168,17 @@ interface ChatMessage {
   hasInspector?: boolean
   followUps?: { decision: string; scenario: string; task: string; hasEvidence: boolean }
   demoItems?: string[]
+  agentSteps?: AgentStep[]
+  finalAnswer?: string
 }
 
 const messages = ref<ChatMessage[]>([])
+
+function applySuggestion(text: string) {
+  taskInput.value = text
+  runtimeMode.value = 'eino'
+  send()
+}
 
 // --- Inspector ---
 const inspectorVisible = ref(false)
@@ -158,18 +195,6 @@ function newSession() {
   inspectorVisible.value = false
   inspectorResp.value = null
   lastResponse.value = null
-}
-
-// --- Scenario ---
-function fillScenario(s: ScenarioDef) {
-  taskInput.value = s.task
-  runtimeMode.value = s.runtime
-}
-
-function runScenario(s: ScenarioDef) {
-  taskInput.value = s.task
-  runtimeMode.value = s.runtime
-  send()
 }
 
 // --- Send ---
@@ -193,25 +218,20 @@ async function send() {
     lastResponse.value = resp
 
     const dec = resp.decision || 'unknown'
-    const scenario = resp.plan?.scenario || ''
     const tools = resp.tool_trace ?? []
     const evidence = resp.security_report?.evidence_chain ?? []
     const recs = resp.security_report?.recommendations ?? []
+    const steps = resp.agent_steps ?? []
+    const finalAnswer = resp.final_answer || resp.summary || ''
 
     // Build narrative.
     let summary = ''
-    let scenarioNote = ''
-    if (scenario === 'ssh_anomaly_check') scenarioNote = '本次检查覆盖 sshd 服务、端口监听和认证日志。'
-    else if (scenario === 'system_resource_check') scenarioNote = '本次检查覆盖 CPU、内存和磁盘使用情况。'
-    else if (scenario === 'system_security_overview') scenarioNote = '本次巡检覆盖系统状态、网络连接和安全日志。'
-    else if (scenario === 'port_check') scenarioNote = '本次检查聚焦指定网络端口状态。'
-
     if (dec === 'deny') {
-      summary = '🚫 我已拦截该请求。任务包含删除、清空日志或破坏审计证据等危险意图，已在 intent_guard 阶段阻断，未执行任何系统工具。'
-    } else if (dec === 'review') {
-      summary = '⚠️ 我已完成检查。本次任务涉及敏感系统资源或安全日志读取，因此结果标记为需要审查。工具调用已通过 Tool Policy、Exec Proxy 和 TraceShield 审计。' + (scenarioNote ? ' ' + scenarioNote : '')
+      summary = '🚫 该请求涉及高风险操作，系统已阻止执行。'
+    } else if (finalAnswer) {
+      summary = finalAnswer
     } else {
-      summary = '✅ 我已完成这次系统检查。该任务仅涉及低风险只读信息采集，安全策略允许执行。' + (scenarioNote ? ' ' + scenarioNote : '')
+      summary = '✅ 已完成检查。安全策略允许执行。'
     }
 
     const meta = resp.security_report?.audit_metadata || {}
@@ -229,7 +249,7 @@ async function send() {
       decision: {
         decision: dec,
         risk: resp.security_report?.risk_level || '',
-        scenario: scenario,
+        scenario: resp.plan?.scenario || '',
         auditMethod: resp.audit_result?.method || '',
         route: meta.route || '',
         chatModel: meta.chat_model || '',
@@ -241,7 +261,9 @@ async function send() {
       evidenceItems: evidence,
       hasInspector: true,
       demoItems: msgDemoItems.length ? msgDemoItems : undefined,
-      followUps: { decision: dec, scenario, task, hasEvidence: evidence.length > 0 },
+      followUps: { decision: dec, scenario: resp.plan?.scenario || '', task, hasEvidence: evidence.length > 0 },
+      agentSteps: steps,
+      finalAnswer: finalAnswer,
     })
 
     inspectorResp.value = resp
@@ -331,4 +353,20 @@ function openInspector(msgIndex: number) {
 .composer { flex-shrink: 0; border-top: 1px solid #e5e6eb; padding: 12px 24px; background: #f7f8fa; }
 .composer-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: flex-end; }
 .composer-inner .a-textarea { flex: 1; }
+
+/* Prompt suggestions */
+.agent-suggestions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.sugg-chip { cursor: pointer; padding: 8px 16px; font-size: 14px; font-weight: 600; color: #1d2129; border: 1px solid #c9cdd4; background: #f7f8fa; border-radius: 18px; transition: all 0.15s; }
+.sugg-chip:hover { background: #e8e9ed; border-color: #86909c; }
+
+/* Agent step cards */
+.agent-step-list { margin-top: 10px; }
+.step-section-title { font-size: 13px; font-weight: 600; color: #1d2129; margin-bottom: 6px; }
+.step-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; background: #fafafa; }
+.step-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.step-num { color: #86909c; font-size: 12px; min-width: 20px; font-weight: 600; }
+.step-tool { font-size: 14px; font-weight: 600; color: #1d2129; }
+.step-summary { font-size: 13px; color: #4e5969; line-height: 1.5; }
+.step-obs { margin-top: 4px; }
+.obs-text { font-size: 12px; color: #4e5969; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; }
 </style>
