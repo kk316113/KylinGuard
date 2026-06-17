@@ -70,11 +70,11 @@ function riskColor(r: string) {
 </script>
 
 <style scoped>
-.decision-card { margin-bottom: 8px; }
-.decision-card.decision-deny { border-left: 4px solid rgb(var(--red-6)); }
-.decision-card.decision-review { border-left: 4px solid rgb(var(--orange-6)); }
-.decision-card.decision-allow { border-left: 4px solid rgb(var(--green-6)); }
-.decision-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.decision-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.decision-desc { font-size: 12px; color: var(--color-text-3); margin-bottom: 6px; }
+.decision-card { margin-bottom: 10px; border: 1px solid #e5e6eb; }
+.decision-card.decision-deny { border-left: 5px solid rgb(var(--red-6)); }
+.decision-card.decision-review { border-left: 5px solid rgb(var(--orange-6)); }
+.decision-card.decision-allow { border-left: 5px solid rgb(var(--green-6)); }
+.decision-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.decision-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; color: #1d2129; }
+.decision-desc { font-size: 13px; color: #4e5969; margin-bottom: 8px; line-height: 1.5; }
 </style>

@@ -81,14 +81,14 @@ function priorityColor(p: string) { return p === 'high' ? 'red' : p === 'medium'
 </script>
 
 <style scoped>
-.exec-accordion { margin-top: 8px; }
-.tool-card { border: 1px solid var(--color-border); border-radius: 6px; padding: 8px; margin-bottom: 6px; }
-.tool-card-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
-.tool-index { color: var(--color-text-3); font-size: 11px; min-width: 20px; }
-.tool-name { font-size: 13px; }
-.tool-card-meta { font-size: 11px; color: var(--color-text-3); }
-.meta-item { color: var(--color-text-3); }
-.step-line { font-size: 13px; }
-.step-reason { color: var(--color-text-3); }
-.rec-line { font-size: 12px; }
+.exec-accordion { margin-top: 10px; }
+.tool-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; background: #fafafa; }
+.tool-card-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.tool-index { color: #86909c; font-size: 12px; min-width: 22px; font-weight: 600; }
+.tool-name { font-size: 14px; font-weight: 600; color: #1d2129; }
+.tool-card-meta { font-size: 12px; color: #4e5969; }
+.meta-item { color: #4e5969; display: inline-flex; align-items: center; gap: 4px; }
+.step-line { font-size: 14px; color: #1d2129; }
+.step-reason { color: #4e5969; }
+.rec-line { font-size: 13px; color: #1d2129; }
 </style>

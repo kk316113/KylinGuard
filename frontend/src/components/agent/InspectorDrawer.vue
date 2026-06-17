@@ -153,11 +153,11 @@ function sant(span: ReasoningSpan) {
 </script>
 
 <style scoped>
-.raw-json { font-size: 11px; max-height: 500px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
-.rt-list { font-size: 12px; }
-.rt-item { border: 1px solid var(--color-border); border-radius: 4px; margin-bottom: 4px; cursor: pointer; }
-.rt-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--color-fill-1); }
-.rt-name { flex: 1; }
-.rt-dur { color: var(--color-text-3); font-size: 11px; min-width: 40px; }
-.rt-attrs { padding: 6px 8px; background: var(--color-bg-1); }
+.raw-json { font-size: 12px; max-height: 500px; overflow: auto; white-space: pre-wrap; word-break: break-all; color: #1d2129; }
+.rt-list { font-size: 13px; }
+.rt-item { border: 1px solid #e5e6eb; border-radius: 4px; margin-bottom: 6px; cursor: pointer; }
+.rt-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f7f8fa; }
+.rt-name { flex: 1; font-weight: 500; color: #1d2129; }
+.rt-dur { color: #4e5969; font-size: 12px; min-width: 44px; font-weight: 500; }
+.rt-attrs { padding: 8px 12px; background: #fff; }
 </style>
