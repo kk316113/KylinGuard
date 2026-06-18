@@ -1,0 +1,55 @@
+# CURRENT_STATE.md
+
+## Current Status
+
+KylinGuard has completed:
+
+- Stage 15A: One-click Demo Runtime & Acceptance Hardening - PASS
+- Stage 16A: LLM-driven Agent Loop Runtime - PASS
+- Stage 16B-1: Frontend Agent Loop Message Mapping - PASS
+- Stage 16C-lite: Observability & Acceptance Hardening - PASS
+- Real DeepSeek Smoke Test - PASS
+
+## Latest Important Commits
+
+- Stage 16B-1 frontend mapping: `d927a84`
+- Stage 16C-lite observability/check_demo: master `355cb4e`
+- chat_model metadata and key redaction:
+  - dev-gsh: `52beac7`
+  - master: `4976ed3`
+
+## Real DeepSeek Verification
+
+Verified on Kylin VM:
+
+```text
+DEMO_MOCK_LLM=false
+EINO_LLM_ENABLED=true
+EINO_LLM_ENDPOINT=https://api.deepseek.com
+EINO_LLM_PROVIDER=openai_compatible
+EINO_LLM_MODEL=deepseek-v4-flash
+
+agent_mode: agent_loop
+llm_enabled: True
+remote_llm_used: True
+chat_model: remote-llm-deepseek-openai_compatible
+chat_model contains mock: NO - PASS
+agent_steps: 3
+tool_trace: 3
+final_answer: OK
+fallback_reason: none
+audit_result: OK
+security_report: OK
+```
+
+## Current Next Suggested Work
+
+Priority order:
+
+1. README update / documentation finalization
+2. Stage 16E-lite: natural-language Agent Loop acceptance script
+3. Stage 16D-lite: demo closure and acceptance assets
+4. Stage 16D: minimal Risk Graph Artifact
+5. Stage 16F: frontend demo polish
+6. Stage 17: report / PPT / recording / defense script
+7. Stage 18: packaging and final stability

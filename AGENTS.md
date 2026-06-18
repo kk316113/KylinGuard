@@ -1,0 +1,158 @@
+# AGENTS.md
+
+## Project Identity
+
+KylinGuard / 麒麟 is a security-aware intelligent operations Agent for Kylin OS.
+
+It is not a security audit dashboard. The main product line is:
+
+```text
+user natural-language ops task
+-> LLM-driven Agent Loop
+-> safe tool execution
+-> observation
+-> final_answer
+```
+
+TraceShield, intent_guard, Tool Policy, Exec Proxy, reasoning_trace, and risk graph are safety and explanation layers around tool calls.
+
+## Current Baseline
+
+- Stage 15A: One-click Demo Runtime & Acceptance Hardening - PASS
+- Stage 16A: LLM-driven Agent Loop Runtime - PASS
+- Stage 16B-1: Frontend Agent Loop Message Mapping - PASS
+- Stage 16C-lite: Observability & Acceptance Hardening - PASS
+- Real DeepSeek Smoke Test - PASS
+
+Verified real DeepSeek summary:
+
+```text
+DEMO_MOCK_LLM=false
+EINO_LLM_ENDPOINT=https://api.deepseek.com
+EINO_LLM_MODEL=deepseek-v4-flash
+chat_model=remote-llm-deepseek-openai_compatible
+chat_model contains mock: NO - PASS
+agent_mode=agent_loop
+agent_steps=3
+tool_trace=3
+final_answer=OK
+fallback_reason=none
+audit_result=OK
+security_report=OK
+```
+
+## Runtime Modes
+
+1. deterministic baseline
+   - `chat_model=deterministic-stub`
+   - fallback / regression / stable demo
+
+2. mock LLM
+   - `DEMO_MOCK_LLM=true`
+   - `chat_model=remote-llm-mock-openai_compatible`
+   - Agent Loop regression without real key
+
+3. real DeepSeek
+   - `DEMO_MOCK_LLM=false`
+   - `OPENAI_COMPATIBLE_BASE_URL=https://api.deepseek.com`
+   - `OPENAI_COMPATIBLE_MODEL=deepseek-v4-flash`
+   - `OPENAI_COMPATIBLE_API_KEY` from environment only
+   - `chat_model=remote-llm-deepseek-openai_compatible`
+
+## Default Codex Workflow
+
+When the user gives a normal development task:
+
+1. Read this `AGENTS.md` first.
+2. Do not scan the whole repository by default.
+3. If extra context is needed, read `docs/agent_memory/CURRENT_STATE.md`.
+4. If rules or constraints are unclear, read `docs/agent_memory/WORKING_RULES.md`.
+5. Then read only the task-relevant source files.
+6. Prefer targeted edits and small diffs.
+7. Do not run broad grep/find unless the task cannot be solved with targeted reading.
+8. Do not read unrelated frontend/backend files just to "understand the project".
+
+## Non-Negotiable Rules
+
+- Do not turn natural-language tasks into hardcoded scenarios.
+- Do not write `if task contains SSH then ...` in Agent Loop logic.
+- User task examples are acceptance samples, not fixed workflows.
+- mock LLM behavior is only a test double; never treat it as the real Agent.
+- deterministic baseline is only fallback/regression, not the main Agent.
+- LLM can only propose structured `next_action`; system decides whether/how to execute.
+- Never let LLM execute raw shell directly.
+- Never bypass Tool Policy.
+- Never bypass Exec Proxy.
+- Never commit real API keys.
+- Never print real API keys in logs.
+- `run/demo.env` must not store real keys; use `[REDACTED]`.
+
+## Agent Loop Main Path
+
+```text
+User task
+-> LLM outputs next_action
+-> parse / schema validate
+-> intent_guard / action safety check
+-> Tool Policy
+-> Exec Proxy
+-> tool execution
+-> observation
+-> reasoning_trace / tool_trace
+-> LLM outputs next_action again
+-> final_answer
+-> TraceShield audit
+```
+
+## Memory Self-Maintenance
+
+After any completed stage, bug fix, or meaningful verification:
+
+1. Update `docs/agent_memory/CURRENT_STATE.md` with:
+   - what changed
+   - new commit hash if any
+   - verification result
+   - next suggested work
+2. Update `docs/agent_memory/WORKING_RULES.md` only if project rules changed.
+3. Do not store:
+   - real API keys
+   - raw sensitive logs
+   - large raw JSON responses
+   - temporary `/tmp` file contents
+4. Keep memory concise. Prefer summaries and key fields over long logs.
+
+## Common Validation Commands
+
+Backend:
+
+```bash
+go test ./...
+```
+
+Frontend:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+Scripts:
+
+```bash
+bash -n scripts/linux/start_demo.sh
+bash -n scripts/linux/check_demo.sh
+bash -n scripts/linux/stop_demo.sh
+```
+
+Do not claim PASS unless the command was actually run.
+
+## Completion Report Format
+
+For each task, report:
+
+1. files changed
+2. tests run and results
+3. git diff summary
+4. whether memory files were updated
+5. whether real API keys are absent from diff
+6. whether a commit is recommended
