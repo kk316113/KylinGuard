@@ -5,24 +5,20 @@
 核心链路：
 
 ```text
-User Task
--> Intent Guard
--> Eino Graph Runtime / Stable Runtime
--> ChatModelAdapter / deterministic-stub / Remote LLM Adapter
--> MCP-like Tool Registry
--> Tool Policy
--> Least-Privilege Execution Proxy
--> OS sensing tools / SSH diagnosis tools
--> semantic tool_trace
--> TraceShield audit
--> Decision Normalizer
--> diagnosis
--> security_report
--> reasoning_trace
--> 前端 Agent 安全运维控制台 / 对话工作台
+User task (自然语言)
+→ intent_guard / action safety check
+→ LLM Agent Loop (next_action: tool_call / final_answer)
+→ Tool Policy (每步参数校验)
+→ Least-Privilege Exec Proxy (命令白名单)
+→ OS sensing tools / SSH diagnosis tools
+→ observation / reasoning_trace (记录与审计)
+→ LLM 再决策 → 循环直到 final_answer
+→ TraceShield audit
+→ security_report / audit_result / risk_graph
+→ 前端 Chat-first 工作台 (final_answer 优先展示)
 ```
 
-当前阶段：**Stage 15A**：One-click Demo Runtime & Competition Acceptance Hardening。
+当前阶段：**Stage 16C-lite** Agent Loop Observability & Acceptance Hardening。
 
 ## 当前做了什么
 
@@ -82,18 +78,66 @@ User Task
 - `scripts/linux/stop_demo.sh`：停止所有服务
 - `scripts/linux/check_demo.sh`：健康检查 + LLM 模式校验
 - `DEMO_MOCK_LLM=true` 启用 mock remote LLM 演示
-- 生成 `run/demo.env` 供手动验证脚本使用
+- 生成 `run/demo.env`（API key 写为 `[REDACTED]`）
+
+### Stage 16A — LLM-driven Agent Loop Runtime
+
+- 新增 `agentloop` 包：`Engine` 运行多步 agent loop（LLM → action → policy → exec → observe → repeat）
+- `RemoteLLMAgentAdapter`：将 RemoteLLMAdapter 包装为 `NextActionGenerator`
+- `ToolStepExecutor`：每步 tool call 经过 Tool Policy → Exec Proxy → observation 记录
+- `agent_mode=agent_loop` 区分 Agent Loop 与 deterministic 模式
+- `task_understanding` / `agent_steps` / `final_answer` 结构化返回
+- `FallbackChatModelAdapter`：远程 LLM 失败时自动降级为 deterministic-stub
+- 三种运行模式：
+
+| 模式 | LLM Enabled | Chat Model | 触发条件 |
+|------|------------|-----------|---------|
+| deterministic baseline | false | `deterministic-stub` | 无真实 LLM key，无 DEMO_MOCK_LLM |
+| mock LLM | true | `remote-llm-mock-{provider}` | `DEMO_MOCK_LLM=true` |
+| real DeepSeek/OpenAI | true | `remote-llm-deepseek-{provider}` | `OPENAI_COMPATIBLE_API_KEY` 已设置 |
+
+### Stage 16B-1 — Frontend Agent Loop Message Mapping
+
+- Assistant 消息优先展示 `final_answer`（自然语言诊断结论）
+- `agent_steps` 渲染为紧凑执行步骤卡片（step_index、tool_name、policy_decision、observation）
+- 空状态推荐语改为真实运维任务语言，例如"我 SSH 连不上了，帮我排查"
+- `tool_trace` / `audit_result` / `security_report` / raw JSON 默认折叠或放在 Drawer
+- 旧字段兼容：`agent_steps ?? []`、`final_answer \|\| summary`
+
+### Stage 16C-lite — Observability & Acceptance Hardening
+
+- `executeStep` 中每步添加 `tool_policy` / `exec_proxy` reasoning_trace span
+- `check_demo.sh` 新增 mock LLM 模式断言（agent_steps >= 3、工具名检查、final_answer 非空等）
+- `ChatModelName()` 根据 API key 和 endpoint 自动生成正确 chat_model 名称：
+
+  * `deterministic-stub`（baseline）
+  * `remote-llm-mock-openai_compatible`（mock）
+  * `remote-llm-deepseek-openai_compatible`（real DeepSeek）
+  * `remote-llm-openai_compatible`（generic remote）
+- `run/demo.env` 中 API key 写为 `[REDACTED]`，不保存明文
+- Real DeepSeek Smoke Test 在 Kylin VM 验证通过
 
 ## 当前没做什么
 
 - 没有修改 `TraceShield-Core` 仓库
 - 没有改变 TraceShield 核心算法语义
-- 没有接入真实远程 LLM（默认 `EINO_LLM_ENABLED=false`）
 - 没有引入 `torch`、`transformers`、`faiss`、`sentence-transformers` 等重依赖
 - 没有实现登录系统
 - 没有实现历史会话数据库持久化
 - 没有后端自动处置能力（不 kill 进程、不改防火墙、不删除日志）
 - 没有开放任意 shell 或任意文件读取
+- 没有完整 Risk Graph Artifact（Stage 16D 待规划）
+- 没有报告/PPT/录屏/答辩词（Stage 17 待规划）
+- LLM-driven Agent Loop 目前只支持 `/api/agent/run-eino`，stable runtime `/api/agent/run` 仍为 deterministic
+
+## 安全注意事项
+
+- 不要把真实 API key 写入 README、代码、测试文件、日志或 git diff
+- API key 只允许从环境变量读取（`OPENAI_COMPATIBLE_API_KEY`）
+- `run/demo.env` 中 API key 写为 `[REDACTED]`，不保存明文
+- 不要将 mock LLM 结果冒充 real LLM
+- 每步工具调用必须经过 Tool Policy / Exec Proxy / TraceShield
+- LLM 不允许直接执行 shell 或绕过安全策略
 
 ## 目录概览
 
@@ -126,6 +170,8 @@ Python audit-core：
 
 ## 快速启动（Kylin VM 推荐）
 
+### 默认 deterministic 演示
+
 ```bash
 cd /opt/kylin-guard-agent
 bash scripts/linux/start_demo.sh
@@ -134,15 +180,31 @@ bash scripts/linux/check_demo.sh
 
 浏览器访问 `http://127.0.0.1:5173`
 
-Mock LLM 模式：
+### Mock LLM Agent Loop 演示
 
 ```bash
 DEMO_MOCK_LLM=true bash scripts/linux/start_demo.sh
-source run/demo.env
-bash scripts/linux/test_stage13b_remote_llm_manual.sh
+bash scripts/linux/check_demo.sh
 ```
 
-停止：
+### Real DeepSeek Agent Loop 演示
+
+```bash
+export OPENAI_COMPATIBLE_BASE_URL=https://api.deepseek.com
+export OPENAI_COMPATIBLE_MODEL=deepseek-v4-flash
+export OPENAI_COMPATIBLE_API_KEY="<your_api_key>"
+unset DEMO_MOCK_LLM
+DEMO_MOCK_LLM=false bash scripts/linux/start_demo.sh
+bash scripts/linux/check_demo.sh
+```
+
+### 验收命令
+
+```bash
+curl -s http://127.0.0.1:8080/api/agent/run-eino \
+  -H "Content-Type: application/json" \
+  -d '{"task":"我 SSH 连不上了，帮我看看"}'
+```
 
 ```bash
 bash scripts/linux/stop_demo.sh
@@ -235,6 +297,47 @@ cd agent-go && go test ./...
 cd audit-core-py && python -m pytest -q
 cd frontend && npm run typecheck && npm run build
 ```
+
+## 当前阶段状态
+
+| Stage | 内容 | 状态 |
+|-------|------|------|
+| Stage 15A | One-click Demo Runtime & Acceptance Hardening | ✅ PASS |
+| Stage 16A | LLM-driven Agent Loop Runtime | ✅ PASS |
+| Stage 16B-1 | Frontend Agent Loop Message Mapping | ✅ PASS |
+| Stage 16C-lite | Observability & Acceptance Hardening | ✅ PASS |
+| Real DeepSeek Smoke Test | Kylin VM real LLM verification | ✅ PASS |
+
+## Agent Loop 流程
+
+```
+User task (自然语言)
+→ intent_guard（危险意图前置阻断）
+→ LLM next_action（tool_call / final_answer）
+→ action parse / validate（JSON schema 校验）
+→ Tool Policy（工具参数白名单）
+→ Exec Proxy（命令白名单、禁止 shell/sudo）
+→ tool execution（OS sensing / SSH diagnosis 工具）
+→ observation / reasoning_trace
+→ LLM 再决策（基于历史 action + observation）
+→ 循环直到 final_answer
+→ TraceShield audit（完整工具链审计）
+→ security_report / audit_result（安全审计报告）
+→ 前端 Chat-first 工作台（final_answer 优先、agent_steps 卡片、审计折叠）
+```
+
+## `/api/agent/run-eino` 返回字段
+
+| 字段 | 说明 | 前端处理 |
+|------|------|---------|
+| `agent_mode` | `agent_loop` 或 `deterministic` | 区分运行模式 |
+| `task_understanding` | LLM 对用户任务的理解 | 元数据展示 |
+| `agent_steps` | 每步 tool_call 的执行记录 | 紧凑步骤卡片 |
+| `final_answer` | LLM 生成的诊断结论 | 优先展示 |
+| `tool_trace` | 每步工具调用的审计 trace | 默认折叠 |
+| `security_report` | TraceShield 审计报告 | Drawer 展示 |
+| `audit_result` | 审计决策结果 | Drawer 展示 |
+| `reasoning_trace` | 执行链路 span 记录 | Drawer 展示 |
 
 ## 重要文档
 
