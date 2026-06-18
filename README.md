@@ -350,6 +350,7 @@ User task (自然语言)
 - `docs/stage13b_remote_llm_manual_verification.md`：远程 LLM 手动验证说明
 - `docs/stage15a_demo_runtime.md`：一键演示运行说明
 - `docs/demo_script_for_competition.md`：比赛推荐演示流程
+- `docs/demo/STAGE_16D_LITE_DEMO_CLOSURE.md`：Stage 16D-lite 可复现演示闭环与验收流程
 - `frontend/README.md`：前端说明
 
 ## 安全边界
