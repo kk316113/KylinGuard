@@ -41,24 +41,34 @@
           </div>
 
           <div v-else-if="msg.role === 'assistant'" class="msg assistant-msg">
+            <div v-if="msg.runtimeBadge" class="runtime-line">
+              <a-tag :color="msg.runtimeBadge.color" size="small">{{ msg.runtimeBadge.label }}</a-tag>
+              <a-tag v-if="msg.runtimeBadge.chatModel" color="gray" size="small">{{ msg.runtimeBadge.chatModel }}</a-tag>
+            </div>
             <div class="msg-text" v-html="msg.content"></div>
             <DecisionCard v-if="msg.decision" v-bind="msg.decision" />
 
             <!-- Agent steps -->
             <div v-if="msg.agentSteps && msg.agentSteps.length > 0" class="agent-step-list">
-              <div class="step-section-title">排查过程</div>
+              <div class="step-section-title">Agent 执行步骤</div>
               <div v-for="(step, si) in msg.agentSteps" :key="si" class="step-card">
                 <div class="step-header">
                   <span class="step-num">#{{ step.step_index || si + 1 }}</span>
-                  <strong class="step-tool">{{ step.tool_name }}</strong>
-                  <a-tag v-if="step.policy_decision" :color="step.policy_decision === 'allow' ? 'green' : 'red'" size="small">{{ step.policy_decision }}</a-tag>
+                  <strong class="step-tool">{{ step.tool_name || step.action_type || 'agent_step' }}</strong>
+                  <a-tag v-if="step.policy_decision" :color="policyColor(step.policy_decision)" size="small">{{ step.policy_decision }}</a-tag>
                 </div>
                 <div v-if="step.user_visible_summary || step.reason" class="step-summary">{{ step.user_visible_summary || step.reason }}</div>
-                <div v-if="step.observation" class="step-obs">
-                  <span v-if="step.observation.summary" class="obs-text">{{ step.observation.summary }}</span>
-                  <span v-else-if="step.observation.result" class="obs-text">{{ step.observation.result }}</span>
-                  <span v-else-if="step.observation.status" class="obs-text">状态: {{ step.observation.status }}</span>
+                <div v-if="observationSummary(step)" class="step-obs">
+                  <span class="obs-label">Observation:</span>
+                  <span class="obs-text">{{ observationSummary(step) }}</span>
                 </div>
+                <div v-if="step.operation_type || step.resource_type || step.boundary_level || step.resource_path" class="step-semantic">
+                  <span v-if="step.operation_type">operation={{ step.operation_type }}</span>
+                  <span v-if="step.resource_type">resource={{ step.resource_type }}</span>
+                  <span v-if="step.boundary_level">boundary={{ step.boundary_level }}</span>
+                  <span v-if="step.resource_path">path={{ step.resource_path }}</span>
+                </div>
+                <div v-if="step.policy_reason" class="step-policy-reason">{{ step.policy_reason }}</div>
               </div>
             </div>
 
@@ -170,6 +180,7 @@ interface ChatMessage {
   demoItems?: string[]
   agentSteps?: AgentStep[]
   finalAnswer?: string
+  runtimeBadge?: { label: string; color: string; chatModel: string }
 }
 
 const messages = ref<ChatMessage[]>([])
@@ -222,17 +233,11 @@ async function send() {
     const evidence = resp.security_report?.evidence_chain ?? []
     const recs = resp.security_report?.recommendations ?? []
     const steps = resp.agent_steps ?? []
-    const finalAnswer = resp.final_answer || resp.summary || ''
+    const finalAnswer = resp.final_answer || resp.summary || '未返回最终回答'
+    const runtimeBadge = runtimeBadgeFromResponse(resp)
 
-    // Build narrative.
-    let summary = ''
-    if (dec === 'deny') {
-      summary = '🚫 该请求涉及高风险操作，系统已阻止执行。'
-    } else if (finalAnswer) {
-      summary = finalAnswer
-    } else {
-      summary = '✅ 已完成检查。安全策略允许执行。'
-    }
+    // Assistant main message always prefers the natural-language final answer.
+    const summary = finalAnswer
 
     const meta = resp.security_report?.audit_metadata || {}
 
@@ -252,7 +257,7 @@ async function send() {
         scenario: resp.plan?.scenario || '',
         auditMethod: resp.audit_result?.method || '',
         route: meta.route || '',
-        chatModel: meta.chat_model || '',
+        chatModel: runtimeBadge.chatModel,
         summary: true,
       },
       traces: tools,
@@ -264,6 +269,7 @@ async function send() {
       followUps: { decision: dec, scenario: resp.plan?.scenario || '', task, hasEvidence: evidence.length > 0 },
       agentSteps: steps,
       finalAnswer: finalAnswer,
+      runtimeBadge,
     })
 
     inspectorResp.value = resp
@@ -324,6 +330,45 @@ function openInspector(msgIndex: number) {
   inspectorTab.value = 'overview'
   inspectorVisible.value = true
 }
+function runtimeBadgeFromResponse(resp: AgentRunResponse) {
+  const chatModel = String(
+    resp.security_report?.audit_metadata?.chat_model ||
+    resp.audit_result?.audit_metadata?.chat_model ||
+    resp.chat_model ||
+    ''
+  )
+
+  if (chatModel === 'remote-llm-deepseek-openai_compatible') {
+    return { label: 'Real DeepSeek Agent Loop', color: 'green', chatModel }
+  }
+  if (chatModel === 'remote-llm-mock-openai_compatible') {
+    return { label: 'Mock Agent Loop', color: 'orange', chatModel }
+  }
+  if (chatModel === 'deterministic-stub') {
+    return { label: 'Deterministic Baseline', color: 'gray', chatModel }
+  }
+  if (chatModel.startsWith('remote-llm-')) {
+    return { label: 'Remote LLM Agent Loop', color: 'blue', chatModel }
+  }
+  return { label: 'Agent Runtime', color: 'gray', chatModel }
+}
+
+function policyColor(policy: string) {
+  const normalized = policy.toLowerCase()
+  if (normalized === 'allow' || normalized === 'allowed') return 'green'
+  if (normalized === 'review') return 'orange'
+  if (normalized === 'deny' || normalized === 'denied') return 'red'
+  return 'gray'
+}
+
+function observationSummary(step: AgentStep) {
+  const observation = step.observation || {}
+  const summary = observation.summary || observation.output_summary || observation.message || observation.result || observation.status
+  if (summary == null) return ''
+  if (typeof summary === 'string') return summary
+  return JSON.stringify(summary)
+}
+
 </script>
 
 <style scoped>
@@ -348,6 +393,7 @@ function openInspector(msgIndex: number) {
 .user-msg .msg-text { background: #e8f3ff; padding: 12px 18px; border-radius: 18px 18px 4px 18px; font-size: 15px; line-height: 1.5; color: #1d2129; font-weight: 500; }
 .user-msg .msg-meta { font-size: 11px; color: #86909c; margin-top: 4px; text-align: right; padding-right: 4px; }
 .assistant-msg .msg-text { font-size: 15px; line-height: 1.65; white-space: pre-wrap; color: #1d2129; }
+.runtime-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .explain-msg { max-width: 600px; }
 
 .composer { flex-shrink: 0; border-top: 1px solid #e5e6eb; padding: 12px 24px; background: #f7f8fa; }
@@ -368,5 +414,8 @@ function openInspector(msgIndex: number) {
 .step-tool { font-size: 14px; font-weight: 600; color: #1d2129; }
 .step-summary { font-size: 13px; color: #4e5969; line-height: 1.5; }
 .step-obs { margin-top: 4px; }
+.obs-label { font-size: 12px; color: #86909c; margin-right: 6px; font-weight: 600; }
 .obs-text { font-size: 12px; color: #4e5969; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; }
+.step-semantic { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; color: #86909c; }
+.step-policy-reason { margin-top: 4px; font-size: 12px; color: #86909c; line-height: 1.4; }
 </style>

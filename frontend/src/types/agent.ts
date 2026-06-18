@@ -31,6 +31,7 @@ export interface AgentRunResponse {
   }
   agent_steps?: AgentStep[]
   final_answer?: string
+  chat_model?: string
 }
 
 export interface AgentStep {
@@ -143,6 +144,9 @@ export interface AuditResult {
   risk_graph?: RiskGraph | null
   method: string
   message: string
+  audit_metadata?: Record<string, unknown> & {
+    chat_model?: string
+  }
 }
 
 export interface AuditViolation {

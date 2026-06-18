@@ -39,27 +39,27 @@ const tagColor = computed(() => {
 
 const label = computed(() => {
   switch (props.decision) {
-    case 'allow': return 'Allowed'
-    case 'review': return 'Review Required'
-    case 'deny': return 'Denied'
+    case 'allow': return '通过'
+    case 'review': return '需复核'
+    case 'deny': return '安全拦截/高风险'
     default: return 'Unknown'
   }
 })
 
 const zhText = computed(() => {
   switch (props.decision) {
-    case 'allow': return '允许执行'
-    case 'review': return '需要审查'
-    case 'deny': return '已拦截'
+    case 'allow': return '安全审计通过'
+    case 'review': return '安全审计提示：需要复核'
+    case 'deny': return '安全审计提示：高风险或已拦截'
     default: return '未知'
   }
 })
 
 const description = computed(() => {
   switch (props.decision) {
-    case 'allow': return '任务通过安全检查，未触发风险规则。仅涉及低风险只读信息采集。'
-    case 'review': return '涉及敏感系统资源访问（如系统日志、认证日志），需要人工关注。'
-    case 'deny': return '任务包含危险意图，已在 intent_guard 阶段阻断，未执行任何系统工具。'
+    case 'allow': return '审计层未发现需要阻断的风险，当前结果可作为低风险诊断输出查看。'
+    case 'review': return '审计层认为该任务涉及敏感系统信息或需要人工确认，结果应作为需复核的安全提示查看。'
+    case 'deny': return '审计层给出高风险或拦截判定。这不是前端请求失败，而是安全控制链路的正常结果。'
     default: return ''
   }
 })
