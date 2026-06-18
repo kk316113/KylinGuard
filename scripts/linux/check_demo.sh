@@ -35,31 +35,102 @@ check_pid() {
   fi
 }
 
+env_value() {
+  local key="$1" env_file="$2"
+  if [ ! -f "$env_file" ]; then
+    return 0
+  fi
+  grep -E "^(export )?${key}=" "$env_file" 2>/dev/null \
+    | tail -n 1 \
+    | sed -E 's/^export //; s/^[^=]*=//; s/^"//; s/"$//; s/^'\''//; s/'\''$//' || true
+}
+
+lower_text() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+classify_mode_from_env() {
+  local env_file="$1"
+  local demo_mock enabled endpoint base_url model provider
+  demo_mock="$(lower_text "$(env_value DEMO_MOCK_LLM "$env_file")")"
+  enabled="$(lower_text "$(env_value EINO_LLM_ENABLED "$env_file")")"
+  endpoint="$(env_value EINO_LLM_ENDPOINT "$env_file")"
+  base_url="$(env_value OPENAI_COMPATIBLE_BASE_URL "$env_file")"
+  model="$(env_value EINO_LLM_MODEL "$env_file")"
+  if [ -z "$model" ]; then
+    model="$(env_value OPENAI_COMPATIBLE_MODEL "$env_file")"
+  fi
+  provider="$(lower_text "$(env_value EINO_LLM_PROVIDER "$env_file")")"
+
+  local endpoint_l base_url_l
+  endpoint_l="$(lower_text "$endpoint")"
+  base_url_l="$(lower_text "$base_url")"
+
+  if [ "$demo_mock" != "true" ] \
+    && { printf '%s\n%s\n' "$endpoint_l" "$base_url_l" | grep -q 'deepseek'; } \
+    && [ -n "$model" ]; then
+    printf 'real-deepseek'
+    return 0
+  fi
+
+  if [ "$demo_mock" = "true" ] \
+    && { printf '%s\n' "$endpoint_l" | grep -Eq '127\.0\.0\.1|localhost|mock'; }; then
+    printf 'mock'
+    return 0
+  fi
+
+  if [ "$enabled" = "true" ] && [ "$provider" = "openai_compatible" ]; then
+    if { printf '%s\n%s\n' "$endpoint_l" "$base_url_l" | grep -q 'deepseek'; } && [ -n "$model" ]; then
+      printf 'real-deepseek'
+    elif { printf '%s\n' "$endpoint_l" | grep -Eq '127\.0\.0\.1|localhost|mock'; }; then
+      printf 'mock'
+    else
+      printf 'remote-llm'
+    fi
+    return 0
+  fi
+
+  printf 'deterministic'
+}
+
+agent_env_snapshot() {
+  local pid_file="$APP_HOME/run/agent-go.pid"
+  if [ ! -f "$pid_file" ]; then
+    return 1
+  fi
+  local pid
+  pid="$(cat "$pid_file" 2>/dev/null || echo "")"
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    return 1
+  fi
+  if [ ! -r "/proc/${pid}/environ" ]; then
+    return 1
+  fi
+  tr '\0' '\n' < "/proc/${pid}/environ"
+}
+
 # --- Detect demo mode ---
 DEMO_MODE="deterministic"
-if [ -f "$APP_HOME/run/demo.env" ]; then
-  # Parse env file safely (grep + cut, no source).
-  local_enabled="$(grep '^export EINO_LLM_ENABLED=' "$APP_HOME/run/demo.env" 2>/dev/null | cut -d= -f2 || echo "")"
-  local_provider="$(grep '^export EINO_LLM_PROVIDER=' "$APP_HOME/run/demo.env" 2>/dev/null | cut -d= -f2 || echo "")"
-  if [ "$local_enabled" = "true" ]; then
-    DEMO_MODE="mock"
-  fi
-fi
-if [ "$DEMO_MODE" != "mock" ] && [ "${DEMO_MOCK_LLM:-false}" = "true" ]; then
+MODE_SOURCE="default"
+MODE_ENV_FILE="$(mktemp)"
+trap 'rm -f "$MODE_ENV_FILE"' EXIT
+if agent_env_snapshot > "$MODE_ENV_FILE"; then
+  DEMO_MODE="$(classify_mode_from_env "$MODE_ENV_FILE")"
+  MODE_SOURCE="agent-go process"
+elif [ -f "$APP_HOME/run/demo.env" ]; then
+  DEMO_MODE="$(classify_mode_from_env "$APP_HOME/run/demo.env")"
+  MODE_SOURCE="run/demo.env"
+elif [ "${DEMO_MOCK_LLM:-false}" = "true" ]; then
   DEMO_MODE="mock"
-fi
-if [ "$DEMO_MODE" != "mock" ] && [ -f "$APP_HOME/run/mock-llm.pid" ]; then
-  pid="$(cat "$APP_HOME/run/mock-llm.pid" 2>/dev/null || echo "")"
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    DEMO_MODE="mock"
-  fi
-fi
-if [ "$DEMO_MODE" = "deterministic" ] && [ -n "${OPENAI_COMPATIBLE_API_KEY:-}" ]; then
+  MODE_SOURCE="current shell"
+elif [ -n "${OPENAI_COMPATIBLE_API_KEY:-}" ] || [ -n "${OPENAI_API_KEY:-}" ]; then
   DEMO_MODE="real-deepseek"
+  MODE_SOURCE="current shell"
 fi
 
 printf '== KylinGuard Demo Health Check ==\n\n'
 printf 'Mode: %s\n\n' "$DEMO_MODE"
+printf 'Mode source: %s\n\n' "$MODE_SOURCE"
 
 # --- Basic service health ---
 printf 'Services:\n'
