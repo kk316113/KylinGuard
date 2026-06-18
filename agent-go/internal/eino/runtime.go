@@ -101,7 +101,7 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 			Route:       r.config.Route,
 		})
 		attachRuntimeMetadata(securityReport, r.config.Metadata(nil), r.registry)
-		return agent.AgentRunResponse{
+		resp := agent.AgentRunResponse{
 			Task:           task,
 			Decision:       string(security.DecisionDeny),
 			Summary:        "request denied by intent guard",
@@ -109,7 +109,9 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 			ToolTrace:      []logtrace.ToolTrace{},
 			AuditResult:    audit,
 			ReasoningTrace: rtb.Finish(),
-		}, nil
+		}
+		agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusBlocked)
+		return resp, nil
 	}
 	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
 
@@ -289,7 +291,7 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	rtb.EndSpan(requestSpan.SpanID, "completed")
 	rtb.Finish()
 
-	return agent.AgentRunResponse{
+	resp := agent.AgentRunResponse{
 		Task:           task,
 		Decision:       audit.Decision,
 		Summary:        RuntimeSummary,
@@ -299,7 +301,9 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 		ToolTrace:      traces,
 		AuditResult:    audit,
 		ReasoningTrace: rtb.Trace,
-	}, nil
+	}
+	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
+	return resp, nil
 }
 
 func (r *Runtime) Name() string {
@@ -705,7 +709,7 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 	attachRuntimeMetadata(securityReport, metadata, r.registry)
 	r.attachLLMMetadata(securityReport)
 
-	return agent.AgentRunResponse{
+	resp := agent.AgentRunResponse{
 		Task:      task,
 		Decision:  decision,
 		Summary:   "Eino graph runtime executed agent loop orchestration.",
@@ -720,13 +724,15 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 			}
 			return nil
 		}(),
-		AgentSteps:      stepMaps,
-		FinalAnswer:     loopResp.FinalAnswer,
-		SecurityReport:  securityReport,
-		ToolTrace:       traces,
-		AuditResult:     audit,
-		ReasoningTrace:  rtb.Finish(),
-	}, nil
+		AgentSteps:     stepMaps,
+		FinalAnswer:    loopResp.FinalAnswer,
+		SecurityReport: securityReport,
+		ToolTrace:      traces,
+		AuditResult:    audit,
+		ReasoningTrace: rtb.Finish(),
+	}
+	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
+	return resp, nil
 }
 
 // attachLLMMetadata injects remote LLM execution metadata into the security report.

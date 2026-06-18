@@ -13,6 +13,7 @@ KylinGuard has completed:
 - Stage 16F-lite: Frontend Demo Polish - PASS
 - Stage 17A-UI-0: Frontend Framework / Template Reference Audit - PASS
 - Stage 17A-BE-0: Product Shell Backend API Plan - PASS
+- Stage 17A-1: Product Shell Implementation - IN PROGRESS
 - Real DeepSeek Smoke Test - PASS
 - Real DeepSeek natural-language acceptance on Kylin VM - PASS
 
@@ -143,12 +144,50 @@ Rules recorded in the plan:
 - no real API keys or raw response JSON should be returned or stored;
 - `scene_type` is display and filtering metadata only, not tool routing.
 
+## Stage 17A-1 Product Shell Implementation
+
+Product Shell implementation is in progress:
+
+- Backend implements read-only product shell APIs:
+  - `GET /api/agent/runtime-status`
+  - `GET /api/agent/capabilities`
+  - `GET /api/agent/acceptance-summary`
+- `run-eino` response supports task session fields:
+  - `task_id`
+  - `scene_type`
+  - `scene_summary`
+  - `run_status`
+  - `created_at`
+- Frontend implements an Agent Console shell:
+  - Runtime Status Bar
+  - Task Sidebar
+  - Center Agent Workspace
+  - Right Insight Panel with Steps / Evidence / Audit / Tools / Report tabs
+
+Verification completed on Windows host:
+
+```text
+go test ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+API smoke for runtime-status / capabilities / acceptance-summary - PASS
+```
+
+Pending verification:
+
+```text
+bash -n scripts/linux/check_demo.sh
+bash -n scripts/linux/test_agent_loop_tasks.sh
+```
+
+The Windows host only exposes the WSL stub `bash.exe` and has no installed Linux distribution, so Linux shell syntax checks still need to be rerun on Kylin VM or another host with bash.
+
 ## Current Next Suggested Work
 
 Priority order:
 
-1. Stage 17A-BE-1: implement product shell read-only backend APIs
-2. Stage 17A-FE-1: build frontend product shell from UI/API plans
+1. Rerun Stage 17A-1 Linux shell syntax checks on Kylin VM
+2. If Linux checks pass, mark Stage 17A-1 as PASS and commit implementation
 3. Stage 17B: task history / report export planning
 4. Stage 17: report / PPT / recording / defense script
 5. Stage 18: packaging and final stability

@@ -1,421 +1,581 @@
 <template>
-  <div class="agent-shell">
-    <!-- Header -->
-    <header class="agent-header">
-      <div class="header-left">
-        <span class="header-brand">KylinGuard 麒盾</span>
-        <span class="header-tagline">安全智能运维 Agent</span>
+  <div class="kg-shell">
+    <header class="runtime-bar">
+      <div class="brand-block">
+        <div class="brand-mark">KG</div>
+        <div>
+          <div class="brand-title">KylinGuard Agent Console</div>
+          <div class="brand-subtitle">Secure Kylin OS operations workspace</div>
+        </div>
       </div>
-      <div class="header-right">
-        <a-switch v-model="demoMode" size="small" style="margin-right:4px">
-          <template #checked>演示</template>
-          <template #unchecked>演示</template>
-        </a-switch>
-        <a-tag :color="healthOk ? 'green' : 'red'" size="small">{{ healthOk ? 'Agent OK' : 'Offline' }}</a-tag>
-        <a-segmented v-model="runtimeMode" :options="runtimeOpts" size="small" />
-        <a-button size="mini" shape="round" @click="newSession">新会话</a-button>
-        <a-button size="mini" shape="round" @click="$emit('back')">← 控制台</a-button>
+      <div class="runtime-metrics">
+        <a-tag :color="serviceColor(runtimeStatus?.services.go_agent.status)" size="small">
+          Go Agent {{ runtimeStatus?.services.go_agent.status || 'unknown' }}
+        </a-tag>
+        <a-tag :color="serviceColor(runtimeStatus?.services.audit_core.status)" size="small">
+          audit-core {{ runtimeStatus?.services.audit_core.status || 'unknown' }}
+        </a-tag>
+        <a-tag :color="runtimeModeColor" size="small">{{ runtimeModeLabel }}</a-tag>
+        <a-tag v-if="runtimeStatus?.runtime.model" color="blue" size="small">{{ runtimeStatus.runtime.model }}</a-tag>
+        <a-tag v-for="layer in securityLayerTags" :key="layer.name" color="green" size="small">
+          {{ layer.name }} {{ layer.status }}
+        </a-tag>
       </div>
     </header>
 
-    <!-- Chat Area -->
-    <div class="chat-scroll" ref="scrollRef">
-      <div class="chat-container">
-        <!-- Empty state with real-user prompts -->
-        <div v-if="messages.length === 0" class="empty-state">
-          <div class="empty-title">有什么运维问题需要我帮忙排查？</div>
-          <div class="empty-subtitle">描述你遇到的情况，我会通过安全受控的工具链进行诊断，并给出排查结论。</div>
-          <div class="agent-suggestions">
-            <a-tag v-for="p in promptSuggestions" :key="p" checkable class="sugg-chip" @click="applySuggestion(p)">
-              {{ p }}
-            </a-tag>
+    <main class="workspace">
+      <aside class="task-sidebar">
+        <section class="sidebar-section">
+          <button class="new-task-btn" @click="newSession">+ New Task</button>
+          <div class="mode-card">
+            <span class="section-label">Runtime</span>
+            <strong>{{ runtimeModeLabel }}</strong>
+            <span>{{ runtimeStatus?.runtime.chat_model || 'waiting for status' }}</span>
           </div>
-          <DemoGuideNote v-if="demoMode" :show="true" :items="demoItems" />
+        </section>
+
+        <section class="sidebar-section">
+          <div class="section-title">Suggested Ops Prompts</div>
+          <button v-for="prompt in promptSuggestions" :key="prompt" class="prompt-item" @click="applySuggestion(prompt)">
+            {{ prompt }}
+          </button>
+        </section>
+
+        <section class="sidebar-section">
+          <div class="section-title">Recent Runs</div>
+          <div v-if="recentRuns.length === 0" class="empty-note">No task session yet.</div>
+          <button v-for="run in recentRuns" :key="run.id" class="recent-item" @click="showRun(run.response)">
+            <span>{{ run.title }}</span>
+            <a-tag :color="decisionColor(run.decision)" size="small">{{ run.decision }}</a-tag>
+          </button>
+        </section>
+
+        <section class="sidebar-section">
+          <div class="section-title">Acceptance</div>
+          <div class="acceptance-line">
+            <strong>{{ passedStages }}</strong>
+            <span>verified stages</span>
+          </div>
+          <div v-if="acceptanceSummary?.stages?.length" class="stage-list">
+            <span v-for="stage in acceptanceSummary.stages.slice(0, 5)" :key="stage.name">{{ stage.name }}</span>
+          </div>
+        </section>
+      </aside>
+
+      <section class="agent-workspace">
+        <div class="workspace-head">
+          <div>
+            <div class="workspace-title">Operations Task Session</div>
+            <div class="workspace-subtitle">Type any real operations problem. Prompts are text only, not scenario IDs.</div>
+          </div>
+          <a-segmented v-model="runtimeMode" :options="runtimeOpts" size="small" />
         </div>
 
-        <!-- Messages -->
-        <div v-for="(msg, i) in messages" :key="i" :class="['msg-row', msg.role]">
-          <div v-if="msg.role === 'user'" class="msg user-msg">
-            <div class="msg-text">{{ msg.content }}</div>
-            <div class="msg-meta">{{ msg.sub }}</div>
+        <div ref="scrollRef" class="chat-scroll">
+          <div v-if="messages.length === 0" class="empty-state">
+            <h2>What should KylinGuard diagnose?</h2>
+            <p>The Agent Loop chooses safe next actions, executes controlled tools, and returns a final answer with evidence.</p>
           </div>
 
-          <div v-else-if="msg.role === 'assistant'" class="msg assistant-msg">
-            <div v-if="msg.runtimeBadge" class="runtime-line">
-              <a-tag :color="msg.runtimeBadge.color" size="small">{{ msg.runtimeBadge.label }}</a-tag>
-              <a-tag v-if="msg.runtimeBadge.chatModel" color="gray" size="small">{{ msg.runtimeBadge.chatModel }}</a-tag>
+          <div v-for="(msg, i) in messages" :key="i" :class="['msg-row', msg.role]">
+            <div v-if="msg.role === 'user'" class="msg user-msg">
+              <div class="msg-text">{{ msg.content }}</div>
+              <div class="msg-meta">{{ msg.sub }}</div>
             </div>
-            <div class="msg-text" v-html="msg.content"></div>
-            <DecisionCard v-if="msg.decision" v-bind="msg.decision" />
 
-            <!-- Agent steps -->
-            <div v-if="msg.agentSteps && msg.agentSteps.length > 0" class="agent-step-list">
-              <div class="step-section-title">Agent 执行步骤</div>
-              <div v-for="(step, si) in msg.agentSteps" :key="si" class="step-card">
-                <div class="step-header">
-                  <span class="step-num">#{{ step.step_index || si + 1 }}</span>
-                  <strong class="step-tool">{{ step.tool_name || step.action_type || 'agent_step' }}</strong>
-                  <a-tag v-if="step.policy_decision" :color="policyColor(step.policy_decision)" size="small">{{ step.policy_decision }}</a-tag>
+            <div v-else-if="msg.role === 'assistant'" class="msg assistant-msg">
+              <div v-if="msg.session" class="session-strip">
+                <span>Task {{ msg.session.taskId || 'kg-pending' }}</span>
+                <span>{{ sceneLabel(msg.session.sceneType) }}</span>
+                <span>{{ msg.session.runStatus || 'completed' }}</span>
+                <span>{{ msg.runtimeBadge?.label || 'Agent Runtime' }}</span>
+              </div>
+              <div v-if="msg.runtimeBadge" class="runtime-line">
+                <a-tag :color="msg.runtimeBadge.color" size="small">{{ msg.runtimeBadge.label }}</a-tag>
+                <a-tag v-if="msg.runtimeBadge.chatModel" color="gray" size="small">{{ msg.runtimeBadge.chatModel }}</a-tag>
+              </div>
+              <div class="msg-text">{{ msg.content }}</div>
+              <div v-if="msg.resultSummary" class="result-strip">
+                <span>Steps {{ msg.resultSummary.agentSteps }}</span>
+                <span>Evidence {{ msg.resultSummary.toolTrace }}</span>
+                <span>Decision {{ msg.resultSummary.decision }}</span>
+                <span>Report {{ msg.resultSummary.auditReady ? 'ready' : 'pending' }}</span>
+              </div>
+              <DecisionCard v-if="msg.decision" v-bind="msg.decision" />
+
+              <div v-if="msg.agentSteps && msg.agentSteps.length > 0" class="step-timeline">
+                <div class="panel-title">Agent execution timeline</div>
+                <div v-for="(step, si) in msg.agentSteps" :key="si" class="step-card">
+                  <div class="step-header">
+                    <span class="step-num">#{{ step.step_index || si + 1 }}</span>
+                    <strong>{{ step.tool_name || step.action_type || 'agent_step' }}</strong>
+                    <a-tag v-if="step.policy_decision" :color="decisionColor(step.policy_decision)" size="small">
+                      {{ step.policy_decision }}
+                    </a-tag>
+                  </div>
+                  <div v-if="step.user_visible_summary || step.reason" class="step-summary">
+                    {{ step.user_visible_summary || step.reason }}
+                  </div>
+                  <div v-if="observationSummary(step)" class="step-observation">
+                    Observation: {{ observationSummary(step) }}
+                  </div>
+                  <div class="step-semantic">
+                    <span v-if="step.operation_type">operation={{ step.operation_type }}</span>
+                    <span v-if="step.resource_type">resource={{ step.resource_type }}</span>
+                    <span v-if="step.boundary_level">boundary={{ step.boundary_level }}</span>
+                  </div>
                 </div>
-                <div v-if="step.user_visible_summary || step.reason" class="step-summary">{{ step.user_visible_summary || step.reason }}</div>
-                <div v-if="observationSummary(step)" class="step-obs">
-                  <span class="obs-label">Observation:</span>
-                  <span class="obs-text">{{ observationSummary(step) }}</span>
-                </div>
-                <div v-if="step.operation_type || step.resource_type || step.boundary_level || step.resource_path" class="step-semantic">
-                  <span v-if="step.operation_type">operation={{ step.operation_type }}</span>
-                  <span v-if="step.resource_type">resource={{ step.resource_type }}</span>
-                  <span v-if="step.boundary_level">boundary={{ step.boundary_level }}</span>
-                  <span v-if="step.resource_path">path={{ step.resource_path }}</span>
-                </div>
-                <div v-if="step.policy_reason" class="step-policy-reason">{{ step.policy_reason }}</div>
+              </div>
+
+              <a-button v-if="msg.hasInspector" size="mini" type="outline" @click="openInspector">Open Inspector</a-button>
+            </div>
+
+            <div v-else-if="msg.role === 'error'" class="msg error-msg">
+              <a-alert type="error" :title="msg.content" :closable="false" />
+            </div>
+          </div>
+
+          <div v-if="running" class="msg-row assistant">
+            <div class="msg assistant-msg">
+              <AgentRunningNarrative :step="runStep" />
+            </div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <a-textarea
+            v-model="taskInput"
+            :auto-size="{ minRows: 1, maxRows: 4 }"
+            placeholder="Describe a Kylin operations problem..."
+            @keydown.enter.prevent="send"
+          />
+          <a-button type="primary" :loading="running" @click="send">Send</a-button>
+        </div>
+      </section>
+
+      <aside class="insight-panel">
+        <div class="insight-head">
+          <strong>Insight Panel</strong>
+          <a-button size="mini" type="outline" @click="$emit('back')">Classic Console</a-button>
+        </div>
+        <a-tabs v-model:active-key="activeInsightTab" size="small">
+          <a-tab-pane key="steps" title="Steps">
+            <div v-if="lastResponse?.agent_steps?.length" class="insight-list">
+              <div v-for="(step, idx) in lastResponse.agent_steps" :key="idx" class="insight-card">
+                <strong>#{{ step.step_index || idx + 1 }} {{ step.tool_name || step.action_type }}</strong>
+                <span>{{ step.user_visible_summary || step.reason || observationSummary(step) }}</span>
               </div>
             </div>
+            <a-empty v-else description="No agent steps yet" />
+          </a-tab-pane>
 
-            <ExecutionAccordion v-if="msg.traces" :traces="msg.traces" :plan="msg.plan"
-              :recommendations="msg.recommendations" :evidence-items="msg.evidenceItems" />
-            <DemoGuideNote v-if="demoMode && msg.demoItems" :show="true" :items="msg.demoItems" />
-            <FollowUpSuggestions v-if="msg.followUps" :decision="msg.followUps.decision"
-              :scenario="msg.followUps.scenario" :task="msg.followUps.task"
-              :has-evidence="msg.followUps.hasEvidence" @pick="(s) => handleFollowUp(s, i)" />
-            <a-button v-if="msg.hasInspector" size="mini" type="outline"
-              @click="openInspector(i)" style="margin-top:8px">打开 Inspector</a-button>
-          </div>
+          <a-tab-pane key="evidence" title="Evidence">
+            <div v-if="lastResponse?.tool_trace?.length" class="insight-list">
+              <div v-for="trace in lastResponse.tool_trace" :key="trace.step_id" class="insight-card">
+                <strong>{{ trace.tool_name }}</strong>
+                <span>{{ trace.output_summary }}</span>
+                <small>{{ trace.operation_type }} / {{ trace.resource_type }} / {{ trace.boundary_level }}</small>
+              </div>
+            </div>
+            <a-empty v-else description="No tool evidence yet" />
+          </a-tab-pane>
 
-          <div v-else-if="msg.role === 'error'" class="msg error-msg">
-            <a-alert type="error" :title="msg.content" :closable="false" />
-          </div>
+          <a-tab-pane key="audit" title="Audit">
+            <div v-if="lastResponse" class="audit-summary">
+              <a-descriptions :data="auditFields" :column="1" size="mini" layout="inline-horizontal" />
+            </div>
+            <a-empty v-else description="No audit result yet" />
+          </a-tab-pane>
 
-          <div v-else-if="msg.role === 'system'" class="msg system-msg">
-            <a-alert type="info" :title="msg.content" :closable="false" show-icon />
-          </div>
+          <a-tab-pane key="tools" title="Tools">
+            <div v-if="capabilities?.available_tools?.length" class="tool-list">
+              <div v-for="tool in capabilities.available_tools" :key="tool.tool_name" class="tool-row">
+                <strong>{{ tool.tool_name }}</strong>
+                <span>{{ tool.operation_type }} / {{ tool.resource_type }} / {{ tool.boundary_level }}</span>
+              </div>
+            </div>
+            <a-empty v-else description="Capabilities unavailable" />
+          </a-tab-pane>
 
-          <div v-else-if="msg.role === 'explain'" class="msg explain-msg">
-            <a-alert type="warning" :title="msg.content" :closable="false" show-icon />
-          </div>
-        </div>
+          <a-tab-pane key="report" title="Report">
+            <div v-if="lastResponse" class="report-card">
+              <a-descriptions :data="reportFields" :column="1" size="mini" layout="inline-horizontal" />
+              <div class="report-answer">{{ shortText(lastResponse.final_answer || lastResponse.summary || '') }}</div>
+            </div>
+            <a-empty v-else description="Run a task to create report summary" />
+          </a-tab-pane>
+        </a-tabs>
+      </aside>
+    </main>
 
-        <!-- Running narrative -->
-        <div v-if="running && runStep >= 0" class="msg-row assistant">
-          <div class="msg assistant-msg">
-            <AgentRunningNarrative :step="runStep" />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Composer -->
-    <div class="composer">
-      <div class="composer-inner">
-        <a-textarea v-model="taskInput" :auto-size="{ minRows: 1, maxRows: 4 }"
-          placeholder="输入安全运维任务…" @keydown.enter.prevent="send" />
-        <a-button type="primary" :loading="running" @click="send" style="margin-left:8px;flex-shrink:0">发送</a-button>
-      </div>
-    </div>
-
-    <!-- Inspector Drawer -->
-    <InspectorDrawer :visible="inspectorVisible" :resp="inspectorResp" :initial-tab="inspectorTab"
-      @close="inspectorVisible = false" />
+    <InspectorDrawer
+      :visible="inspectorVisible"
+      :resp="inspectorResp"
+      :initial-tab="inspectorTab"
+      @close="inspectorVisible = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
-import { runAgent, runAgentEino } from '../api/agent'
-import type { AgentRunResponse, ToolTraceItem, Plan, RecommendationItem, EvidenceItem, AgentStep } from '../types/agent'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import {
+  getAcceptanceSummary,
+  getAgentCapabilities,
+  getRuntimeStatus,
+  runAgent,
+  runAgentEino
+} from '../api/agent'
+import type {
+  AcceptanceSummaryResponse,
+  AgentCapabilitiesResponse,
+  AgentRunResponse,
+  AgentStep,
+  Decision,
+  RuntimeStatusResponse
+} from '../types/agent'
 import DecisionCard from '../components/agent/DecisionCard.vue'
-import ExecutionAccordion from '../components/agent/ExecutionAccordion.vue'
 import InspectorDrawer from '../components/agent/InspectorDrawer.vue'
 import AgentRunningNarrative from '../components/agent/AgentRunningNarrative.vue'
-import FollowUpSuggestions from '../components/agent/FollowUpSuggestions.vue'
-import type { FollowUpItem } from '../components/agent/FollowUpSuggestions.vue'
-import DemoGuideNote from '../components/agent/DemoGuideNote.vue'
 
 defineEmits<{ back: [] }>()
 
-// --- state ---
-const runtimeMode = ref<'stable' | 'eino'>('stable')
+const runtimeMode = ref<'stable' | 'eino'>('eino')
 const runtimeOpts = [
   { label: 'Stable', value: 'stable' },
-  { label: 'Eino', value: 'eino' },
+  { label: 'Eino Agent Loop', value: 'eino' }
 ]
-const healthOk = ref(true)
-const demoMode = ref(false)
 const taskInput = ref('')
 const running = ref(false)
-const runStep = ref(-1)
+const runStep = ref(0)
 const scrollRef = ref<HTMLElement | null>(null)
-
-const demoItems = [
-  'intent_guard 安全意图校验',
-  'Rule-based / Deterministic Planner',
-  'MCP-like Tool Registry',
-  'Tool Policy 参数安全校验',
-  'Least-Privilege Execution Proxy',
-  'TraceShield 工具链审计',
-  'Decision Normalizer',
-  '推理链路 (Reasoning Trace)',
-]
-
-// --- Chat messages ---
-const promptSuggestions = [
-  '我 SSH 连不上了，帮我排查',
-  '这台机器很卡，帮我看看原因',
-  '我的服务访问不了，帮我检查端口和服务',
-  '帮我看看系统有没有明显异常',
-  '有人让我清空审计日志，这样安全吗？',
-]
-
-interface ChatMessage {
-  role: 'user' | 'assistant' | 'error' | 'system' | 'explain'
-  content: string
-  sub?: string
-  decision?: any
-  traces?: ToolTraceItem[]
-  plan?: Plan | null
-  recommendations?: RecommendationItem[]
-  evidenceItems?: EvidenceItem[]
-  hasInspector?: boolean
-  followUps?: { decision: string; scenario: string; task: string; hasEvidence: boolean }
-  demoItems?: string[]
-  agentSteps?: AgentStep[]
-  finalAnswer?: string
-  runtimeBadge?: { label: string; color: string; chatModel: string }
-}
-
-const messages = ref<ChatMessage[]>([])
-
-function applySuggestion(text: string) {
-  taskInput.value = text
-  runtimeMode.value = 'eino'
-  send()
-}
-
-// --- Inspector ---
 const inspectorVisible = ref(false)
 const inspectorResp = ref<AgentRunResponse | null>(null)
 const inspectorTab = ref('overview')
 const lastResponse = ref<AgentRunResponse | null>(null)
+const runtimeStatus = ref<RuntimeStatusResponse | null>(null)
+const capabilities = ref<AgentCapabilitiesResponse | null>(null)
+const acceptanceSummary = ref<AcceptanceSummaryResponse | null>(null)
+const activeInsightTab = ref('steps')
+const recentRuns = ref<Array<{ id: string; title: string; decision: string; response: AgentRunResponse }>>([])
 
-// --- Session ---
+const promptSuggestions = [
+  '我 SSH 连不上了，帮我看看',
+  '这台机器突然很卡，帮我定位瓶颈',
+  '我的 Web 服务访问不了，帮我检查服务和端口',
+  '有人让我清空审计日志，这样做安全吗？',
+  '帮我快速检查这台机器有没有明显异常'
+]
+
+interface ChatMessage {
+  role: 'user' | 'assistant' | 'error'
+  content: string
+  sub?: string
+  decision?: {
+    decision: Decision
+    risk?: string
+    scenario?: string
+    auditMethod?: string
+    route?: string
+    chatModel?: string
+    summary?: boolean
+  }
+  hasInspector?: boolean
+  agentSteps?: AgentStep[]
+  runtimeBadge?: { label: string; color: string; chatModel: string }
+  session?: { taskId: string; sceneType: string; runStatus: string; createdAt: string }
+  resultSummary?: { agentSteps: number; toolTrace: number; decision: string; auditReady: boolean }
+}
+
+const messages = ref<ChatMessage[]>([])
+
+onMounted(() => {
+  void refreshShellData()
+})
+
+const runtimeModeLabel = computed(() => {
+  const mode = runtimeStatus.value?.runtime.current_mode
+  if (mode === 'real-deepseek') return 'Real DeepSeek Agent Loop'
+  if (mode === 'mock-llm') return 'Mock Agent Loop'
+  if (mode === 'deterministic-baseline') return 'Deterministic Baseline'
+  if (mode === 'remote-llm') return 'Remote LLM Agent Loop'
+  return 'Agent Runtime'
+})
+
+const runtimeModeColor = computed(() => {
+  const mode = runtimeStatus.value?.runtime.current_mode
+  if (mode === 'real-deepseek') return 'green'
+  if (mode === 'mock-llm') return 'orange'
+  if (mode === 'deterministic-baseline') return 'gray'
+  return 'blue'
+})
+
+const securityLayerTags = computed(() => {
+  const layers = runtimeStatus.value?.security_layers || {}
+  return Object.entries(layers).map(([name, status]) => ({ name, status }))
+})
+
+const passedStages = computed(() => {
+  return acceptanceSummary.value?.stages.filter((stage) => stage.status === 'PASS').length || 0
+})
+
+const auditFields = computed(() => {
+  if (!lastResponse.value) return []
+  const resp = lastResponse.value
+  return [
+    { label: 'Decision', value: resp.decision },
+    { label: 'Audit method', value: resp.audit_result?.method || '-' },
+    { label: 'Risk level', value: resp.security_report?.risk_level || '-' },
+    { label: 'Evidence', value: String(resp.security_report?.evidence_chain?.length || 0) },
+    { label: 'Recommendations', value: String(resp.security_report?.recommendations?.length || 0) }
+  ]
+})
+
+const reportFields = computed(() => {
+  if (!lastResponse.value) return []
+  const resp = lastResponse.value
+  return [
+    { label: 'Task ID', value: resp.task_id || '-' },
+    { label: 'Scene', value: sceneLabel(resp.scene_type || 'unknown') },
+    { label: 'Status', value: resp.run_status || '-' },
+    { label: 'Created', value: resp.created_at || '-' },
+    { label: 'Tool steps', value: String(resp.agent_steps?.length || 0) },
+    { label: 'Tool evidence', value: String(resp.tool_trace?.length || 0) },
+    { label: 'Decision', value: resp.decision }
+  ]
+})
+
+async function refreshShellData() {
+  const requests = [
+    getRuntimeStatus().then((value) => { runtimeStatus.value = value }).catch(() => { runtimeStatus.value = null }),
+    getAgentCapabilities().then((value) => { capabilities.value = value }).catch(() => { capabilities.value = null }),
+    getAcceptanceSummary().then((value) => { acceptanceSummary.value = value }).catch(() => { acceptanceSummary.value = null })
+  ]
+  await Promise.all(requests)
+}
+
+function applySuggestion(text: string) {
+  taskInput.value = text
+  runtimeMode.value = 'eino'
+  void send()
+}
+
 function newSession() {
   messages.value = []
   taskInput.value = ''
   running.value = false
-  runStep.value = -1
+  runStep.value = 0
   inspectorVisible.value = false
   inspectorResp.value = null
   lastResponse.value = null
 }
 
-// --- Send ---
 async function send() {
   const task = taskInput.value.trim()
   if (!task || running.value) return
 
-  messages.value.push({ role: 'user', content: task, sub: 'via ' + runtimeMode.value })
+  messages.value.push({ role: 'user', content: task, sub: `via ${runtimeMode.value}` })
   taskInput.value = ''
   running.value = true
   runStep.value = 0
 
-  const stepTimer = setInterval(() => {
-    if (runStep.value < 4) runStep.value++
+  const stepTimer = window.setInterval(() => {
+    if (runStep.value < 4) runStep.value += 1
   }, 700)
 
   try {
     const resp = runtimeMode.value === 'eino' ? await runAgentEino(task) : await runAgent(task)
-    clearInterval(stepTimer)
-    runStep.value = 4
+    window.clearInterval(stepTimer)
     lastResponse.value = resp
+    inspectorResp.value = resp
 
-    const dec = resp.decision || 'unknown'
-    const tools = resp.tool_trace ?? []
-    const evidence = resp.security_report?.evidence_chain ?? []
-    const recs = resp.security_report?.recommendations ?? []
-    const steps = resp.agent_steps ?? []
-    const finalAnswer = resp.final_answer || resp.summary || '未返回最终回答'
     const runtimeBadge = runtimeBadgeFromResponse(resp)
-
-    // Assistant main message always prefers the natural-language final answer.
-    const summary = finalAnswer
-
     const meta = resp.security_report?.audit_metadata || {}
-
-    const msgDemoItems: string[] = []
-    if (demoMode.value) {
-      msgDemoItems.push('intent_guard', 'Planner', 'Tool Registry', 'Tool Policy')
-      if (tools.some((t: any) => t.execution_context)) msgDemoItems.push('Exec Proxy')
-      msgDemoItems.push('TraceShield audit', 'Decision Normalizer', 'Reasoning Trace')
-    }
+    const finalAnswer = resp.final_answer || resp.summary || 'No final answer returned.'
+    const decision = resp.decision || 'unknown'
+    const steps = resp.agent_steps || []
+    const traces = resp.tool_trace || []
 
     messages.value.push({
       role: 'assistant',
-      content: summary,
+      content: finalAnswer,
       decision: {
-        decision: dec,
+        decision,
         risk: resp.security_report?.risk_level || '',
-        scenario: resp.plan?.scenario || '',
+        scenario: resp.scene_type || resp.plan?.scenario || '',
         auditMethod: resp.audit_result?.method || '',
-        route: meta.route || '',
+        route: String(meta.route || ''),
         chatModel: runtimeBadge.chatModel,
-        summary: true,
+        summary: true
       },
-      traces: tools,
-      plan: resp.plan,
-      recommendations: recs,
-      evidenceItems: evidence,
       hasInspector: true,
-      demoItems: msgDemoItems.length ? msgDemoItems : undefined,
-      followUps: { decision: dec, scenario: resp.plan?.scenario || '', task, hasEvidence: evidence.length > 0 },
       agentSteps: steps,
-      finalAnswer: finalAnswer,
       runtimeBadge,
+      session: {
+        taskId: resp.task_id || '',
+        sceneType: resp.scene_type || 'unknown',
+        runStatus: resp.run_status || 'completed',
+        createdAt: resp.created_at || ''
+      },
+      resultSummary: {
+        agentSteps: steps.length,
+        toolTrace: traces.length,
+        decision,
+        auditReady: Boolean(resp.security_report || resp.audit_result)
+      }
     })
 
-    inspectorResp.value = resp
-  } catch (err: any) {
-    clearInterval(stepTimer)
-    messages.value.push({ role: 'error', content: '请求失败: ' + (err.message || '未知错误') })
+    recentRuns.value.unshift({
+      id: resp.task_id || String(Date.now()),
+      title: shortText(resp.scene_summary || resp.task || task, 34),
+      decision,
+      response: resp
+    })
+    recentRuns.value = recentRuns.value.slice(0, 6)
+    await refreshShellData()
+  } catch (err) {
+    window.clearInterval(stepTimer)
+    messages.value.push({ role: 'error', content: err instanceof Error ? err.message : 'Agent request failed' })
   } finally {
     running.value = false
-    runStep.value = -1
+    runStep.value = 0
     await nextTick()
     if (scrollRef.value) scrollRef.value.scrollTop = scrollRef.value.scrollHeight
   }
 }
 
-// --- Follow up ---
-function handleFollowUp(s: FollowUpItem, msgIndex: number) {
-  if (s.action === 'open-tab') {
-    const tabMap: Record<string, string> = { evidence: 'evidence', trace: 'trace', overview: 'overview' }
-    inspectorTab.value = tabMap[s.payload || ''] || 'overview'
-    inspectorVisible.value = true
-  } else if (s.action === 'retry') {
-    const targetMsg = messages.value[msgIndex]
-    if (targetMsg?.role === 'assistant') {
-      runtimeMode.value = (s.payload as 'stable' | 'eino') || 'stable'
-      // Extract the original task from the user message before this assistant msg.
-      for (let i = msgIndex - 1; i >= 0; i--) {
-        if (messages.value[i]?.role === 'user') {
-          taskInput.value = messages.value[i].content
-          break
-        }
-      }
-      send()
-    }
-  } else if (s.action === 'fill-task') {
-    if (s.payload) {
-      taskInput.value = s.payload
-      // If it's a "why" question, show explanation instead of sending.
-      if (s.payload.startsWith('why ')) {
-        const explanations: Record<string, string> = {
-          'why was this task denied': '任务被拦截是因为它匹配了危险关键词规则（delete audit logs / clear system logs），intent_guard 在工具执行前完成阻断。',
-          'why is the result review required': '结果标记为 review 是因为任务访问了敏感系统资源（如认证日志、系统日志），需要人工关注。',
-          'why was this task allowed': '任务被允许是因为它仅涉及低风险只读信息采集（如 os_info、process_inspector），所有安全检查均已通过。',
-        }
-        const explanation = explanations[s.payload] || '已收到你的问题。'
-        messages.value.push({ role: 'explain', content: explanation })
-        nextTick().then(() => {
-          if (scrollRef.value) scrollRef.value.scrollTop = scrollRef.value.scrollHeight
-        })
-      } else {
-        send()
-      }
-    }
-  }
+function showRun(resp: AgentRunResponse) {
+  lastResponse.value = resp
+  inspectorResp.value = resp
 }
 
-// --- Inspector ---
-function openInspector(msgIndex: number) {
+function openInspector() {
   inspectorTab.value = 'overview'
   inspectorVisible.value = true
 }
+
 function runtimeBadgeFromResponse(resp: AgentRunResponse) {
   const chatModel = String(
     resp.security_report?.audit_metadata?.chat_model ||
     resp.audit_result?.audit_metadata?.chat_model ||
     resp.chat_model ||
+    runtimeStatus.value?.runtime.chat_model ||
     ''
   )
-
-  if (chatModel === 'remote-llm-deepseek-openai_compatible') {
-    return { label: 'Real DeepSeek Agent Loop', color: 'green', chatModel }
-  }
-  if (chatModel === 'remote-llm-mock-openai_compatible') {
-    return { label: 'Mock Agent Loop', color: 'orange', chatModel }
-  }
-  if (chatModel === 'deterministic-stub') {
-    return { label: 'Deterministic Baseline', color: 'gray', chatModel }
-  }
-  if (chatModel.startsWith('remote-llm-')) {
-    return { label: 'Remote LLM Agent Loop', color: 'blue', chatModel }
-  }
+  if (chatModel === 'remote-llm-deepseek-openai_compatible') return { label: 'Real DeepSeek Agent Loop', color: 'green', chatModel }
+  if (chatModel === 'remote-llm-mock-openai_compatible') return { label: 'Mock Agent Loop', color: 'orange', chatModel }
+  if (chatModel === 'deterministic-stub') return { label: 'Deterministic Baseline', color: 'gray', chatModel }
+  if (chatModel.startsWith('remote-llm-')) return { label: 'Remote LLM Agent Loop', color: 'blue', chatModel }
   return { label: 'Agent Runtime', color: 'gray', chatModel }
 }
 
-function policyColor(policy: string) {
-  const normalized = policy.toLowerCase()
-  if (normalized === 'allow' || normalized === 'allowed') return 'green'
-  if (normalized === 'review') return 'orange'
-  if (normalized === 'deny' || normalized === 'denied') return 'red'
+function serviceColor(status?: string) {
+  if (status === 'ok') return 'green'
+  if (status === 'unreachable' || status === 'error') return 'red'
   return 'gray'
+}
+
+function decisionColor(decision?: string) {
+  if (decision === 'allow' || decision === 'allowed') return 'green'
+  if (decision === 'review') return 'orange'
+  if (decision === 'deny' || decision === 'denied') return 'red'
+  return 'gray'
+}
+
+function sceneLabel(sceneType: string) {
+  switch (sceneType) {
+    case 'diagnosis': return 'Diagnosis'
+    case 'security_check': return 'Security Check'
+    case 'service_recovery': return 'Service Recovery'
+    case 'system_health': return 'System Health'
+    case 'compliance_review': return 'Compliance Review'
+    default: return 'Unclassified'
+  }
 }
 
 function observationSummary(step: AgentStep) {
   const observation = step.observation || {}
   const summary = observation.summary || observation.output_summary || observation.message || observation.result || observation.status
   if (summary == null) return ''
-  if (typeof summary === 'string') return summary
-  return JSON.stringify(summary)
+  if (typeof summary === 'string') return shortText(summary, 160)
+  return shortText(JSON.stringify(summary), 160)
 }
 
+function shortText(text: string, max = 180) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
+  if (normalized.length <= max) return normalized
+  return `${normalized.slice(0, max)}...`
+}
 </script>
 
 <style scoped>
-.agent-shell { display: flex; flex-direction: column; height: 100vh; background: #fff; }
-.agent-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px; border-bottom: 1px solid #e5e6eb; background: #f7f8fa; flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-.header-left { display: flex; align-items: center; gap: 10px; }
-.header-brand { font-size: 20px; font-weight: 700; color: #1d2129; letter-spacing: 0.3px; }
-.header-tagline { font-size: 14px; color: #4e5969; font-weight: 500; }
-.header-right { display: flex; align-items: center; gap: 10px; }
+.kg-shell { height: 100vh; display: flex; flex-direction: column; background: #f2f3f5; color: #1d2129; }
+.runtime-bar { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; background: #fff; border-bottom: 1px solid #e5e6eb; flex-shrink: 0; }
+.brand-block { display: flex; align-items: center; gap: 10px; min-width: 280px; }
+.brand-mark { width: 32px; height: 32px; border-radius: 8px; background: #165dff; color: #fff; display: grid; place-items: center; font-weight: 800; }
+.brand-title { font-size: 15px; font-weight: 700; line-height: 1.2; }
+.brand-subtitle { font-size: 12px; color: #86909c; }
+.runtime-metrics { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
 
-.chat-scroll { flex: 1; overflow-y: auto; background: #fff; }
-.chat-container { max-width: 760px; margin: 0 auto; padding: 16px 16px 12px; }
+.workspace { min-height: 0; flex: 1; display: grid; grid-template-columns: 252px minmax(420px, 1fr) 360px; gap: 12px; padding: 12px; }
+.task-sidebar, .agent-workspace, .insight-panel { min-height: 0; background: #fff; border: 1px solid #e5e6eb; border-radius: 8px; }
+.task-sidebar { padding: 12px; overflow: auto; }
+.sidebar-section { margin-bottom: 18px; }
+.section-title, .section-label { font-size: 12px; font-weight: 700; color: #4e5969; text-transform: uppercase; margin-bottom: 8px; display: block; }
+.new-task-btn { width: 100%; border: 0; border-radius: 6px; padding: 10px 12px; background: #165dff; color: #fff; font-weight: 700; cursor: pointer; }
+.mode-card { margin-top: 10px; padding: 10px; border-radius: 6px; background: #f7f8fa; display: grid; gap: 4px; font-size: 12px; color: #4e5969; }
+.mode-card strong { color: #1d2129; }
+.prompt-item, .recent-item { width: 100%; border: 1px solid #e5e6eb; border-radius: 6px; background: #fff; padding: 9px 10px; margin-bottom: 8px; text-align: left; cursor: pointer; color: #1d2129; line-height: 1.45; }
+.prompt-item:hover, .recent-item:hover { border-color: #165dff; background: #f2f7ff; }
+.recent-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.empty-note { font-size: 12px; color: #86909c; padding: 8px 0; }
+.acceptance-line { display: flex; align-items: baseline; gap: 6px; color: #4e5969; }
+.acceptance-line strong { font-size: 22px; color: #165dff; }
+.stage-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; font-size: 11px; color: #86909c; }
+.stage-list span { background: #f7f8fa; padding: 3px 6px; border-radius: 4px; }
 
-.empty-state { text-align: center; padding: 48px 20px 32px; }
-.empty-title { font-size: 32px; font-weight: 700; color: #1d2129; margin-bottom: 12px; }
-.empty-subtitle { font-size: 16px; color: #4e5969; max-width: 520px; margin: 0 auto 28px; line-height: 1.6; }
-
-.msg-row { margin-bottom: 18px; }
+.agent-workspace { display: flex; flex-direction: column; }
+.workspace-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #e5e6eb; }
+.workspace-title { font-size: 16px; font-weight: 700; }
+.workspace-subtitle { font-size: 12px; color: #86909c; margin-top: 3px; }
+.chat-scroll { flex: 1; min-height: 0; overflow: auto; padding: 18px; background: #fff; }
+.empty-state { max-width: 520px; margin: 80px auto; text-align: center; color: #4e5969; }
+.empty-state h2 { color: #1d2129; margin-bottom: 8px; font-size: 24px; }
+.msg-row { margin-bottom: 16px; }
 .msg-row.user { display: flex; justify-content: flex-end; }
-.msg { max-width: 680px; }
+.msg { max-width: 760px; }
+.user-msg .msg-text { background: #e8f3ff; padding: 11px 16px; border-radius: 16px 16px 4px 16px; font-size: 14px; line-height: 1.55; }
+.user-msg .msg-meta { font-size: 11px; color: #86909c; margin-top: 4px; text-align: right; }
+.assistant-msg .msg-text { white-space: pre-wrap; font-size: 14px; line-height: 1.7; margin-bottom: 10px; }
+.session-strip, .result-strip { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 10px; border-radius: 6px; background: #f7f8fa; color: #4e5969; font-size: 12px; margin-bottom: 8px; }
+.runtime-line { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.step-timeline { margin: 10px 0; }
+.panel-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: #1d2129; }
+.step-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 9px 11px; margin-bottom: 7px; background: #fafafa; }
+.step-header { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.step-num { color: #86909c; font-weight: 700; font-size: 12px; }
+.step-summary, .step-observation { color: #4e5969; font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.step-semantic { display: flex; flex-wrap: wrap; gap: 8px; color: #86909c; font-size: 11px; margin-top: 6px; }
+.composer { display: flex; gap: 8px; align-items: flex-end; padding: 12px 16px; border-top: 1px solid #e5e6eb; background: #f7f8fa; }
+.composer .a-textarea { flex: 1; }
 
-.user-msg .msg-text { background: #e8f3ff; padding: 12px 18px; border-radius: 18px 18px 4px 18px; font-size: 15px; line-height: 1.5; color: #1d2129; font-weight: 500; }
-.user-msg .msg-meta { font-size: 11px; color: #86909c; margin-top: 4px; text-align: right; padding-right: 4px; }
-.assistant-msg .msg-text { font-size: 15px; line-height: 1.65; white-space: pre-wrap; color: #1d2129; }
-.runtime-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-.explain-msg { max-width: 600px; }
+.insight-panel { display: flex; flex-direction: column; overflow: hidden; }
+.insight-head { height: 48px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e6eb; }
+.insight-panel :deep(.arco-tabs-content) { padding: 0 12px 12px; }
+.insight-list, .tool-list { display: grid; gap: 8px; }
+.insight-card, .tool-row, .report-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 9px 10px; background: #fafafa; display: grid; gap: 4px; }
+.insight-card span, .tool-row span, .insight-card small { color: #4e5969; font-size: 12px; line-height: 1.45; }
+.audit-summary { padding-top: 4px; }
+.report-answer { margin-top: 10px; color: #4e5969; font-size: 12px; line-height: 1.55; padding: 8px; background: #fff; border-radius: 4px; }
 
-.composer { flex-shrink: 0; border-top: 1px solid #e5e6eb; padding: 12px 24px; background: #f7f8fa; }
-.composer-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: flex-end; }
-.composer-inner .a-textarea { flex: 1; }
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 220px minmax(420px, 1fr); }
+  .insight-panel { display: none; }
+}
 
-/* Prompt suggestions */
-.agent-suggestions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
-.sugg-chip { cursor: pointer; padding: 8px 16px; font-size: 14px; font-weight: 600; color: #1d2129; border: 1px solid #c9cdd4; background: #f7f8fa; border-radius: 18px; transition: all 0.15s; }
-.sugg-chip:hover { background: #e8e9ed; border-color: #86909c; }
-
-/* Agent step cards */
-.agent-step-list { margin-top: 10px; }
-.step-section-title { font-size: 13px; font-weight: 600; color: #1d2129; margin-bottom: 6px; }
-.step-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; background: #fafafa; }
-.step-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.step-num { color: #86909c; font-size: 12px; min-width: 20px; font-weight: 600; }
-.step-tool { font-size: 14px; font-weight: 600; color: #1d2129; }
-.step-summary { font-size: 13px; color: #4e5969; line-height: 1.5; }
-.step-obs { margin-top: 4px; }
-.obs-label { font-size: 12px; color: #86909c; margin-right: 6px; font-weight: 600; }
-.obs-text { font-size: 12px; color: #4e5969; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; }
-.step-semantic { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; color: #86909c; }
-.step-policy-reason { margin-top: 4px; font-size: 12px; color: #86909c; line-height: 1.4; }
+@media (max-width: 760px) {
+  .runtime-bar { height: auto; align-items: flex-start; gap: 10px; padding: 10px 12px; flex-direction: column; }
+  .workspace { grid-template-columns: 1fr; }
+  .task-sidebar { display: none; }
+}
 </style>

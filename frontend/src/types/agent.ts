@@ -13,7 +13,12 @@ export interface AgentRunRequest {
 }
 
 export interface AgentRunResponse {
+  task_id?: string
   task: string
+  scene_type?: SceneType
+  scene_summary?: string
+  run_status?: RunStatus
+  created_at?: string
   decision: Decision
   summary: string
   plan?: Plan | null
@@ -32,6 +37,80 @@ export interface AgentRunResponse {
   agent_steps?: AgentStep[]
   final_answer?: string
   chat_model?: string
+}
+
+export type SceneType = 'diagnosis' | 'security_check' | 'service_recovery' | 'system_health' | 'compliance_review' | 'unknown' | string
+export type RunStatus = 'completed' | 'blocked' | 'failed' | 'partial' | string
+
+export interface RuntimeStatusResponse {
+  ok: boolean
+  runtime: {
+    agent_mode: string
+    current_mode: string
+    llm_enabled: boolean
+    remote_llm_used: boolean
+    chat_model: string
+    provider: string
+    endpoint_kind: string
+    model: string
+  }
+  services: {
+    go_agent: RuntimeServiceStatus
+    audit_core: RuntimeServiceStatus
+    frontend: RuntimeServiceStatus
+  }
+  security_layers: Record<string, string>
+  secret_safety: {
+    api_key_present: boolean
+    api_key_display: string
+  }
+  updated_at?: string
+}
+
+export interface RuntimeServiceStatus {
+  status: string
+  port?: number
+  url?: string
+}
+
+export interface AgentCapabilitiesResponse {
+  available_tools: AgentCapabilityTool[]
+  tool_policy: {
+    enabled: boolean
+    default_mode: string
+    dangerous_actions_blocked: boolean
+    unknown_tools_default_denied?: boolean
+    raw_shell_execution?: string
+  }
+  agent_loop: {
+    next_action_schema: string[]
+    max_steps: number
+  }
+}
+
+export interface AgentCapabilityTool {
+  tool_name: string
+  display_name: string
+  description: string
+  operation_type: string
+  resource_type: string
+  boundary_level: string
+  requires_privilege: boolean
+  read_only: boolean
+  policy_controlled: boolean
+  traceshield_mapped: boolean
+  enabled: boolean
+}
+
+export interface AcceptanceSummaryResponse {
+  stages: Array<{
+    name: string
+    title: string
+    status: string
+    evidence?: Record<string, unknown>
+  }>
+  commands: string[]
+  notes: string[]
 }
 
 export interface AgentStep {

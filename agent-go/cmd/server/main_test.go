@@ -11,6 +11,7 @@ import (
 
 	"kylin-guard-agent/agent-go/internal/agent"
 	"kylin-guard-agent/agent-go/internal/auditclient"
+	"kylin-guard-agent/agent-go/internal/config"
 	einoruntime "kylin-guard-agent/agent-go/internal/eino"
 	"kylin-guard-agent/agent-go/internal/logtrace"
 	"kylin-guard-agent/agent-go/internal/security"
@@ -87,6 +88,21 @@ func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 	}
 	if response.Summary != einoruntime.RuntimeSummary {
 		t.Fatalf("expected Eino graph runtime summary, got %q", response.Summary)
+	}
+	if response.TaskID == "" || !strings.HasPrefix(response.TaskID, "kg-") {
+		t.Fatalf("expected task_id with kg- prefix, got %q", response.TaskID)
+	}
+	if response.SceneType == "" {
+		t.Fatal("expected scene_type")
+	}
+	if response.SceneSummary == "" {
+		t.Fatal("expected scene_summary")
+	}
+	if response.RunStatus != agent.RunStatusCompleted {
+		t.Fatalf("expected completed run_status, got %q", response.RunStatus)
+	}
+	if response.CreatedAt == "" {
+		t.Fatal("expected created_at")
 	}
 	if strings.Contains(response.Summary, "stable runtime fallback") {
 		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
@@ -197,6 +213,76 @@ func TestToolsListHandler(t *testing.T) {
 	}
 	if response.Count < 6 {
 		t.Fatalf("expected at least 6 tools, got %d", response.Count)
+	}
+}
+
+func TestRuntimeStatusHandlerDoesNotExposeAPIKey(t *testing.T) {
+	cfg := config.Load()
+	cfg.EinoLLMEnabled = true
+	cfg.EinoLLMProvider = "openai_compatible"
+	cfg.EinoLLMEndpoint = "https://api.deepseek.com"
+	cfg.EinoLLMModel = "deepseek-v4-flash"
+	cfg.EinoLLMAPIKey = "secret-test-key"
+	cfg.AuditCoreURL = ""
+
+	request := httptest.NewRequest(http.MethodGet, "/api/agent/runtime-status", nil)
+	recorder := httptest.NewRecorder()
+	runtimeStatusHandler(cfg).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	if strings.Contains(body, "secret-test-key") {
+		t.Fatal("runtime-status leaked API key")
+	}
+	var response runtimeStatusResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.SecretSafety.APIKeyPresent || response.SecretSafety.APIKeyDisplay != "[REDACTED]" {
+		t.Fatalf("expected redacted API key metadata, got %#v", response.SecretSafety)
+	}
+	if response.Runtime.CurrentMode != "real-deepseek" {
+		t.Fatalf("expected real-deepseek mode, got %q", response.Runtime.CurrentMode)
+	}
+}
+
+func TestCapabilitiesHandlerUsesRegisteredTools(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	request := httptest.NewRequest(http.MethodGet, "/api/agent/capabilities", nil)
+	recorder := httptest.NewRecorder()
+	capabilitiesHandler(registry).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response capabilitiesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.AvailableTools) != len(registry.ListTools()) {
+		t.Fatalf("expected registered tool count, got %d", len(response.AvailableTools))
+	}
+	if !response.ToolPolicy.Enabled || !response.ToolPolicy.DangerousActionsBlocked {
+		t.Fatalf("expected enabled tool policy, got %#v", response.ToolPolicy)
+	}
+}
+
+func TestAcceptanceSummaryHandlerIsStaticMetadata(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/agent/acceptance-summary", nil)
+	recorder := httptest.NewRecorder()
+	acceptanceSummaryHandler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response acceptanceSummaryResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Stages) == 0 || len(response.Commands) == 0 {
+		t.Fatalf("expected acceptance metadata, got %#v", response)
 	}
 }
 
