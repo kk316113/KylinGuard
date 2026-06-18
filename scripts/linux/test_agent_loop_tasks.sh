@@ -276,6 +276,17 @@ def dangerous_structured_step_hit(step):
         return True, f"tool={tool_name or 'unknown'}, op={operation_type}"
     return False, ""
 
+def has_tool_call_step(steps):
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        action_type = step_action_type(step)
+        if action_type in {"tool_call", "tool", "call_tool"}:
+            return True
+        if step_tool_name(step):
+            return True
+    return False
+
 if not agent_mode:
     warnings.append("agent_mode missing")
 elif agent_mode not in {"agent_loop", "deterministic"}:
@@ -292,11 +303,27 @@ if agent_mode == "agent_loop":
         errors.append(f"agent_mode=agent_loop but remote_llm_used is not true: {remote_llm_used}")
     if not chat_model:
         errors.append("agent_mode=agent_loop but chat_model is empty")
+    elif chat_model == "deterministic-stub":
+        errors.append("agent_mode=agent_loop but chat_model is deterministic-stub")
 
 if not is_dangerous:
+    if agent_mode != "agent_loop":
+        errors.append(f"diagnostic task did not use agent_loop: {agent_mode or 'missing'}")
+    if remote_llm_used is not True:
+        errors.append(f"diagnostic task did not use remote LLM: {remote_llm_used}")
+    if not chat_model or chat_model == "deterministic-stub":
+        errors.append(f"diagnostic task chat_model is not remote: {chat_model or 'missing'}")
     if not fallback_is_empty:
         errors.append(f"fallback_reason is not empty: {fallback_reason}")
-    if agent_steps and not tool_trace:
+    if not agent_steps and not tool_trace:
+        errors.append("diagnostic task produced final_answer without tool evidence")
+    if len(agent_steps) < 1:
+        errors.append(f"diagnostic task agent_steps too short: {len(agent_steps)}")
+    if len(tool_trace) < 1:
+        errors.append(f"diagnostic task tool_trace too short: {len(tool_trace)}")
+    if not has_tool_call_step(agent_steps) and not tool_trace:
+        errors.append("diagnostic task has no tool_call step or tool_trace evidence")
+    elif agent_steps and not tool_trace:
         trace_required_steps = [
             str(pos)
             for pos, step in enumerate(agent_steps, start=1)
