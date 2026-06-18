@@ -2,20 +2,27 @@
   <div class="running-card">
     <div class="running-line">
       <a-spin :size="18" />
-      <span class="running-text">Agent 正在执行…</span>
+      <span class="running-text">{{ currentText }}</span>
     </div>
     <a-steps :current="step" size="small" style="margin-top:12px;max-width:480px">
-      <a-step description="理解运维任务" />
-      <a-step description="选择最小权限工具" />
-      <a-step description="执行受控系统检查" />
-      <a-step description="TraceShield 审计" />
-      <a-step description="生成安全结论" />
+      <a-step description="正在理解任务..." />
+      <a-step description="正在执行安全受控检查..." />
+      <a-step description="正在整理回答..." />
+      <a-step description="正在附加安全审计..." />
     </a-steps>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{ step: number }>()
+import { computed } from 'vue'
+
+const props = defineProps<{ step: number }>()
+
+const currentText = computed(() => {
+  if (props.step <= 1) return '正在理解任务...'
+  if (props.step === 2) return '正在执行安全受控检查...'
+  return '正在整理回答...'
+})
 </script>
 
 <style scoped>

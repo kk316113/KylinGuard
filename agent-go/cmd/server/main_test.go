@@ -86,8 +86,8 @@ func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 	if response.AuditResult.Method != "traceshield" {
 		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)
 	}
-	if response.Summary != einoruntime.RuntimeSummary {
-		t.Fatalf("expected Eino graph runtime summary, got %q", response.Summary)
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Answer == "" {
+		t.Fatalf("expected user-facing final_answer and user_message, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 	if response.TaskID == "" || !strings.HasPrefix(response.TaskID, "kg-") {
 		t.Fatalf("expected task_id with kg- prefix, got %q", response.TaskID)
@@ -152,6 +152,57 @@ func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 	}
 }
 
+func TestAgentRunEinoNormalChatDoesNotExecuteToolsOrAudit(t *testing.T) {
+	auditor := &testAuditor{}
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
+
+	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "你好呀请你回答我的问题")
+
+	if response.InteractionType != agent.InteractionTypeChat || response.AgentMode != agent.AgentModeChatOnly {
+		t.Fatalf("expected chat-only response, got interaction=%q mode=%q", response.InteractionType, response.AgentMode)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Answer == "" {
+		t.Fatalf("expected readable chat answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+	}
+	if len(response.AgentSteps) != 0 {
+		t.Fatalf("normal chat should not return agent steps, got %d", len(response.AgentSteps))
+	}
+	if len(response.ToolTrace) != 0 {
+		t.Fatalf("normal chat should not execute tools, got %d traces", len(response.ToolTrace))
+	}
+	if response.SecurityReport != nil {
+		t.Fatalf("normal chat should not produce security report, got %#v", response.SecurityReport)
+	}
+	if auditor.called {
+		t.Fatal("normal chat should not call audit client")
+	}
+}
+
+func TestAgentRunEinoAmbiguousInputClarifiesWithoutTools(t *testing.T) {
+	auditor := &testAuditor{}
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
+
+	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "你帮我看看")
+
+	if response.InteractionType != agent.InteractionTypeClarify {
+		t.Fatalf("expected clarify response, got %q", response.InteractionType)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil {
+		t.Fatalf("expected clarification answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+	}
+	if len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
+		t.Fatalf("ambiguous input should not execute tools, got traces=%d steps=%d", len(response.ToolTrace), len(response.AgentSteps))
+	}
+	if response.SecurityReport != nil {
+		t.Fatalf("ambiguous input should not produce security_report, got %#v", response.SecurityReport)
+	}
+	if auditor.called {
+		t.Fatal("ambiguous input should not call audit client")
+	}
+}
+
 func TestAgentRunEinoDangerousTaskDeniesBeforeAudit(t *testing.T) {
 	auditor := &testAuditor{}
 	registry := tools.NewDefaultRegistry()
@@ -185,6 +236,9 @@ func TestAgentRunEinoDangerousTaskDeniesBeforeAudit(t *testing.T) {
 	}
 	if response.SecurityReport.AuditMetadata["eino_graph_enabled"] != true {
 		t.Fatalf("expected eino_graph_enabled=true, got %#v", response.SecurityReport.AuditMetadata["eino_graph_enabled"])
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Status != agent.RunStatusBlocked {
+		t.Fatalf("expected blocked user-facing answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 	if auditor.called {
 		t.Fatal("audit client should not be called for dangerous task")

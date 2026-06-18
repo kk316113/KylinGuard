@@ -94,26 +94,53 @@
             </div>
 
             <div v-else-if="msg.role === 'assistant'" class="msg assistant-msg">
-              <div v-if="msg.session" class="session-strip">
-                <span>Task {{ msg.session.taskId || 'kg-pending' }}</span>
-                <span>{{ sceneLabel(msg.session.sceneType) }}</span>
-                <span>{{ msg.session.runStatus || 'completed' }}</span>
-                <span>{{ msg.runtimeBadge?.label || 'Agent Runtime' }}</span>
-              </div>
-              <div v-if="msg.runtimeBadge" class="runtime-line">
+              <article class="answer-card" :class="{ blocked: msg.userMessage?.status === 'blocked' || msg.decision?.decision === 'deny' }">
+                <div class="answer-head">
+                  <div>
+                    <div class="answer-title">{{ msg.userMessage?.title || answerTitle(msg) }}</div>
+                    <div class="answer-subtitle">{{ msg.runtimeBadge?.label || 'Agent Runtime' }}</div>
+                  </div>
+                  <a-tag :color="statusColor(msg.userMessage?.status || msg.session?.runStatus)" size="small">
+                    {{ statusLabel(msg.userMessage?.status || msg.session?.runStatus) }}
+                  </a-tag>
+                </div>
+                <div class="answer-body">{{ msg.content }}</div>
+
+                <div v-if="msg.userMessage" class="answer-sections">
+                  <div v-if="msg.userMessage.what_i_checked?.length" class="answer-section">
+                    <strong>Checked</strong>
+                    <ul>
+                      <li v-for="item in msg.userMessage.what_i_checked" :key="item">{{ item }}</li>
+                    </ul>
+                  </div>
+                  <div v-if="msg.userMessage.key_findings?.length" class="answer-section">
+                    <strong>Key findings</strong>
+                    <ul>
+                      <li v-for="item in msg.userMessage.key_findings" :key="item">{{ item }}</li>
+                    </ul>
+                  </div>
+                  <div v-if="msg.userMessage.next_steps?.length" class="answer-section">
+                    <strong>Next steps</strong>
+                    <ul>
+                      <li v-for="item in msg.userMessage.next_steps" :key="item">{{ item }}</li>
+                    </ul>
+                  </div>
+                </div>
+              </article>
+
+              <div v-if="msg.runtimeBadge && !isSimpleInteraction(msg)" class="runtime-line">
                 <a-tag :color="msg.runtimeBadge.color" size="small">{{ msg.runtimeBadge.label }}</a-tag>
                 <a-tag v-if="msg.runtimeBadge.chatModel" color="gray" size="small">{{ msg.runtimeBadge.chatModel }}</a-tag>
               </div>
-              <div class="msg-text">{{ msg.content }}</div>
-              <div v-if="msg.resultSummary" class="result-strip">
+              <div v-if="msg.resultSummary && !isSimpleInteraction(msg)" class="result-strip">
                 <span>Steps {{ msg.resultSummary.agentSteps }}</span>
                 <span>Evidence {{ msg.resultSummary.toolTrace }}</span>
                 <span>Decision {{ msg.resultSummary.decision }}</span>
                 <span>Report {{ msg.resultSummary.auditReady ? 'ready' : 'pending' }}</span>
               </div>
-              <DecisionCard v-if="msg.decision" v-bind="msg.decision" />
+              <DecisionCard v-if="msg.decision && !isSimpleInteraction(msg)" class="secondary-decision" v-bind="msg.decision" />
 
-              <div v-if="msg.agentSteps && msg.agentSteps.length > 0" class="step-timeline">
+              <div v-if="!isSimpleInteraction(msg) && msg.agentSteps && msg.agentSteps.length > 0" class="step-timeline">
                 <div class="panel-title">Agent execution timeline</div>
                 <div v-for="(step, si) in msg.agentSteps" :key="si" class="step-card">
                   <div class="step-header">
@@ -137,11 +164,11 @@
                 </div>
               </div>
 
-              <a-button v-if="msg.hasInspector" size="mini" type="outline" @click="openInspector">Open Inspector</a-button>
+              <a-button v-if="msg.hasInspector && !isSimpleInteraction(msg)" size="mini" type="outline" @click="openInspector">Open Inspector</a-button>
             </div>
 
             <div v-else-if="msg.role === 'error'" class="msg error-msg">
-              <a-alert type="error" :title="msg.content" :closable="false" />
+              <a-alert type="error" title="Task failed" :description="msg.content" :closable="false" />
             </div>
           </div>
 
@@ -274,11 +301,11 @@ const activeInsightTab = ref('steps')
 const recentRuns = ref<Array<{ id: string; title: string; decision: string; response: AgentRunResponse }>>([])
 
 const promptSuggestions = [
-  '我 SSH 连不上了，帮我看看',
-  '这台机器突然很卡，帮我定位瓶颈',
-  '我的 Web 服务访问不了，帮我检查服务和端口',
-  '有人让我清空审计日志，这样做安全吗？',
-  '帮我快速检查这台机器有没有明显异常'
+  '\u6211 SSH \u8fde\u4e0d\u4e0a\u4e86\uff0c\u5e2e\u6211\u770b\u770b',
+  '\u8fd9\u53f0\u673a\u5668\u7a81\u7136\u5f88\u5361\uff0c\u5e2e\u6211\u5b9a\u4f4d\u74f6\u9888',
+  '\u6211\u7684 Web \u670d\u52a1\u8bbf\u95ee\u4e0d\u4e86\uff0c\u5e2e\u6211\u68c0\u67e5\u670d\u52a1\u548c\u7aef\u53e3',
+  '\u6709\u4eba\u8ba9\u6211\u6e05\u7a7a\u5ba1\u8ba1\u65e5\u5fd7\uff0c\u8fd9\u6837\u505a\u5b89\u5168\u5417\uff1f',
+  '\u5e2e\u6211\u5feb\u901f\u68c0\u67e5\u8fd9\u53f0\u673a\u5668\u6709\u6ca1\u6709\u660e\u663e\u5f02\u5e38'
 ]
 
 interface ChatMessage {
@@ -299,6 +326,8 @@ interface ChatMessage {
   runtimeBadge?: { label: string; color: string; chatModel: string }
   session?: { taskId: string; sceneType: string; runStatus: string; createdAt: string }
   resultSummary?: { agentSteps: number; toolTrace: number; decision: string; auditReady: boolean }
+  userMessage?: AgentRunResponse['user_message']
+  interactionType?: string
 }
 
 const messages = ref<ChatMessage[]>([])
@@ -404,12 +433,13 @@ async function send() {
   try {
     const resp = runtimeMode.value === 'eino' ? await runAgentEino(task) : await runAgent(task)
     window.clearInterval(stepTimer)
-    lastResponse.value = resp
-    inspectorResp.value = resp
 
     const runtimeBadge = runtimeBadgeFromResponse(resp)
+    const isSimple = isSimpleResponse(resp)
+    lastResponse.value = isSimple ? null : resp
+    inspectorResp.value = isSimple ? null : resp
     const meta = resp.security_report?.audit_metadata || {}
-    const finalAnswer = resp.final_answer || resp.summary || 'No final answer returned.'
+    const finalAnswer = resp.user_message?.answer || resp.final_answer || resp.summary || 'This task did not return a readable answer. Check the execution details and audit panel on the right.'
     const decision = resp.decision || 'unknown'
     const steps = normalizedAgentSteps(resp)
     const traces = resp.tool_trace || []
@@ -426,8 +456,10 @@ async function send() {
         chatModel: runtimeBadge.chatModel,
         summary: true
       },
-      hasInspector: true,
+      hasInspector: !isSimple,
       agentSteps: steps,
+      userMessage: resp.user_message,
+      interactionType: resp.interaction_type || (isSimple ? 'chat' : 'agent_run'),
       runtimeBadge,
       session: {
         taskId: resp.task_id || '',
@@ -435,7 +467,7 @@ async function send() {
         runStatus: resp.run_status || 'completed',
         createdAt: resp.created_at || ''
       },
-      resultSummary: {
+      resultSummary: isSimple ? undefined : {
         agentSteps: steps.length,
         toolTrace: traces.length,
         decision,
@@ -453,7 +485,11 @@ async function send() {
     await refreshShellData()
   } catch (err) {
     window.clearInterval(stepTimer)
-    messages.value.push({ role: 'error', content: err instanceof Error ? err.message : 'Agent request failed' })
+    const reason = err instanceof Error ? err.message : 'Agent request failed'
+    messages.value.push({
+      role: 'error',
+      content: `This task did not complete. The backend service, network proxy, or model configuration may be unavailable. Reason: ${reason}`
+    })
   } finally {
     running.value = false
     runStep.value = 0
@@ -463,8 +499,21 @@ async function send() {
 }
 
 function showRun(resp: AgentRunResponse) {
+  if (isSimpleResponse(resp)) {
+    lastResponse.value = null
+    inspectorResp.value = null
+    return
+  }
   lastResponse.value = resp
   inspectorResp.value = resp
+}
+
+function isSimpleInteraction(msg: ChatMessage) {
+  return msg.interactionType === 'chat' || msg.interactionType === 'clarify'
+}
+
+function isSimpleResponse(resp: AgentRunResponse) {
+  return resp.interaction_type === 'chat' || resp.interaction_type === 'clarify' || resp.agent_mode === 'chat_only'
 }
 
 function openInspector() {
@@ -498,6 +547,32 @@ function decisionColor(decision?: string) {
   if (decision === 'review') return 'orange'
   if (decision === 'deny' || decision === 'denied') return 'red'
   return 'gray'
+}
+
+function statusColor(status?: string) {
+  if (status === 'completed') return 'green'
+  if (status === 'blocked') return 'orange'
+  if (status === 'failed') return 'red'
+  if (status === 'partial') return 'blue'
+  return 'gray'
+}
+
+function statusLabel(status?: string) {
+  switch (status) {
+    case 'completed': return 'Completed'
+    case 'blocked': return 'Safely blocked'
+    case 'failed': return 'Failed'
+    case 'partial': return 'Partial'
+    default: return 'Running'
+  }
+}
+
+function answerTitle(msg: ChatMessage) {
+  const status = msg.userMessage?.status || msg.session?.runStatus
+  if (status === 'blocked' || msg.decision?.decision === 'deny') return 'Safety recommendation'
+  if (status === 'failed') return 'Task failed'
+  if (status === 'partial') return 'Partial result'
+  return 'Diagnosis result'
 }
 
 function sceneLabel(sceneType: string) {
@@ -605,6 +680,16 @@ function normalizedAgentSteps(resp: AgentRunResponse): AgentStep[] {
 .user-msg .msg-text { background: #e8f3ff; padding: 11px 16px; border-radius: 16px 16px 4px 16px; font-size: 14px; line-height: 1.55; }
 .user-msg .msg-meta { font-size: 11px; color: #86909c; margin-top: 4px; text-align: right; }
 .assistant-msg .msg-text { white-space: pre-wrap; font-size: 14px; line-height: 1.7; margin-bottom: 10px; }
+.answer-card { border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; padding: 15px 16px; margin-bottom: 10px; box-shadow: 0 6px 18px rgba(29, 33, 41, 0.04); }
+.answer-card.blocked { border-color: #ffb65d; background: #fffaf2; }
+.answer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.answer-title { font-size: 16px; font-weight: 700; color: #1d2129; }
+.answer-subtitle { margin-top: 2px; font-size: 12px; color: #86909c; }
+.answer-body { white-space: pre-wrap; font-size: 14px; line-height: 1.75; color: #1d2129; }
+.answer-sections { display: grid; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #e5e6eb; }
+.answer-section strong { display: block; margin-bottom: 5px; color: #1d2129; font-size: 13px; }
+.answer-section ul { margin: 0; padding-left: 18px; color: #4e5969; font-size: 13px; line-height: 1.65; }
+.secondary-decision { margin-top: 10px; opacity: 0.88; }
 .session-strip, .result-strip { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 10px; border-radius: 6px; background: #f7f8fa; color: #4e5969; font-size: 12px; margin-bottom: 8px; }
 .runtime-line { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .step-timeline { margin: 10px 0; }

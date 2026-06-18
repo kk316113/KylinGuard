@@ -19,6 +19,11 @@ export interface AgentRunResponse {
   scene_summary?: string
   run_status?: RunStatus
   created_at?: string
+  interaction_type?: InteractionType
+  router_source?: string
+  router_confidence?: string
+  needs_tool_execution?: boolean
+  router_reason?: string
   decision: Decision
   summary: string
   plan?: Plan | null
@@ -37,10 +42,21 @@ export interface AgentRunResponse {
   agent_steps?: AgentStep[]
   final_answer?: string
   chat_model?: string
+  user_message?: UserMessage
+}
+
+export interface UserMessage {
+  title: string
+  answer: string
+  status: RunStatus
+  what_i_checked: string[]
+  key_findings: string[]
+  next_steps: string[]
 }
 
 export type SceneType = 'diagnosis' | 'security_check' | 'service_recovery' | 'system_health' | 'compliance_review' | 'unknown' | string
 export type RunStatus = 'completed' | 'blocked' | 'failed' | 'partial' | string
+export type InteractionType = 'chat' | 'agent_run' | 'safe_refusal' | 'clarify' | string
 
 export interface RuntimeStatusResponse {
   ok: boolean
