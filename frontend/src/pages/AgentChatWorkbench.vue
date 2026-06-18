@@ -68,7 +68,17 @@
             <div class="workspace-title">Operations Task Session</div>
             <div class="workspace-subtitle">Type any real operations problem. Prompts are text only, not scenario IDs.</div>
           </div>
-          <a-segmented v-model="runtimeMode" :options="runtimeOpts" size="small" />
+          <div class="runtime-switch" role="group" aria-label="Runtime mode">
+            <button
+              v-for="opt in runtimeOpts"
+              :key="opt.value"
+              type="button"
+              :class="['runtime-switch-btn', { active: runtimeMode === opt.value }]"
+              @click="setRuntimeMode(opt.value)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
         </div>
 
         <div ref="scrollRef" class="chat-scroll">
@@ -160,8 +170,8 @@
         </div>
         <a-tabs v-model:active-key="activeInsightTab" size="small">
           <a-tab-pane key="steps" title="Steps">
-            <div v-if="lastResponse?.agent_steps?.length" class="insight-list">
-              <div v-for="(step, idx) in lastResponse.agent_steps" :key="idx" class="insight-card">
+            <div v-if="displaySteps.length" class="insight-list">
+              <div v-for="(step, idx) in displaySteps" :key="idx" class="insight-card">
                 <strong>#{{ step.step_index || idx + 1 }} {{ step.tool_name || step.action_type }}</strong>
                 <span>{{ step.user_visible_summary || step.reason || observationSummary(step) }}</span>
               </div>
@@ -245,6 +255,10 @@ const runtimeOpts = [
   { label: 'Stable', value: 'stable' },
   { label: 'Eino Agent Loop', value: 'eino' }
 ]
+
+function setRuntimeMode(mode: string) {
+  runtimeMode.value = mode === 'stable' ? 'stable' : 'eino'
+}
 const taskInput = ref('')
 const running = ref(false)
 const runStep = ref(0)
@@ -331,6 +345,10 @@ const auditFields = computed(() => {
   ]
 })
 
+const displaySteps = computed(() => {
+  return lastResponse.value ? normalizedAgentSteps(lastResponse.value) : []
+})
+
 const reportFields = computed(() => {
   if (!lastResponse.value) return []
   const resp = lastResponse.value
@@ -393,7 +411,7 @@ async function send() {
     const meta = resp.security_report?.audit_metadata || {}
     const finalAnswer = resp.final_answer || resp.summary || 'No final answer returned.'
     const decision = resp.decision || 'unknown'
-    const steps = resp.agent_steps || []
+    const steps = normalizedAgentSteps(resp)
     const traces = resp.tool_trace || []
 
     messages.value.push({
@@ -506,6 +524,43 @@ function shortText(text: string, max = 180) {
   if (normalized.length <= max) return normalized
   return `${normalized.slice(0, max)}...`
 }
+
+function normalizedAgentSteps(resp: AgentRunResponse): AgentStep[] {
+  if (resp.agent_steps?.length) return resp.agent_steps
+  if (resp.plan?.steps?.length) {
+    return resp.plan.steps.map((step, index) => ({
+      step_index: index + 1,
+      action_type: 'tool_call',
+      tool_name: step.tool_name,
+      tool_args: step.input,
+      reason: step.reason,
+      user_visible_summary: step.reason,
+      policy_decision: 'allow',
+      observation: {},
+      operation_type: undefined,
+      resource_type: undefined,
+      boundary_level: step.risk_level
+    }))
+  }
+  if (resp.tool_trace?.length) {
+    return resp.tool_trace.map((trace, index) => ({
+      step_index: index + 1,
+      action_type: 'tool_call',
+      tool_name: trace.tool_name,
+      tool_args: {},
+      reason: trace.output_summary,
+      user_visible_summary: trace.output_summary,
+      policy_decision: trace.allowed_by_policy === false ? 'deny' : 'allow',
+      observation: { output_summary: trace.output_summary, status: trace.status },
+      operation_type: trace.operation_type,
+      resource_type: trace.resource_type,
+      boundary_level: trace.boundary_level,
+      allowed_by_policy: trace.allowed_by_policy,
+      policy_reason: trace.policy_reason
+    }))
+  }
+  return []
+}
 </script>
 
 <style scoped>
@@ -538,6 +593,9 @@ function shortText(text: string, max = 180) {
 .workspace-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #e5e6eb; }
 .workspace-title { font-size: 16px; font-weight: 700; }
 .workspace-subtitle { font-size: 12px; color: #86909c; margin-top: 3px; }
+.runtime-switch { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #e5e6eb; border-radius: 6px; background: #f7f8fa; flex-shrink: 0; }
+.runtime-switch-btn { min-width: 64px; height: 26px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: #4e5969; font-size: 12px; cursor: pointer; }
+.runtime-switch-btn.active { background: #fff; color: #165dff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); font-weight: 600; }
 .chat-scroll { flex: 1; min-height: 0; overflow: auto; padding: 18px; background: #fff; }
 .empty-state { max-width: 520px; margin: 80px auto; text-align: center; color: #4e5969; }
 .empty-state h2 { color: #1d2129; margin-bottom: 8px; font-size: 24px; }

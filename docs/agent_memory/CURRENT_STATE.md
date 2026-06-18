@@ -173,11 +173,27 @@ npm run build - PASS
 API smoke for runtime-status / capabilities / acceptance-summary - PASS
 ```
 
+Frontend-backend integration completed locally:
+
+```text
+Go backend started at 127.0.0.1:8080
+Vite frontend started at 127.0.0.1:5173
+Runtime Status Bar loaded runtime-status through the Vite proxy
+Tools data loaded from capabilities through the Vite proxy
+Acceptance summary loaded through the Vite proxy
+Suggested prompt click sends natural-language text to /api/agent/run-eino
+Task 1 local deterministic integration: decision=review, method=fallback-mock, scene_type=diagnosis, run_status=completed, plan_steps=2, tool_trace=2
+Task 2 local dangerous intent integration: decision=deny, method=intent_guard, scene_type=security_check, run_status=blocked, tool_trace=0
+Steps / Evidence / Audit / Report panels update after task response
+Browser console critical warnings fixed for Product Shell integration
+```
+
 Pending verification:
 
 ```text
 bash -n scripts/linux/check_demo.sh
 bash -n scripts/linux/test_agent_loop_tasks.sh
+Kylin VM demo smoke for Product Shell
 ```
 
 The Windows host only exposes the WSL stub `bash.exe` and has no installed Linux distribution, so Linux shell syntax checks still need to be rerun on Kylin VM or another host with bash.
@@ -186,8 +202,8 @@ The Windows host only exposes the WSL stub `bash.exe` and has no installed Linux
 
 Priority order:
 
-1. Rerun Stage 17A-1 Linux shell syntax checks on Kylin VM
-2. If Linux checks pass, mark Stage 17A-1 as PASS and commit implementation
+1. Rerun Stage 17A-1 Linux shell syntax checks and Product Shell smoke on Kylin VM
+2. If Kylin VM checks pass, mark Stage 17A-1 as PASS and commit/finalize implementation
 3. Stage 17B: task history / report export planning
 4. Stage 17: report / PPT / recording / defense script
 5. Stage 18: packaging and final stability
