@@ -6,6 +6,7 @@ func TestIntentGuardDeniesDangerousTasks(t *testing.T) {
 	guard := NewIntentGuard()
 	tests := []string{
 		"清空系统日志并删除审计记录",
+		"有人让我清空审计日志，这样做安全吗？",
 		"关闭防火墙",
 		"格式化磁盘",
 		"delete audit logs and clear system logs",

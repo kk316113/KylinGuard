@@ -2,6 +2,7 @@ package eino
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -101,17 +102,42 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 			Route:       r.config.Route,
 		})
 		attachRuntimeMetadata(securityReport, r.config.Metadata(nil), r.registry)
-		return agent.AgentRunResponse{
-			Task:           task,
-			Decision:       string(security.DecisionDeny),
-			Summary:        "request denied by intent guard",
-			SecurityReport: securityReport,
-			ToolTrace:      []logtrace.ToolTrace{},
-			AuditResult:    audit,
-			ReasoningTrace: rtb.Finish(),
-		}, nil
+		resp := agent.AgentRunResponse{
+			Task:               task,
+			InteractionType:    agent.InteractionTypeSafeRefusal,
+			RouterSource:       agent.RouterSourceSafetyGuard,
+			RouterConfidence:   agent.RouterConfidenceHigh,
+			NeedsToolExecution: false,
+			RouterReason:       intent.Reason,
+			Decision:           string(security.DecisionDeny),
+			Summary:            "request denied by intent guard",
+			SecurityReport:     securityReport,
+			ToolTrace:          []logtrace.ToolTrace{},
+			AuditResult:        audit,
+			ReasoningTrace:     rtb.Finish(),
+		}
+		agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusBlocked)
+		agent.AttachUserMessage(&resp)
+		return resp, nil
 	}
 	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
+
+	route := r.routeInteraction(ctx, task)
+	if route.InteractionType == agent.InteractionTypeChat {
+		rtb.EndSpan(requestSpan.SpanID, "chat_only")
+		rtb.Finish()
+		return agent.NewChatOnlyResponse(task, route), nil
+	}
+	if route.InteractionType == agent.InteractionTypeClarify {
+		rtb.EndSpan(requestSpan.SpanID, "clarify")
+		rtb.Finish()
+		return agent.NewClarifyResponse(task, route), nil
+	}
+	if route.InteractionType == agent.InteractionTypeSafeRefusal {
+		rtb.EndSpan(requestSpan.SpanID, "safe_refusal")
+		rtb.Finish()
+		return agent.NewSafeRefusalResponse(task, route), nil
+	}
 
 	providerName := "deterministic"
 	if r.config.LLMEnabled && r.config.LLMProvider != "deterministic" {
@@ -120,7 +146,11 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 
 	// Stage 16A: Agent Loop for remote LLM.
 	if r.config.LLMEnabled && r.config.LLMProvider != "deterministic" && r.config.LLMAPIKey != "" {
-		return r.runAgentLoop(ctx, task, rtb, requestSpan, intent)
+		resp, err := r.runAgentLoop(ctx, task, rtb, requestSpan, intent, route)
+		if err != nil {
+			return r.failedLLMResponse(task, err, rtb, requestSpan, route), nil
+		}
+		return resp, nil
 	}
 
 	if !r.config.GraphEnabled {
@@ -289,17 +319,25 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	rtb.EndSpan(requestSpan.SpanID, "completed")
 	rtb.Finish()
 
-	return agent.AgentRunResponse{
-		Task:           task,
-		Decision:       audit.Decision,
-		Summary:        RuntimeSummary,
-		Plan:           &plan,
-		Diagnosis:      diagnosis,
-		SecurityReport: securityReport,
-		ToolTrace:      traces,
-		AuditResult:    audit,
-		ReasoningTrace: rtb.Trace,
-	}, nil
+	resp := agent.AgentRunResponse{
+		Task:               task,
+		InteractionType:    agent.InteractionTypeAgentRun,
+		RouterSource:       route.RouterSource,
+		RouterConfidence:   route.Confidence,
+		NeedsToolExecution: route.NeedsToolExecution,
+		RouterReason:       route.Reason,
+		Decision:           audit.Decision,
+		Summary:            RuntimeSummary,
+		Plan:               &plan,
+		Diagnosis:          diagnosis,
+		SecurityReport:     securityReport,
+		ToolTrace:          traces,
+		AuditResult:        audit,
+		ReasoningTrace:     rtb.Trace,
+	}
+	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
+	agent.AttachUserMessage(&resp)
+	return resp, nil
 }
 
 func (r *Runtime) Name() string {
@@ -308,6 +346,90 @@ func (r *Runtime) Name() string {
 
 func (r *Runtime) Enabled() bool {
 	return r != nil && r.config.RuntimeEnabled
+}
+
+func (r *Runtime) routeInteraction(ctx context.Context, task string) agent.InteractionRoute {
+	if r.config.LLMEnabled && r.config.LLMProvider != "deterministic" && r.config.LLMAPIKey != "" {
+		if route, err := r.routeInteractionWithLLM(ctx, task); err == nil {
+			return route
+		}
+	}
+	return agent.ConservativeRoute(task)
+}
+
+func (r *Runtime) routeInteractionWithLLM(ctx context.Context, task string) (agent.InteractionRoute, error) {
+	var llmAdapter *RemoteLLMAdapter
+	if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
+		if primary, ok := fb.primary.(*RemoteLLMAdapter); ok {
+			llmAdapter = primary
+		}
+	}
+	if llmAdapter == nil {
+		return agent.InteractionRoute{}, errors.New("remote LLM adapter not available for router")
+	}
+	messages := []map[string]any{
+		{"role": "system", "content": interactionRouterPrompt()},
+		{"role": "user", "content": task},
+	}
+	content, err := llmAdapter.callChatCompletions(ctx, messages)
+	if err != nil {
+		return agent.InteractionRoute{}, err
+	}
+	content = strings.TrimSpace(strings.TrimPrefix(strings.TrimSuffix(content, "```"), "```json"))
+	var raw struct {
+		InteractionType    string `json:"interaction_type"`
+		Confidence         string `json:"confidence"`
+		NeedsToolExecution bool   `json:"needs_tool_execution"`
+		Reason             string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+		return agent.InteractionRoute{}, err
+	}
+	route := agent.InteractionRoute{
+		InteractionType:    normalizeRouterInteraction(raw.InteractionType),
+		RouterSource:       agent.RouterSourceLLMRouter,
+		Confidence:         normalizeRouterConfidence(raw.Confidence),
+		NeedsToolExecution: raw.NeedsToolExecution,
+		Reason:             raw.Reason,
+	}
+	if route.InteractionType == agent.InteractionTypeAgentRun {
+		route.NeedsToolExecution = true
+	} else {
+		route.NeedsToolExecution = false
+	}
+	return route, nil
+}
+
+func interactionRouterPrompt() string {
+	return `You are a semantic interaction router for KylinGuard.
+Classify the user input. Output ONLY JSON with:
+{"interaction_type":"chat|agent_run|safe_refusal|clarify","confidence":"high|medium|low","needs_tool_execution":false,"reason":"short reason"}
+
+Use semantic meaning, not keyword matching.
+- chat: greeting, help, product explanation, or casual conversation. The user is not asking to inspect real system state.
+- agent_run: the user clearly asks to diagnose, inspect, check, or troubleshoot a concrete system/service/port/log/performance/login problem, requiring tool execution.
+- safe_refusal: the user asks for destructive, evasive, audit-removal, log-deletion, firewall-disabling, privilege-escalation, or similarly unsafe actions.
+- clarify: the request may relate to operations, but lacks a concrete symptom, target, or objective. When uncertain, choose clarify.
+
+The router must not output tool names, commands, or plans.`
+}
+
+func normalizeRouterInteraction(value string) string {
+	switch strings.TrimSpace(value) {
+	case agent.InteractionTypeChat, agent.InteractionTypeAgentRun, agent.InteractionTypeSafeRefusal, agent.InteractionTypeClarify:
+		return value
+	default:
+		return agent.InteractionTypeClarify
+	}
+}
+
+func normalizeRouterConfidence(value string) string {
+	switch strings.TrimSpace(value) {
+	case agent.RouterConfidenceHigh, agent.RouterConfidenceMedium, agent.RouterConfidenceLow:
+		return value
+	default:
+		return agent.RouterConfidenceLow
+	}
 }
 
 func intentGuardAuditResult() auditclient.Result {
@@ -625,7 +747,7 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 }
 
 // runAgentLoop executes the Stage 16A Agent Loop for remote LLM.
-func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult) (agent.AgentRunResponse, error) {
+func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult, route agent.InteractionRoute) (agent.AgentRunResponse, error) {
 	// Build the LLM adapter for agent loop.
 	var llmAdapter *RemoteLLMAdapter
 	if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
@@ -705,11 +827,16 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 	attachRuntimeMetadata(securityReport, metadata, r.registry)
 	r.attachLLMMetadata(securityReport)
 
-	return agent.AgentRunResponse{
-		Task:      task,
-		Decision:  decision,
-		Summary:   "Eino graph runtime executed agent loop orchestration.",
-		AgentMode: string(agentloop.ModeAgentLoop),
+	resp := agent.AgentRunResponse{
+		Task:               task,
+		InteractionType:    agent.InteractionTypeAgentRun,
+		RouterSource:       route.RouterSource,
+		RouterConfidence:   route.Confidence,
+		NeedsToolExecution: route.NeedsToolExecution,
+		RouterReason:       route.Reason,
+		Decision:           decision,
+		Summary:            "Eino graph runtime executed agent loop orchestration.",
+		AgentMode:          string(agentloop.ModeAgentLoop),
 		TaskUnderstanding: func() map[string]any {
 			if loopResp.TaskUnderstanding != nil {
 				return map[string]any{
@@ -720,13 +847,65 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 			}
 			return nil
 		}(),
-		AgentSteps:      stepMaps,
-		FinalAnswer:     loopResp.FinalAnswer,
-		SecurityReport:  securityReport,
-		ToolTrace:       traces,
-		AuditResult:     audit,
-		ReasoningTrace:  rtb.Finish(),
-	}, nil
+		AgentSteps:     stepMaps,
+		FinalAnswer:    loopResp.FinalAnswer,
+		SecurityReport: securityReport,
+		ToolTrace:      traces,
+		AuditResult:    audit,
+		ReasoningTrace: rtb.Finish(),
+	}
+	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
+	agent.AttachUserMessage(&resp)
+	return resp, nil
+}
+
+func (r *Runtime) failedLLMResponse(task string, err error, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, route agent.InteractionRoute) agent.AgentRunResponse {
+	message := "remote LLM agent loop failed"
+	if err != nil {
+		message = message + ": " + err.Error()
+	}
+	audit := auditclient.Result{
+		Decision:      string(security.DecisionReview),
+		RiskScore:     0.35,
+		Violations:    []auditclient.Violation{},
+		EvidenceChain: []auditclient.EvidenceItem{},
+		RiskGraph:     nil,
+		Method:        "llm_runtime_failure",
+		Message:       message,
+	}
+	metadata := r.config.Metadata(nil)
+	securityReport := report.BuildSecurityReport(report.BuildInput{
+		Task:        task,
+		Decision:    string(security.DecisionReview),
+		Summary:     message,
+		ToolTrace:   []logtrace.ToolTrace{},
+		AuditResult: audit,
+		Route:       metadata.Route,
+	})
+	attachRuntimeMetadata(securityReport, metadata, r.registry)
+	r.attachLLMMetadata(securityReport)
+	if securityReport != nil && securityReport.AuditMetadata != nil {
+		securityReport.AuditMetadata["fallback_reason"] = message
+	}
+	rtb.EndSpan(requestSpan.SpanID, "failed")
+	resp := agent.AgentRunResponse{
+		Task:               task,
+		InteractionType:    agent.InteractionTypeAgentRun,
+		RouterSource:       route.RouterSource,
+		RouterConfidence:   route.Confidence,
+		NeedsToolExecution: route.NeedsToolExecution,
+		RouterReason:       route.Reason,
+		Decision:           string(security.DecisionReview),
+		Summary:            message,
+		AgentMode:          string(agentloop.ModeAgentLoop),
+		SecurityReport:     securityReport,
+		ToolTrace:          []logtrace.ToolTrace{},
+		AuditResult:        audit,
+		ReasoningTrace:     rtb.Finish(),
+	}
+	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusFailed)
+	agent.AttachUserMessage(&resp)
+	return resp
 }
 
 // attachLLMMetadata injects remote LLM execution metadata into the security report.

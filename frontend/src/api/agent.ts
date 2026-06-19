@@ -1,5 +1,11 @@
 import axios, { AxiosError } from 'axios'
-import type { AgentRunResponse, HealthResponse } from '../types/agent'
+import type {
+  AcceptanceSummaryResponse,
+  AgentCapabilitiesResponse,
+  AgentRunResponse,
+  HealthResponse,
+  RuntimeStatusResponse
+} from '../types/agent'
 
 const client = axios.create({
   timeout: 20000,
@@ -23,6 +29,33 @@ export async function runAgent(task: string): Promise<AgentRunResponse> {
 
 export async function runAgentEino(task: string): Promise<AgentRunResponse> {
   return postAgentRun('/api/agent/run-eino', task)
+}
+
+export async function getRuntimeStatus(): Promise<RuntimeStatusResponse> {
+  try {
+    const response = await client.get<RuntimeStatusResponse>('/api/agent/runtime-status')
+    return response.data
+  } catch (error) {
+    throw normalizeError(error, 'Runtime status request failed')
+  }
+}
+
+export async function getAgentCapabilities(): Promise<AgentCapabilitiesResponse> {
+  try {
+    const response = await client.get<AgentCapabilitiesResponse>('/api/agent/capabilities')
+    return response.data
+  } catch (error) {
+    throw normalizeError(error, 'Agent capabilities request failed')
+  }
+}
+
+export async function getAcceptanceSummary(): Promise<AcceptanceSummaryResponse> {
+  try {
+    const response = await client.get<AcceptanceSummaryResponse>('/api/agent/acceptance-summary')
+    return response.data
+  } catch (error) {
+    throw normalizeError(error, 'Acceptance summary request failed')
+  }
 }
 
 async function postAgentRun(path: string, task: string): Promise<AgentRunResponse> {

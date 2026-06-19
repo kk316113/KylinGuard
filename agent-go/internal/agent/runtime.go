@@ -27,19 +27,39 @@ type RunRequest struct {
 }
 
 type RunResponse struct {
-	Task            string                         `json:"task"`
-	Decision        string                         `json:"decision"`
-	Summary         string                         `json:"summary"`
-	Plan            *Plan                          `json:"plan,omitempty"`
-	Diagnosis       *Diagnosis                     `json:"diagnosis,omitempty"`
-	SecurityReport  *report.SecurityReport         `json:"security_report,omitempty"`
-	ToolTrace       []logtrace.ToolTrace           `json:"tool_trace"`
-	AuditResult     auditclient.Result             `json:"audit_result"`
-	ReasoningTrace  *reasoningtrace.ReasoningTrace `json:"reasoning_trace,omitempty"`
-	AgentMode       string                         `json:"agent_mode,omitempty"`
-	TaskUnderstanding map[string]any               `json:"task_understanding,omitempty"`
-	AgentSteps      []map[string]any               `json:"agent_steps,omitempty"`
-	FinalAnswer     string                         `json:"final_answer,omitempty"`
+	TaskID             string                         `json:"task_id,omitempty"`
+	Task               string                         `json:"task"`
+	SceneType          string                         `json:"scene_type,omitempty"`
+	SceneSummary       string                         `json:"scene_summary,omitempty"`
+	RunStatus          string                         `json:"run_status,omitempty"`
+	CreatedAt          string                         `json:"created_at,omitempty"`
+	InteractionType    string                         `json:"interaction_type,omitempty"`
+	RouterSource       string                         `json:"router_source,omitempty"`
+	RouterConfidence   string                         `json:"router_confidence,omitempty"`
+	NeedsToolExecution bool                           `json:"needs_tool_execution"`
+	RouterReason       string                         `json:"router_reason,omitempty"`
+	Decision           string                         `json:"decision"`
+	Summary            string                         `json:"summary"`
+	Plan               *Plan                          `json:"plan,omitempty"`
+	Diagnosis          *Diagnosis                     `json:"diagnosis,omitempty"`
+	SecurityReport     *report.SecurityReport         `json:"security_report,omitempty"`
+	ToolTrace          []logtrace.ToolTrace           `json:"tool_trace"`
+	AuditResult        auditclient.Result             `json:"audit_result"`
+	ReasoningTrace     *reasoningtrace.ReasoningTrace `json:"reasoning_trace,omitempty"`
+	AgentMode          string                         `json:"agent_mode,omitempty"`
+	TaskUnderstanding  map[string]any                 `json:"task_understanding,omitempty"`
+	AgentSteps         []map[string]any               `json:"agent_steps,omitempty"`
+	FinalAnswer        string                         `json:"final_answer,omitempty"`
+	UserMessage        *UserMessage                   `json:"user_message,omitempty"`
+}
+
+type UserMessage struct {
+	Title        string   `json:"title"`
+	Answer       string   `json:"answer"`
+	Status       string   `json:"status"`
+	WhatIChecked []string `json:"what_i_checked"`
+	KeyFindings  []string `json:"key_findings"`
+	NextSteps    []string `json:"next_steps"`
 }
 
 type Diagnosis struct {
@@ -114,7 +134,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 			AuditResult: audit,
 			Route:       "stable",
 		})
-		return RunResponse{
+		resp := RunResponse{
 			Task:           task,
 			Decision:       string(security.DecisionDeny),
 			Summary:        "request denied by intent guard",
@@ -122,7 +142,10 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 			ToolTrace:      []logtrace.ToolTrace{},
 			AuditResult:    audit,
 			ReasoningTrace: rtb.Finish(),
-		}, nil
+		}
+		AttachScenarioWorkspaceMetadata(&resp, task, RunStatusBlocked)
+		AttachUserMessage(&resp)
+		return resp, nil
 	}
 	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
 
@@ -266,7 +289,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 	rtb.EndSpan(requestSpan.SpanID, "completed")
 	rtb.Finish()
 
-	return RunResponse{
+	resp := RunResponse{
 		Task:           task,
 		Decision:       audit.Decision,
 		Summary:        "agent run completed",
@@ -276,7 +299,10 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		ToolTrace:      traces,
 		AuditResult:    audit,
 		ReasoningTrace: rtb.Trace,
-	}, nil
+	}
+	AttachScenarioWorkspaceMetadata(&resp, task, RunStatusCompleted)
+	AttachUserMessage(&resp)
+	return resp, nil
 }
 
 func reportPlanFromAgentPlan(plan *Plan) *report.Plan {

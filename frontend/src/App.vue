@@ -76,7 +76,7 @@ import AgentChatWorkbench from './pages/AgentChatWorkbench.vue'
 import { getHealth, runAgent, runAgentEino } from './api/agent'
 import type { AgentRunResponse, HealthResponse, RuntimeMode } from './types/agent'
 
-const view = ref<'console' | 'workbench'>('console')
+const view = ref<'console' | 'workbench'>('workbench')
 const task = ref('检查当前系统 SSH 登录异常')
 const mode = ref<RuntimeMode>('stable')
 const loading = ref(false)

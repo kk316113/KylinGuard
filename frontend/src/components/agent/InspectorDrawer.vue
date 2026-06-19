@@ -16,18 +16,18 @@
 
       <a-tab-pane key="tools" title="Tool Calls">
         <a-table v-if="resp.tool_trace?.length" :data="resp.tool_trace" :pagination="false" size="small" :scroll="{ x: 500 }">
-          <a-column title="Tool" data-index="tool_name" :width="100"></a-column>
-          <a-column title="Op" data-index="operation_type" :width="60"></a-column>
-          <a-column title="Resource" data-index="resource_type" :width="90"></a-column>
-          <a-column title="Boundary" data-index="boundary_level" :width="80">
+          <a-table-column title="Tool" data-index="tool_name" :width="100"></a-table-column>
+          <a-table-column title="Op" data-index="operation_type" :width="60"></a-table-column>
+          <a-table-column title="Resource" data-index="resource_type" :width="90"></a-table-column>
+          <a-table-column title="Boundary" data-index="boundary_level" :width="80">
             <template #cell="{ record }"><a-tag :color="bc(record.boundary_level)" size="small">{{ record.boundary_level }}</a-tag></template>
-          </a-column>
-          <a-column title="Policy" data-index="allowed_by_policy" :width="60">
+          </a-table-column>
+          <a-table-column title="Policy" data-index="allowed_by_policy" :width="60">
             <template #cell="{ record }">{{ record.allowed_by_policy ? 'Y' : 'N' }}</template>
-          </a-column>
-          <a-column title="Status" data-index="status" :width="60">
+          </a-table-column>
+          <a-table-column title="Status" data-index="status" :width="60">
             <template #cell="{ record }"><a-tag :color="record.status === 'ok' ? 'green' : 'red'" size="small">{{ record.status }}</a-tag></template>
-          </a-column>
+          </a-table-column>
         </a-table>
         <a-empty v-else description="No tool calls" />
       </a-tab-pane>
@@ -51,13 +51,13 @@
 
       <a-tab-pane key="evidence" title="Evidence">
         <a-table v-if="evidenceItems.length" :data="evidenceItems" :pagination="false" size="small">
-          <a-column title="#" data-index="evidence_id" :width="50"></a-column>
-          <a-column title="Tool" data-index="tool_name" :width="100"></a-column>
-          <a-column title="Resource" data-index="resource_type" :width="100"></a-column>
-          <a-column title="Boundary" data-index="boundary_level" :width="80">
+          <a-table-column title="#" data-index="evidence_id" :width="50"></a-table-column>
+          <a-table-column title="Tool" data-index="tool_name" :width="100"></a-table-column>
+          <a-table-column title="Resource" data-index="resource_type" :width="100"></a-table-column>
+          <a-table-column title="Boundary" data-index="boundary_level" :width="80">
             <template #cell="{ record }"><a-tag :color="bc(record.boundary_level)" size="small">{{ record.boundary_level }}</a-tag></template>
-          </a-column>
-          <a-column title="Summary" data-index="summary" :ellipsis="true"></a-column>
+          </a-table-column>
+          <a-table-column title="Summary" data-index="summary" :ellipsis="true"></a-table-column>
         </a-table>
         <a-empty v-else description="No evidence chain" />
       </a-tab-pane>
