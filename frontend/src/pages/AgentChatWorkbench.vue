@@ -69,8 +69,24 @@
                   <span v-if="step.resource_path">path={{ step.resource_path }}</span>
                 </div>
                 <div v-if="step.policy_reason" class="step-policy-reason">{{ step.policy_reason }}</div>
+                <div v-if="step.audit_report" class="step-audit">
+                  <div class="step-audit-head">
+                    <span class="audit-label">审计</span>
+                    <a-tag :color="policyColor(step.audit_report.decision || '')" size="small">{{ step.audit_report.decision }}</a-tag>
+                    <span v-if="step.audit_report.risk_score != null" class="audit-risk">风险 {{ (step.audit_report.risk_score ?? 0).toFixed(2) }}</span>
+                    <a-tag v-if="step.audit_report.method" color="purple" size="small">{{ step.audit_report.method }}</a-tag>
+                  </div>
+                  <ul v-if="step.audit_report.violations && step.audit_report.violations.length" class="audit-violations">
+                    <li v-for="(v, vi) in step.audit_report.violations" :key="vi">{{ v }}</li>
+                  </ul>
+                  <ul v-if="step.audit_report.evidence && step.audit_report.evidence.length" class="audit-evidence">
+                    <li v-for="(e, ei) in step.audit_report.evidence" :key="ei">{{ e }}</li>
+                  </ul>
+                </div>
               </div>
             </div>
+
+            <RiskGraphView v-if="msg.riskGraph && msg.riskGraph.nodes && msg.riskGraph.nodes.length" :graph="msg.riskGraph" />
 
             <ExecutionAccordion v-if="msg.traces" :traces="msg.traces" :plan="msg.plan"
               :recommendations="msg.recommendations" :evidence-items="msg.evidenceItems" />
@@ -122,7 +138,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
 import { runAgent, runAgentEino } from '../api/agent'
-import type { AgentRunResponse, ToolTraceItem, Plan, RecommendationItem, EvidenceItem, AgentStep } from '../types/agent'
+import type { AgentRunResponse, ToolTraceItem, Plan, RecommendationItem, EvidenceItem, AgentStep, RiskGraph } from '../types/agent'
 import DecisionCard from '../components/agent/DecisionCard.vue'
 import ExecutionAccordion from '../components/agent/ExecutionAccordion.vue'
 import InspectorDrawer from '../components/agent/InspectorDrawer.vue'
@@ -130,6 +146,7 @@ import AgentRunningNarrative from '../components/agent/AgentRunningNarrative.vue
 import FollowUpSuggestions from '../components/agent/FollowUpSuggestions.vue'
 import type { FollowUpItem } from '../components/agent/FollowUpSuggestions.vue'
 import DemoGuideNote from '../components/agent/DemoGuideNote.vue'
+import RiskGraphView from '../components/agent/RiskGraphView.vue'
 
 defineEmits<{ back: [] }>()
 
@@ -181,6 +198,7 @@ interface ChatMessage {
   agentSteps?: AgentStep[]
   finalAnswer?: string
   runtimeBadge?: { label: string; color: string; chatModel: string }
+  riskGraph?: RiskGraph | null
 }
 
 const messages = ref<ChatMessage[]>([])
@@ -235,6 +253,14 @@ async function send() {
     const steps = resp.agent_steps ?? []
     const finalAnswer = resp.final_answer || resp.summary || '未返回最终回答'
     const runtimeBadge = runtimeBadgeFromResponse(resp)
+    const riskGraph = resp.risk_graph ?? null
+
+    // req 3: a pure final_answer (no executed steps) shows no audit. Only the
+    // eino/agent-loop path produces pure-final-answer responses; the stable
+    // runtime always carries plan/traces, so keep its DecisionCard.
+    const isEino = runtimeMode.value === 'eino'
+    const hasSteps = steps.length > 0
+    const hideDecision = isEino && !hasSteps
 
     // Assistant main message always prefers the natural-language final answer.
     const summary = finalAnswer
@@ -251,7 +277,7 @@ async function send() {
     messages.value.push({
       role: 'assistant',
       content: summary,
-      decision: {
+      decision: hideDecision ? undefined : {
         decision: dec,
         risk: resp.security_report?.risk_level || '',
         scenario: resp.plan?.scenario || '',
@@ -270,6 +296,7 @@ async function send() {
       agentSteps: steps,
       finalAnswer: finalAnswer,
       runtimeBadge,
+      riskGraph,
     })
 
     inspectorResp.value = resp
@@ -418,4 +445,13 @@ function observationSummary(step: AgentStep) {
 .obs-text { font-size: 12px; color: #4e5969; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; }
 .step-semantic { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; color: #86909c; }
 .step-policy-reason { margin-top: 4px; font-size: 12px; color: #86909c; line-height: 1.4; }
+/* Per-step audit block */
+.step-audit { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e5e6eb; }
+.step-audit-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.audit-label { font-size: 12px; color: #86909c; font-weight: 600; }
+.audit-risk { font-size: 12px; color: #4e5969; background: #f0f0f0; padding: 1px 8px; border-radius: 4px; }
+.audit-violations { margin: 6px 0 0 0; padding-left: 18px; }
+.audit-violations li { font-size: 12px; color: #f53f3f; line-height: 1.6; }
+.audit-evidence { margin: 4px 0 0 0; padding-left: 18px; }
+.audit-evidence li { font-size: 12px; color: #4e5969; line-height: 1.6; }
 </style>

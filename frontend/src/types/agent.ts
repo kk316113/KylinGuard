@@ -49,6 +49,22 @@ export interface AgentStep {
   boundary_level?: string
   allowed_by_policy?: boolean
   policy_reason?: string
+  audit_report?: AuditReport
+}
+
+// AuditReport is the per-tool-call audit conclusion produced by the backend
+// StepAuditor (one audit_report per tool_call). All reports in a run aggregate
+// into the top-level RiskGraph.
+export interface AuditReport {
+  step_id?: string
+  step_index?: number
+  tool_name?: string
+  decision?: Decision
+  risk_score?: number
+  violations?: string[]
+  evidence?: string[]
+  method?: string
+  message?: string
 }
 
 export interface ReasoningTrace {

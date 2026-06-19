@@ -44,38 +44,57 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoGraphRuntime(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
-	if response.Decision != "allow" {
-		t.Fatalf("expected allow, got %q", response.Decision)
+	// run-eino now always uses the Agent Loop (req 1). With no remote LLM configured,
+	// the deterministic adapter drives the loop, so the response carries agent_loop
+	// mode, agent_steps with per-step audit_reports, and an aggregated risk_graph.
+	if response.AgentMode != "agent_loop" {
+		t.Fatalf("expected agent_loop mode, got %q", response.AgentMode)
 	}
-	if response.Summary != RuntimeSummary {
-		t.Fatalf("expected Eino graph runtime summary, got %q", response.Summary)
+	// run-eino always runs the agent loop; its summary mentions agent loop orchestration.
+	if !strings.Contains(response.Summary, "agent loop") {
+		t.Fatalf("expected agent loop summary, got %q", response.Summary)
 	}
 	if strings.Contains(response.Summary, "stable runtime fallback used") {
 		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
 	}
-	if strings.Contains(response.Summary, "deterministic planner-backed") {
-		t.Fatalf("summary should not contain Stage 9A marker: %q", response.Summary)
+	if len(response.AgentSteps) == 0 {
+		t.Fatal("expected agent_steps for agent loop run")
 	}
-	if response.AuditResult.Method != "traceshield" {
-		t.Fatalf("expected traceshield audit, got %q", response.AuditResult.Method)
+	for i, step := range response.AgentSteps {
+		ar, ok := step["audit_report"]
+		if !ok {
+			t.Fatalf("step %d missing audit_report", i)
+		}
+		auditMap, ok := ar.(map[string]any)
+		if !ok {
+			t.Fatalf("step %d audit_report not a map", i)
+		}
+		if auditMap["decision"] == "" {
+			t.Fatalf("step %d audit_report has empty decision", i)
+		}
+		if auditMap["method"] == "" {
+			t.Fatalf("step %d audit_report has empty method", i)
+		}
 	}
-	if response.Plan == nil {
-		t.Fatal("expected plan")
+	// req 8: aggregated risk_graph with one node per step and sequence edges.
+	if response.RiskGraph == nil {
+		t.Fatal("expected non-nil risk_graph")
 	}
-	assertPlanTools(t, response.Plan, []string{"os_info", "service_status", "port_checker", "log_reader", "ssh_login_analyzer"})
-	if len(response.ToolTrace) < 5 {
-		t.Fatalf("expected at least 5 traces, got %d", len(response.ToolTrace))
+	if len(response.RiskGraph.Nodes) != len(response.AgentSteps) {
+		t.Fatalf("expected %d risk_graph nodes, got %d", len(response.AgentSteps), len(response.RiskGraph.Nodes))
+	}
+	wantEdges := len(response.AgentSteps) - 1
+	if len(response.RiskGraph.Edges) != wantEdges {
+		t.Fatalf("expected %d risk_graph edges, got %d", wantEdges, len(response.RiskGraph.Edges))
 	}
 	if response.SecurityReport == nil {
 		t.Fatal("expected security_report")
 	}
 	metadata := response.SecurityReport.AuditMetadata
 	assertRuntimeMetadata(t, metadata, registry, true)
+	// req 7: audit happens once per executed tool_call.
 	if !auditor.called {
-		t.Fatal("expected audit client to be called")
-	}
-	if len(auditor.traces) < 5 {
-		t.Fatalf("expected auditor to receive graph tool traces, got %d", len(auditor.traces))
+		t.Fatal("expected audit client to be called (per step)")
 	}
 }
 

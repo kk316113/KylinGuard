@@ -40,6 +40,8 @@ type RunResponse struct {
 	TaskUnderstanding map[string]any               `json:"task_understanding,omitempty"`
 	AgentSteps      []map[string]any               `json:"agent_steps,omitempty"`
 	FinalAnswer     string                         `json:"final_answer,omitempty"`
+	// RiskGraph is the global risk graph aggregated from per-step audit_reports.
+	RiskGraph       *auditclient.RiskGraph         `json:"risk_graph,omitempty"`
 }
 
 type Diagnosis struct {
