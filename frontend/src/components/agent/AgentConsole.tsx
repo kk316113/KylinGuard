@@ -74,6 +74,8 @@ export function AgentConsole({ runtimeStatus, currentRun, selectedStepIndex, onR
     void submitTask(input);
   }
 
+  const runID = currentRun?.run_id || currentRun?.task_id;
+
   return (
     <main className="agent-console">
       <section className="conversation-panel">
@@ -81,7 +83,7 @@ export function AgentConsole({ runtimeStatus, currentRun, selectedStepIndex, onR
           <p className="eyebrow">KylinGuard CopilotKit Agent Console</p>
           <h1>用自然语言发起安全受控的麒麟运维任务</h1>
           <p>
-            Agent 会理解你的问题，必要时调用受控工具，并把最终回答、工具证据和安全审计分层展示。
+            Agent 会理解你的问题，在必要时调用受控工具，并把最终回答、工具证据和安全审计分层展示。
           </p>
         </div>
 
@@ -126,7 +128,7 @@ export function AgentConsole({ runtimeStatus, currentRun, selectedStepIndex, onR
 
         {currentRun ? (
           <div className="run-summary-strip">
-            <span>任务会话：{currentRun.task_id || "未分配"}</span>
+            <span>任务会话：{runID || "未分配"}</span>
             <span>场景类型：{sceneTypeLabel(currentRun.scene_type)}</span>
             <span>运行状态：{currentRun.run_status || "unknown"}</span>
             <span>运行模式：{modeLabel}</span>

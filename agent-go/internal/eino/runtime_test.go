@@ -50,12 +50,14 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoGraphRuntime(t *testing.T) {
 	if response.AgentMode != "agent_loop" {
 		t.Fatalf("expected agent_loop mode, got %q", response.AgentMode)
 	}
-	// run-eino always runs the agent loop; its summary mentions agent loop orchestration.
-	if !strings.Contains(response.Summary, "agent loop") {
-		t.Fatalf("expected agent loop summary, got %q", response.Summary)
+	if strings.TrimSpace(response.Summary) == "" {
+		t.Fatal("expected nonempty user-facing summary")
 	}
 	if strings.Contains(response.Summary, "stable runtime fallback used") {
 		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Answer == "" {
+		t.Fatalf("expected user-facing final answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 	if len(response.AgentSteps) == 0 {
 		t.Fatal("expected agent_steps for agent loop run")

@@ -179,7 +179,7 @@ func nextSteps(resp *RunResponse) []string {
 			"确认服务、端口、日志和权限配置是否符合预期",
 		}
 	}
-	return []string{"检查服务状态、网络连通性和日志权限后再继续定位"}
+	return []string{"补充具体故障现象、服务名、端口或日志位置后继续定位"}
 }
 
 func isTechnicalSummary(summary string) bool {

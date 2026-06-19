@@ -42,6 +42,8 @@ func NewSafetyRefusalRoute(reason string) InteractionRoute {
 	}
 }
 
+// ConservativeRoute is only a deterministic fallback for environments without
+// a remote LLM router. It must not select tools or become fixed workflow logic.
 func ConservativeRoute(task string) InteractionRoute {
 	text := strings.TrimSpace(strings.ToLower(task))
 	if text == "" {
@@ -62,16 +64,16 @@ func ConservativeRoute(task string) InteractionRoute {
 			RouterSource:       RouterSourceDeterministicConservative,
 			Confidence:         RouterConfidenceMedium,
 			NeedsToolExecution: true,
-			Reason:             "explicit local demo operations task",
+			Reason:             "concrete operations task; deterministic fallback allows Agent Loop to plan next_action",
 		}
 	}
 	return clarifyRoute("ambiguous request; ask for the concrete operations symptom before tools")
 }
 
 func NewChatOnlyResponse(task string, route InteractionRoute) RunResponse {
-	answer := "你好，我是 KylinGuard 智能运维助手。你可以直接描述遇到的系统问题，例如 SSH 连不上、机器卡顿、服务访问不了、端口异常或日志风险。我会在安全策略约束下帮你一步步排查。"
+	answer := "你好，我是 KylinGuard 智能运维助手。你可以直接描述遇到的系统问题，例如 SSH 连不上、机器很卡、服务访问不了、端口异常或日志风险。我会在安全策略约束下帮助你一步步排查。"
 	return newNonToolResponse(task, route, AgentModeChatOnly, "你好，我在", answer, []string{
-		"你可以直接描述一个具体运维问题，例如 SSH 连不上、服务访问不了或机器卡顿。",
+		"直接描述一个具体运维问题，例如 SSH 连不上、服务访问不了或机器卡顿。",
 	})
 }
 
@@ -143,7 +145,7 @@ func clarifyRoute(reason string) InteractionRoute {
 func isPlainChatRequest(text string) bool {
 	normalized := strings.Join(strings.Fields(text), " ")
 	switch normalized {
-	case "hello", "hi", "help", "你好", "您好", "你好呀", "你好呀请你回答我的问题":
+	case "hello", "hi", "help", "你好", "您好", "你好呀", "你好，请你回答我的问题":
 		return true
 	}
 	return strings.Contains(normalized, "你是谁") ||
@@ -156,23 +158,32 @@ func isPlainChatRequest(text string) bool {
 }
 
 func isExplicitDemoOpsRequest(text string) bool {
-	hasTroubleshootingVerb := strings.Contains(text, "帮我看看") ||
+	hasTroubleshootingIntent := strings.Contains(text, "帮我看看") ||
 		strings.Contains(text, "排查") ||
 		strings.Contains(text, "检查") ||
 		strings.Contains(text, "诊断") ||
+		strings.Contains(text, "定位") ||
 		strings.Contains(text, "diagnose") ||
-		strings.Contains(text, "check")
-	if !hasTroubleshootingVerb {
+		strings.Contains(text, "check") ||
+		strings.Contains(text, "troubleshoot")
+	if !hasTroubleshootingIntent {
 		return false
 	}
 	return strings.Contains(text, "ssh") ||
 		strings.Contains(text, "连不上") ||
+		strings.Contains(text, "登录") ||
 		strings.Contains(text, "服务") ||
 		strings.Contains(text, "端口") ||
+		strings.Contains(text, "访问不了") ||
 		strings.Contains(text, "卡") ||
 		strings.Contains(text, "慢") ||
 		strings.Contains(text, "cpu") ||
 		strings.Contains(text, "内存") ||
 		strings.Contains(text, "磁盘") ||
-		strings.Contains(text, "日志")
+		strings.Contains(text, "日志") ||
+		strings.Contains(text, "service") ||
+		strings.Contains(text, "port") ||
+		strings.Contains(text, "slow") ||
+		strings.Contains(text, "load") ||
+		strings.Contains(text, "log")
 }

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { FileText, GitBranch, ListChecks, Shield, Siren, Wrench } from "lucide-react";
 import type { AgentRun, AgentStep, ToolTrace } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse } from "@/types/runtime";
-import { asText, compactDate, decisionLabel, observationSummary, traceSummary } from "@/lib/formatters";
+import { asText, compactDate, observationSummary, traceSummary } from "@/lib/formatters";
 import { RiskDecisionBadge } from "@/components/audit/RiskDecisionBadge";
 import { RiskGraphPanel } from "@/components/risk-graph/RiskGraphPanel";
 
@@ -101,7 +101,7 @@ function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentSte
             <Detail label="observation" value={observationSummary(step) || (trace ? traceSummary(trace) : "")} wide />
           </div>
         ) : (
-          <p>请选择一个工具步骤查看对应审计上下文。本次如未调用工具，则只有全局审计结论。</p>
+          <p>请选择一个工具步骤查看对应审计上下文。本次如未调用工具，则只展示全局审计结论。</p>
         )}
       </section>
 
@@ -127,7 +127,7 @@ function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentSte
 
 function HotspotsTab({ run }: { run?: AgentRun | null }) {
   if (!run) {
-    return <EmptyPanel title="暂无风险热点" description="风险热点来自后端 risk_graph 或 audit_result，不由前端推断。" />;
+    return <EmptyPanel title="暂无风险热点" description="风险热点来自后端 risk_graph 或 audit_result，前端不做推断。" />;
   }
   const violations = run.audit_result?.violations || [];
   const sensitiveTraces = (run.tool_trace || []).filter((trace) => trace.risk_level === "high" || trace.boundary_level === "high");
@@ -164,7 +164,7 @@ function DecisionPathTab({
   onSelectStep: (index: number) => void;
 }) {
   if (!run?.agent_steps?.length) {
-    return <EmptyPanel title="暂无决策路径" description="当 Agent 调用工具后，这里会展示每步 policy decision 和 observation。" />;
+    return <EmptyPanel title="暂无决策路径" description="Agent 调用工具后，这里会展示每步 policy decision 和 observation。" />;
   }
 
   return (
@@ -240,7 +240,7 @@ function ReportTab({ run }: { run?: AgentRun | null }) {
           <h3>任务会话</h3>
         </div>
         <div className="detail-grid">
-          <Detail label="task_id" value={run.task_id} />
+          <Detail label="run_id" value={run.run_id || run.task_id} />
           <Detail label="scene_type" value={run.scene_type} />
           <Detail label="run_status" value={run.run_status} />
           <Detail label="created_at" value={compactDate(run.created_at)} />
@@ -261,7 +261,7 @@ function ReportTab({ run }: { run?: AgentRun | null }) {
             {run.security_report.recommendations.map((item, index) => (
               <li key={`recommendation-${index}`}>
                 <strong>{index + 1}</strong>
-                <span>{item}</span>
+                <span>{asText(item)}</span>
               </li>
             ))}
           </ul>

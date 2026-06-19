@@ -14,7 +14,7 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
       <div className="insight-empty">
         <GitBranch size={22} />
         <h3>暂无风险图</h3>
-        <p>后端未返回 risk_graph。前端不会伪造风险图，只显示后端审计核心生成的数据。</p>
+        <p>后端未返回 risk_graph。前端不会伪造风险图，只展示后端审计核心生成的数据。</p>
       </div>
     );
   }
@@ -44,7 +44,7 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
         <div className="graph-list">
           {(graph.edges || []).map((edge, index) => (
             <div className="graph-edge" key={`${edge.source || "s"}-${edge.target || "t"}-${index}`}>
-              <strong>{edge.source || "source"} → {edge.target || "target"}</strong>
+              <strong>{edge.source || "source"} &gt; {edge.target || "target"}</strong>
               <span>{edge.label || edge.type || "edge"}</span>
             </div>
           ))}
@@ -82,5 +82,5 @@ function EmptyRiskGraph() {
 }
 
 function findRiskGraph(run?: AgentRun | null): RiskGraph {
-  return run?.audit_result?.risk_graph || run?.security_report?.risk_graph || null;
+  return run?.risk_graph || run?.audit_result?.risk_graph || run?.security_report?.risk_graph || null;
 }

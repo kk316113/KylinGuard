@@ -17,7 +17,7 @@ export function TopStatusBar({ status, loading, error, onRefresh }: Props) {
   return (
     <header className="top-status-bar">
       <div className="brand-block">
-        <div className="brand-mark">麒</div>
+        <div className="brand-mark">盾</div>
         <div>
           <strong>KylinGuard</strong>
           <span>Secure Ops Agent Console</span>

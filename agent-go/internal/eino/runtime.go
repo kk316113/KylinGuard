@@ -122,10 +122,27 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	}
 	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
 
-	// Stage 16A+: run-eino always uses the Agent Loop. When a remote LLM is
-	// configured it drives the loop; otherwise the deterministic adapter acts as
-	// the fallback generator. The graph-runtime path is no longer reached here.
-	return r.runAgentLoop(ctx, task, rtb, requestSpan, intent)
+	route := r.routeInteraction(ctx, task)
+	if route.InteractionType == agent.InteractionTypeChat {
+		rtb.EndSpan(requestSpan.SpanID, "chat_only")
+		rtb.Finish()
+		return agent.NewChatOnlyResponse(task, route), nil
+	}
+	if route.InteractionType == agent.InteractionTypeClarify {
+		rtb.EndSpan(requestSpan.SpanID, "clarify")
+		rtb.Finish()
+		return agent.NewClarifyResponse(task, route), nil
+	}
+	if route.InteractionType == agent.InteractionTypeSafeRefusal {
+		rtb.EndSpan(requestSpan.SpanID, "safe_refusal")
+		rtb.Finish()
+		return agent.NewSafeRefusalResponse(task, route), nil
+	}
+
+	// Stage 16A+: run-eino uses the Agent Loop for concrete operations tasks.
+	// When a remote LLM is configured it drives the loop; otherwise the
+	// deterministic adapter acts as the fallback generator.
+	return r.runAgentLoop(ctx, task, rtb, requestSpan, intent, route)
 }
 
 func (r *Runtime) Name() string {
@@ -535,7 +552,7 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 }
 
 // runAgentLoop executes the Stage 16A Agent Loop for remote LLM.
-func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult) (agent.AgentRunResponse, error) {
+func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult, route agent.InteractionRoute) (agent.AgentRunResponse, error) {
 	// Choose the agent-loop generator. A configured remote LLM drives the loop;
 	// otherwise the deterministic adapter acts as the fallback generator so run-eino
 	// always runs an Agent Loop (req 1).
@@ -609,15 +626,15 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		}
 		if step.AuditReport != nil {
 			m["audit_report"] = map[string]any{
-				"step_id":     step.AuditReport.StepID,
-				"step_index":  step.AuditReport.StepIndex,
-				"tool_name":   step.AuditReport.ToolName,
-				"decision":    step.AuditReport.Decision,
-				"risk_score":  step.AuditReport.RiskScore,
-				"violations":  step.AuditReport.Violations,
-				"evidence":    step.AuditReport.Evidence,
-				"method":      step.AuditReport.Method,
-				"message":     step.AuditReport.Message,
+				"step_id":    step.AuditReport.StepID,
+				"step_index": step.AuditReport.StepIndex,
+				"tool_name":  step.AuditReport.ToolName,
+				"decision":   step.AuditReport.Decision,
+				"risk_score": step.AuditReport.RiskScore,
+				"violations": step.AuditReport.Violations,
+				"evidence":   step.AuditReport.Evidence,
+				"method":     step.AuditReport.Method,
+				"message":    step.AuditReport.Message,
 			}
 		}
 		stepMaps = append(stepMaps, m)
@@ -680,7 +697,10 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		AuditResult:    audit,
 		RiskGraph:      loopResp.RiskGraph,
 		ReasoningTrace: rtb.Finish(),
-	}, nil
+	}
+	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
+	agent.AttachUserMessage(&resp)
+	return resp, nil
 }
 
 // aggregateAuditFromSteps synthesizes a single auditclient.Result from the

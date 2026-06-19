@@ -302,17 +302,48 @@ The baseline docs record:
 Agent completion is the product mainline.
 Guardrails are embedded into every tool call.
 Risk graph is generated from real execution and audit evidence.
-/api/agent/run is the target primary task API.
-/api/agent/run-eino remains the current compatibility path.
+/api/agent/run is the primary task API.
+/api/agent/run-eino remains a compatibility path for older scripts.
+```
+
+## Agent API Baseline Convergence MVP
+
+Implementation is in progress. The backend now converges the product baseline
+around `/api/agent/run` while preserving `/api/agent/run-eino` as a compatibility
+alias.
+
+Current local implementation:
+
+```text
+POST /api/agent/run uses the Agent Loop adapter as the primary task API.
+POST /api/agent/run-eino remains available for existing acceptance scripts.
+Each run receives run_id / task_id / scene_type / scene_summary / run_status / created_at.
+An in-memory recent run store keeps the latest responses without adding a database.
+GET /api/agent/runs/{run_id} returns the stored run response.
+GET /api/agent/runs/{run_id}/audit-reports returns per-step audit reports when present.
+GET /api/agent/runs/{run_id}/risk-graph returns the real backend risk_graph or an empty graph.
+GET /api/agent/runs/{run_id}/report returns a lightweight report summary.
+Frontend runAgentTask now calls /api/agent/run.
+Frontend visible Chinese copy has been normalized for browser review.
+```
+
+Verification so far:
+
+```text
+go test ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+browser integration - pending
 ```
 
 ## Current Next Suggested Work
 
 Priority order:
 
-1. Manually review the new CopilotKit frontend in browser
-2. Rerun frontend smoke on Kylin VM with real DeepSeek
-3. Decide whether to add AG-UI event streaming backend endpoint
-4. Stage 17B: task history / report export planning
-5. Stage 17: report / PPT / recording / defense script
-6. Stage 18: packaging and final stability
+1. Start backend and frontend locally for browser integration
+2. Manually review the new CopilotKit frontend in browser
+3. Rerun frontend smoke on Kylin VM with real DeepSeek
+4. Decide whether to add AG-UI event streaming backend endpoint
+5. Stage 17B: task history / report export planning
+6. Stage 17: report / PPT / recording / defense script
+7. Stage 18: packaging and final stability
