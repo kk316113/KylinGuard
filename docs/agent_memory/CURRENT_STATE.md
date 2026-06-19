@@ -251,14 +251,44 @@ Kylin VM / real DeepSeek verification
 Final PASS memory update
 ```
 
+## CopilotKit Frontend Replacement
+
+The old Vue/Vite frontend has been removed and a new Next.js + React +
+TypeScript + CopilotKit frontend MVP has been created under `frontend/`.
+
+Current implementation:
+
+```text
+Next.js App Router frontend runs on 127.0.0.1:5173
+CopilotKit provider wraps the app as the Agent UX foundation
+MVP uses existing non-streaming Go Agent APIs through Next rewrites
+Agent Console shows final_answer first, then tool timeline and observations
+Right Insight Panel shows Audit / Risk Graph / Hotspots / Decision Path / Tools / Report
+Frontend does not store real API keys and does not decide tool execution
+```
+
+Verification on Windows host:
+
+```text
+npm run typecheck - PASS
+npm run build - PASS
+```
+
+Pending:
+
+```text
+Manual browser review
+Kylin VM / real DeepSeek frontend smoke
+Future AG-UI streaming endpoint integration
+```
+
 ## Current Next Suggested Work
 
 Priority order:
 
-1. Manually review Stage 17A-2 user-facing Agent UX in browser
-2. Manually review Stage 17A-3 semantic routing in browser
-3. Rerun Stage 17A-1/17A-2/17A-3 Product Shell smoke on Kylin VM with real DeepSeek
-4. If Kylin VM checks pass, mark Stage 17A-1/17A-2/17A-3 as PASS and commit/finalize implementation
-5. Stage 17B: task history / report export planning
-6. Stage 17: report / PPT / recording / defense script
-7. Stage 18: packaging and final stability
+1. Manually review the new CopilotKit frontend in browser
+2. Rerun frontend smoke on Kylin VM with real DeepSeek
+3. Decide whether to add AG-UI event streaming backend endpoint
+4. Stage 17B: task history / report export planning
+5. Stage 17: report / PPT / recording / defense script
+6. Stage 18: packaging and final stability
