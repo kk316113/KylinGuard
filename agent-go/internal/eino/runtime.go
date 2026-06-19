@@ -122,222 +122,10 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	}
 	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
 
-	route := r.routeInteraction(ctx, task)
-	if route.InteractionType == agent.InteractionTypeChat {
-		rtb.EndSpan(requestSpan.SpanID, "chat_only")
-		rtb.Finish()
-		return agent.NewChatOnlyResponse(task, route), nil
-	}
-	if route.InteractionType == agent.InteractionTypeClarify {
-		rtb.EndSpan(requestSpan.SpanID, "clarify")
-		rtb.Finish()
-		return agent.NewClarifyResponse(task, route), nil
-	}
-	if route.InteractionType == agent.InteractionTypeSafeRefusal {
-		rtb.EndSpan(requestSpan.SpanID, "safe_refusal")
-		rtb.Finish()
-		return agent.NewSafeRefusalResponse(task, route), nil
-	}
-
-	providerName := "deterministic"
-	if r.config.LLMEnabled && r.config.LLMProvider != "deterministic" {
-		providerName = r.config.LLMProvider
-	}
-
-	// Stage 16A: Agent Loop for remote LLM.
-	if r.config.LLMEnabled && r.config.LLMProvider != "deterministic" && r.config.LLMAPIKey != "" {
-		resp, err := r.runAgentLoop(ctx, task, rtb, requestSpan, intent, route)
-		if err != nil {
-			return r.failedLLMResponse(task, err, rtb, requestSpan, route), nil
-		}
-		return resp, nil
-	}
-
-	if !r.config.GraphEnabled {
-		return agent.AgentRunResponse{}, errors.New("eino graph runtime is disabled")
-	}
-	if r.graphRuntime == nil {
-		r.graphRuntime = NewGraphRuntime(r.chatModel, r.toolAdapter)
-	}
-
-	// Chat model / planner.
-	chatModelSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanChatModel, "chat model generate tool calls")
-	rtb.SetAttr(chatModelSpan.SpanID, "chat_model_adapter", "interface-v1")
-	rtb.SetAttr(chatModelSpan.SpanID, "provider", providerName)
-	rtb.SetAttr(chatModelSpan.SpanID, "model", r.config.LLMModel)
-	rtb.SetAttr(chatModelSpan.SpanID, "llm_enabled", r.config.LLMEnabled)
-
-	graphOutput, err := r.graphRuntime.Run(ctx, task)
-	if err != nil {
-		rtb.EndSpan(chatModelSpan.SpanID, "error")
-		return agent.AgentRunResponse{}, err
-	}
-	rtb.SetAttr(chatModelSpan.SpanID, "output_type", "structured_tool_plan")
-	rtb.SetAttr(chatModelSpan.SpanID, "tool_count", len(graphOutput.ToolCalls))
-	rtb.SetAttr(chatModelSpan.SpanID, "remote_llm_used", r.config.LLMEnabled && r.config.LLMProvider != "deterministic")
-	if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
-		used, reason := fb.FallbackInfo()
-		rtb.SetAttr(chatModelSpan.SpanID, "fallback_used", used)
-		if used && reason != "" {
-			rtb.SetAttr(chatModelSpan.SpanID, "fallback_reason", reason)
-		}
-	}
-	rtb.EndSpan(chatModelSpan.SpanID, "ok")
-
-	plan := graphOutput.Plan
-
-	// Planner span.
-	plannerSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanPlanner, "graph-planned tool sequence")
-	rtb.SetAttr(plannerSpan.SpanID, "scenario", plan.Scenario)
-	toolList := make([]string, len(plan.Steps))
-	for i, s := range plan.Steps {
-		toolList[i] = s.ToolName
-	}
-	rtb.SetAttr(plannerSpan.SpanID, "selected_tools", reasoningtrace.StringSlice(toolList))
-	rtb.EndSpan(plannerSpan.SpanID, "ok")
-
-	// Tool execution.
-	traces := graphOutput.ToolTrace
-	if traces == nil {
-		traces = []logtrace.ToolTrace{}
-	}
-	var diagnosis *agent.Diagnosis
-	for _, result := range graphOutput.ToolResults {
-		if result.Trace.ToolName == "ssh_login_analyzer" {
-			diagnosis = diagnosisFromSSHLoginAnalyzer(plan.Scenario, result.Output)
-		}
-		if diagnosis == nil {
-			diagnosis = diagnosisFromToolOutput(plan.Scenario, result.Trace.ToolName, result.Output)
-		}
-
-		// Tool call span.
-		toolCallSpan := rtb.StartSpan(plannerSpan.SpanID, reasoningtrace.SpanToolCall, result.Trace.ToolName)
-		rtb.SetAttr(toolCallSpan.SpanID, "tool_name", result.Trace.ToolName)
-		rtb.SetAttr(toolCallSpan.SpanID, "operation_type", result.Trace.OperationType)
-		rtb.SetAttr(toolCallSpan.SpanID, "resource_type", result.Trace.ResourceType)
-		rtb.SetAttr(toolCallSpan.SpanID, "boundary_level", result.Trace.BoundaryLevel)
-		rtb.SetAttr(toolCallSpan.SpanID, "status", result.Trace.Status)
-
-		// Tool policy span.
-		policySpan := rtb.StartSpan(toolCallSpan.SpanID, reasoningtrace.SpanToolPolicy, result.Trace.ToolName+" policy")
-		rtb.SetAttr(policySpan.SpanID, "tool_name", result.Trace.ToolName)
-		rtb.SetAttr(policySpan.SpanID, "allowed_by_policy", result.Trace.AllowedByPolicy)
-		rtb.SetAttr(policySpan.SpanID, "requires_privilege", result.Trace.RequiresPrivilege)
-		rtb.EndSpan(policySpan.SpanID, "ok")
-
-		// Exec proxy span.
-		if ec := result.Trace.ExecutionContext; ec != nil {
-			execSpan := rtb.StartSpan(toolCallSpan.SpanID, reasoningtrace.SpanExecProxy, result.Trace.ToolName+" exec")
-			rtb.SetAttr(execSpan.SpanID, "tool_name", result.Trace.ToolName)
-			rtb.SetAttr(execSpan.SpanID, "execution_profile", ec.Profile)
-			rtb.SetAttr(execSpan.SpanID, "shell_used", ec.ShellUsed)
-			rtb.SetAttr(execSpan.SpanID, "sudo_used", ec.SudoUsed)
-			rtb.SetAttr(execSpan.SpanID, "allowed_by_exec_policy", ec.AllowedByExecPolicy)
-			rtb.EndSpan(execSpan.SpanID, "ok")
-		}
-
-		rtb.SetAttr(toolCallSpan.SpanID, "result_summary", reasoningtrace.TruncatedSummary(result.Trace.OutputSummary, 200))
-		rtb.EndSpan(toolCallSpan.SpanID, result.Trace.Status)
-
-		if result.Trace.ToolName != "" {
-			r.traces.Add(result.Trace)
-		}
-	}
-
-	// Audit.
-	auditSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanAudit, "traceshield audit")
-	audit, err := r.auditor.AuditTrace(ctx, task, traces)
-	if err != nil {
-		rtb.EndSpan(auditSpan.SpanID, "error")
-		return agent.AgentRunResponse{}, err
-	}
-	if audit.Decision == "" {
-		audit.Decision = string(intent.Decision)
-	}
-	rtb.SetAttr(auditSpan.SpanID, "audit_method", audit.Method)
-	rtb.SetAttr(auditSpan.SpanID, "audit_decision", audit.Decision)
-	rtb.SetAttr(auditSpan.SpanID, "risk_score", audit.RiskScore)
-	rtb.SetAttr(auditSpan.SpanID, "evidence_count", len(audit.EvidenceChain))
-	rtb.SetAttr(auditSpan.SpanID, "evidence_summary", fmt.Sprintf("%d evidence items", len(audit.EvidenceChain)))
-	rtb.EndSpan(auditSpan.SpanID, "ok")
-
-	// Decision normalizer.
-	dnSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanDecisionNormalizer, "decision normalizer")
-	diagRisk := ""
-	if diagnosis != nil {
-		diagRisk = diagnosis.RiskLevel
-	}
-	rawDecision := audit.Decision
-	audit.Decision = agent.NormalizeAgentDecision(audit.Decision, audit.Method, traces, diagRisk)
-	rtb.SetAttr(dnSpan.SpanID, "raw_decision", rawDecision)
-	rtb.SetAttr(dnSpan.SpanID, "normalized_decision", audit.Decision)
-	rtb.SetAttr(dnSpan.SpanID, "traceshield_method", audit.Method)
-	rtb.SetAttr(dnSpan.SpanID, "diagnosis_risk_level", diagRisk)
-	if audit.Decision != rawDecision {
-		if agent.ContainsSensitiveBoundary(traces) {
-			rtb.SetAttr(dnSpan.SpanID, "normalization_reason", "Traceshield deny overridden to review due to sensitive read-only tools")
-		} else {
-			rtb.SetAttr(dnSpan.SpanID, "normalization_reason", "Traceshield deny overridden to allow due to all read-only low-boundary tools")
-		}
-	} else {
-		rtb.SetAttr(dnSpan.SpanID, "normalization_reason", "No normalization needed")
-	}
-	rtb.EndSpan(dnSpan.SpanID, "ok")
-
-	// Diagnosis span.
-	diagnosisSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanDiagnosis, "diagnosis builder")
-	if diagnosis != nil {
-		rtb.SetAttr(diagnosisSpan.SpanID, "diagnosis_scenario", diagnosis.Scenario)
-		rtb.SetAttr(diagnosisSpan.SpanID, "diagnosis_risk_level", diagnosis.RiskLevel)
-		rtb.SetAttr(diagnosisSpan.SpanID, "findings_count", len(diagnosis.Findings))
-	} else {
-		rtb.SetAttr(diagnosisSpan.SpanID, "diagnosis_risk_level", "none")
-	}
-	rtb.EndSpan(diagnosisSpan.SpanID, "ok")
-
-	// Security report.
-	metadata := r.config.Metadata(toolsUsed(traces))
-	srSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanSecurityReport, "security report builder")
-	securityReport := report.BuildSecurityReport(report.BuildInput{
-		Task:        task,
-		Decision:    audit.Decision,
-		Summary:     RuntimeSummary,
-		Plan:        reportPlanFromAgentPlan(&plan),
-		ToolTrace:   traces,
-		Diagnosis:   reportDiagnosisFromAgentDiagnosis(diagnosis),
-		AuditResult: audit,
-		Route:       metadata.Route,
-	})
-	attachRuntimeMetadata(securityReport, metadata, r.registry)
-	// Inject LLM execution metadata into security report audit_metadata.
-	r.attachLLMMetadata(securityReport)
-	rtb.SetAttr(srSpan.SpanID, "report_title", securityReport.Title)
-	rtb.SetAttr(srSpan.SpanID, "report_sections", len(securityReport.EvidenceChain)+len(securityReport.RiskExplanation)+len(securityReport.Recommendations))
-	rtb.EndSpan(srSpan.SpanID, "ok")
-
-	// Final.
-	rtb.EndSpan(requestSpan.SpanID, "completed")
-	rtb.Finish()
-
-	resp := agent.AgentRunResponse{
-		Task:               task,
-		InteractionType:    agent.InteractionTypeAgentRun,
-		RouterSource:       route.RouterSource,
-		RouterConfidence:   route.Confidence,
-		NeedsToolExecution: route.NeedsToolExecution,
-		RouterReason:       route.Reason,
-		Decision:           audit.Decision,
-		Summary:            RuntimeSummary,
-		Plan:               &plan,
-		Diagnosis:          diagnosis,
-		SecurityReport:     securityReport,
-		ToolTrace:          traces,
-		AuditResult:        audit,
-		ReasoningTrace:     rtb.Trace,
-	}
-	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
-	agent.AttachUserMessage(&resp)
-	return resp, nil
+	// Stage 16A+: run-eino always uses the Agent Loop. When a remote LLM is
+	// configured it drives the loop; otherwise the deterministic adapter acts as
+	// the fallback generator. The graph-runtime path is no longer reached here.
+	return r.runAgentLoop(ctx, task, rtb, requestSpan, intent)
 }
 
 func (r *Runtime) Name() string {
@@ -747,51 +535,64 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 }
 
 // runAgentLoop executes the Stage 16A Agent Loop for remote LLM.
-func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult, route agent.InteractionRoute) (agent.AgentRunResponse, error) {
-	// Build the LLM adapter for agent loop.
-	var llmAdapter *RemoteLLMAdapter
-	if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
-		if r, ok2 := fb.primary.(*RemoteLLMAdapter); ok2 {
-			llmAdapter = r
+func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult) (agent.AgentRunResponse, error) {
+	// Choose the agent-loop generator. A configured remote LLM drives the loop;
+	// otherwise the deterministic adapter acts as the fallback generator so run-eino
+	// always runs an Agent Loop (req 1).
+	var gen agentloop.NextActionGenerator
+	if r.config.LLMEnabled && r.config.LLMProvider != "deterministic" && r.config.LLMAPIKey != "" {
+		var llmAdapter *RemoteLLMAdapter
+		if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
+			if remote, ok2 := fb.primary.(*RemoteLLMAdapter); ok2 {
+				llmAdapter = remote
+			}
 		}
-	}
-	if llmAdapter == nil {
-		return agent.AgentRunResponse{}, errors.New("remote LLM adapter not available for agent loop")
+		if llmAdapter == nil {
+			return agent.AgentRunResponse{}, errors.New("remote LLM adapter not available for agent loop")
+		}
+		gen = NewRemoteLLMAgentAdapter(llmAdapter)
+	} else {
+		var stub *DeterministicChatModelStub
+		if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
+			if s, ok2 := fb.primary.(*DeterministicChatModelStub); ok2 {
+				stub = s
+			}
+		}
+		if stub == nil {
+			stub = NewDeterministicChatModelStub(r.registry)
+		}
+		gen = NewDeterministicAgentAdapter(stub)
 	}
 
-	gen := NewRemoteLLMAgentAdapter(llmAdapter)
 	exec := agentloop.NewToolStepExecutor(r.registry)
-	engine := agentloop.NewEngine(gen, exec, r.registry)
+	engine := agentloop.NewEngineWithAuditor(gen, exec, r.registry, NewAuditClientStepAuditor(r.auditor))
 
 	loopResp, err := engine.Run(ctx, task, rtb, requestSpan.SpanID)
 	if err != nil {
 		return agent.AgentRunResponse{}, err
 	}
 
-	// Collect tool traces from executor.
+	// Collect tool traces from executor for the global trace store / Inspector.
 	traces := exec.GetTraces()
 	for _, tr := range traces {
 		r.traces.Add(tr)
 	}
 
-	// Send to audit-core.
-	audit, auditErr := r.auditor.AuditTrace(ctx, task, traces)
-	if auditErr != nil {
-		audit = auditclient.Result{
-			Decision:  string(security.DecisionReview),
-			RiskScore: 0.35,
-			Method:    "fallback-mock",
-			Message:   "audit failed during agent loop: " + auditErr.Error(),
-		}
-	}
+	// Per-step audit_reports are produced by the engine (one per tool_call, req 7);
+	// the aggregated risk_graph is built by the engine (req 8). No more whole-sale
+	// AuditTrace call — the audit happens per step inside the loop.
+
+	// Aggregate an audit result for backward-compatible fields (DecisionCard,
+	// security_report) from the per-step audit_reports.
+	audit := aggregateAuditFromSteps(loopResp.AgentSteps, intent)
 	if audit.Decision == "" {
 		audit.Decision = string(intent.Decision)
 	}
 
-	// Convert agent steps to maps for JSON serialization.
+	// Convert agent steps to maps for JSON serialization (include per-step audit_report).
 	stepMaps := make([]map[string]any, 0, len(loopResp.AgentSteps))
 	for _, step := range loopResp.AgentSteps {
-		stepMaps = append(stepMaps, map[string]any{
+		m := map[string]any{
 			"step_index":           step.StepIndex,
 			"action_type":          step.ActionType,
 			"tool_name":            step.ToolName,
@@ -805,7 +606,21 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 			"boundary_level":       step.BoundaryLevel,
 			"allowed_by_policy":    step.AllowedByPolicy,
 			"policy_reason":        step.PolicyReason,
-		})
+		}
+		if step.AuditReport != nil {
+			m["audit_report"] = map[string]any{
+				"step_id":     step.AuditReport.StepID,
+				"step_index":  step.AuditReport.StepIndex,
+				"tool_name":   step.AuditReport.ToolName,
+				"decision":    step.AuditReport.Decision,
+				"risk_score":  step.AuditReport.RiskScore,
+				"violations":  step.AuditReport.Violations,
+				"evidence":    step.AuditReport.Evidence,
+				"method":      step.AuditReport.Method,
+				"message":     step.AuditReport.Message,
+			}
+		}
+		stepMaps = append(stepMaps, m)
 	}
 
 	decision := audit.Decision
@@ -813,8 +628,19 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		decision = string(security.DecisionReview)
 	}
 
-	// Build security report with real traces and audit result.
-	metadata := r.config.Metadata(nil)
+	// Collect distinct tool names actually used by the agent loop, for the
+	// tools_used audit metadata (parity with the former graph-runtime metadata).
+	toolsUsed := make([]string, 0, len(traces))
+	seen := make(map[string]bool, len(traces))
+	for _, tr := range traces {
+		if !seen[tr.ToolName] {
+			seen[tr.ToolName] = true
+			toolsUsed = append(toolsUsed, tr.ToolName)
+		}
+	}
+
+	// Build security report with real traces and the aggregated audit result.
+	metadata := r.config.Metadata(toolsUsed)
 	buildInput := report.BuildInput{
 		Task:        task,
 		Decision:    decision,
@@ -852,60 +678,59 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		SecurityReport: securityReport,
 		ToolTrace:      traces,
 		AuditResult:    audit,
+		RiskGraph:      loopResp.RiskGraph,
 		ReasoningTrace: rtb.Finish(),
-	}
-	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
-	agent.AttachUserMessage(&resp)
-	return resp, nil
+	}, nil
 }
 
-func (r *Runtime) failedLLMResponse(task string, err error, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, route agent.InteractionRoute) agent.AgentRunResponse {
-	message := "remote LLM agent loop failed"
-	if err != nil {
-		message = message + ": " + err.Error()
+// aggregateAuditFromSteps synthesizes a single auditclient.Result from the
+// per-step AuditReports: worst decision (deny>review>allow), max risk score,
+// and flattened violations/evidence. Keeps the legacy DecisionCard/security_report
+// fields meaningful now that audit happens per step rather than wholesale.
+func aggregateAuditFromSteps(steps []agentloop.AgentStep, intent security.IntentResult) auditclient.Result {
+	if len(steps) == 0 {
+		// No steps (pure final_answer): no audit ran.
+		return auditclient.Result{Method: "no-audit", Decision: string(security.DecisionAllow)}
 	}
-	audit := auditclient.Result{
-		Decision:      string(security.DecisionReview),
-		RiskScore:     0.35,
-		Violations:    []auditclient.Violation{},
-		EvidenceChain: []auditclient.EvidenceItem{},
-		RiskGraph:     nil,
-		Method:        "llm_runtime_failure",
-		Message:       message,
+	worst := string(security.DecisionAllow)
+	rank := map[string]int{"allow": 0, "review": 1, "deny": 2}
+	var maxRisk float64
+	var violations []auditclient.Violation
+	var evidence []auditclient.EvidenceItem
+	for _, s := range steps {
+		if s.AuditReport == nil {
+			continue
+		}
+		ar := s.AuditReport
+		if r, ok := rank[ar.Decision]; ok {
+			if cur, ok2 := rank[worst]; !ok2 || r > cur {
+				worst = ar.Decision
+			}
+		}
+		if ar.RiskScore > maxRisk {
+			maxRisk = ar.RiskScore
+		}
+		for _, v := range ar.Violations {
+			violations = append(violations, auditclient.Violation{Severity: "medium", Message: v, StepID: ar.StepID})
+		}
+		for _, e := range ar.Evidence {
+			evidence = append(evidence, auditclient.EvidenceItem{ToolName: ar.ToolName, Reason: e, StepID: ar.StepID})
+		}
 	}
-	metadata := r.config.Metadata(nil)
-	securityReport := report.BuildSecurityReport(report.BuildInput{
-		Task:        task,
-		Decision:    string(security.DecisionReview),
-		Summary:     message,
-		ToolTrace:   []logtrace.ToolTrace{},
-		AuditResult: audit,
-		Route:       metadata.Route,
-	})
-	attachRuntimeMetadata(securityReport, metadata, r.registry)
-	r.attachLLMMetadata(securityReport)
-	if securityReport != nil && securityReport.AuditMetadata != nil {
-		securityReport.AuditMetadata["fallback_reason"] = message
+	if violations == nil {
+		violations = []auditclient.Violation{}
 	}
-	rtb.EndSpan(requestSpan.SpanID, "failed")
-	resp := agent.AgentRunResponse{
-		Task:               task,
-		InteractionType:    agent.InteractionTypeAgentRun,
-		RouterSource:       route.RouterSource,
-		RouterConfidence:   route.Confidence,
-		NeedsToolExecution: route.NeedsToolExecution,
-		RouterReason:       route.Reason,
-		Decision:           string(security.DecisionReview),
-		Summary:            message,
-		AgentMode:          string(agentloop.ModeAgentLoop),
-		SecurityReport:     securityReport,
-		ToolTrace:          []logtrace.ToolTrace{},
-		AuditResult:        audit,
-		ReasoningTrace:     rtb.Finish(),
+	if evidence == nil {
+		evidence = []auditclient.EvidenceItem{}
 	}
-	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusFailed)
-	agent.AttachUserMessage(&resp)
-	return resp
+	return auditclient.Result{
+		Decision:      worst,
+		RiskScore:     maxRisk,
+		Violations:    violations,
+		EvidenceChain: evidence,
+		Method:        "per-step-aggregate",
+		Message:       "aggregated from per-step audit reports",
+	}
 }
 
 // attachLLMMetadata injects remote LLM execution metadata into the security report.

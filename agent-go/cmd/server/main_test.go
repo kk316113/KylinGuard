@@ -80,44 +80,32 @@ func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 
 	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "检查当前系统 SSH 登录异常")
 
-	if response.Decision != "allow" {
-		t.Fatalf("expected allow, got %q", response.Decision)
+	// run-eino always uses the Agent Loop (req 1). With no remote LLM configured,
+	// the deterministic adapter drives the loop: agent_loop mode, agent_steps with
+	// per-step audit_reports, an aggregated risk_graph, and no graph-runtime Plan.
+	if response.AgentMode != "agent_loop" {
+		t.Fatalf("expected agent_loop mode, got %q", response.AgentMode)
 	}
-	if response.AuditResult.Method != "traceshield" {
-		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)
-	}
-	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Answer == "" {
-		t.Fatalf("expected user-facing final_answer and user_message, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
-	}
-	if response.TaskID == "" || !strings.HasPrefix(response.TaskID, "kg-") {
-		t.Fatalf("expected task_id with kg- prefix, got %q", response.TaskID)
-	}
-	if response.SceneType == "" {
-		t.Fatal("expected scene_type")
-	}
-	if response.SceneSummary == "" {
-		t.Fatal("expected scene_summary")
-	}
-	if response.RunStatus != agent.RunStatusCompleted {
-		t.Fatalf("expected completed run_status, got %q", response.RunStatus)
-	}
-	if response.CreatedAt == "" {
-		t.Fatal("expected created_at")
+	if !strings.Contains(response.Summary, "agent loop") {
+		t.Fatalf("expected agent loop summary, got %q", response.Summary)
 	}
 	if strings.Contains(response.Summary, "stable runtime fallback") {
 		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
 	}
-	if strings.Contains(response.Summary, "deterministic planner-backed") {
-		t.Fatalf("summary should not contain Stage 9A marker: %q", response.Summary)
+	if len(response.AgentSteps) == 0 {
+		t.Fatal("expected agent_steps for agent loop run")
 	}
-	if len(response.ToolTrace) == 0 {
-		t.Fatal("expected nonempty tool_trace")
+	for i, step := range response.AgentSteps {
+		ar, ok := step["audit_report"]
+		if !ok {
+			t.Fatalf("step %d missing audit_report", i)
+		}
+		if m, ok := ar.(map[string]any); !ok || m["decision"] == "" {
+			t.Fatalf("step %d audit_report missing decision", i)
+		}
 	}
-	if response.Plan == nil || response.Plan.Scenario != "ssh_anomaly_check" {
-		t.Fatalf("expected run-eino to use ssh_anomaly_check plan, got %#v", response.Plan)
-	}
-	if response.Diagnosis == nil || response.Diagnosis.Scenario != "ssh_anomaly_check" {
-		t.Fatalf("expected run-eino to return diagnosis, got %#v", response.Diagnosis)
+	if response.RiskGraph == nil || len(response.RiskGraph.Nodes) != len(response.AgentSteps) {
+		t.Fatalf("expected risk_graph with %d nodes", len(response.AgentSteps))
 	}
 	if response.SecurityReport == nil {
 		t.Fatal("expected run-eino to return security_report")
@@ -148,7 +136,7 @@ func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 		t.Fatalf("expected Stage 9B runtime version, got %#v", metadata["eino_runtime_version"])
 	}
 	if !auditor.called {
-		t.Fatal("expected Eino graph runtime to call audit client")
+		t.Fatal("expected agent loop to call audit client (per step)")
 	}
 }
 

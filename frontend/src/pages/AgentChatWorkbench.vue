@@ -162,10 +162,34 @@
                     <span v-if="step.boundary_level">boundary={{ step.boundary_level }}</span>
                   </div>
                 </div>
+                <div v-if="step.policy_reason" class="step-policy-reason">{{ step.policy_reason }}</div>
+                <div v-if="step.audit_report" class="step-audit">
+                  <div class="step-audit-head">
+                    <span class="audit-label">审计</span>
+                    <a-tag :color="policyColor(step.audit_report.decision || '')" size="small">{{ step.audit_report.decision }}</a-tag>
+                    <span v-if="step.audit_report.risk_score != null" class="audit-risk">风险 {{ (step.audit_report.risk_score ?? 0).toFixed(2) }}</span>
+                    <a-tag v-if="step.audit_report.method" color="purple" size="small">{{ step.audit_report.method }}</a-tag>
+                  </div>
+                  <ul v-if="step.audit_report.violations && step.audit_report.violations.length" class="audit-violations">
+                    <li v-for="(v, vi) in step.audit_report.violations" :key="vi">{{ v }}</li>
+                  </ul>
+                  <ul v-if="step.audit_report.evidence && step.audit_report.evidence.length" class="audit-evidence">
+                    <li v-for="(e, ei) in step.audit_report.evidence" :key="ei">{{ e }}</li>
+                  </ul>
+                </div>
               </div>
 
-              <a-button v-if="msg.hasInspector && !isSimpleInteraction(msg)" size="mini" type="outline" @click="openInspector">Open Inspector</a-button>
-            </div>
+            <RiskGraphView v-if="msg.riskGraph && msg.riskGraph.nodes && msg.riskGraph.nodes.length" :graph="msg.riskGraph" />
+
+            <ExecutionAccordion v-if="msg.traces" :traces="msg.traces" :plan="msg.plan"
+              :recommendations="msg.recommendations" :evidence-items="msg.evidenceItems" />
+            <DemoGuideNote v-if="demoMode && msg.demoItems" :show="true" :items="msg.demoItems" />
+            <FollowUpSuggestions v-if="msg.followUps" :decision="msg.followUps.decision"
+              :scenario="msg.followUps.scenario" :task="msg.followUps.task"
+              :has-evidence="msg.followUps.hasEvidence" @pick="(s) => handleFollowUp(s, i)" />
+            <a-button v-if="msg.hasInspector" size="mini" type="outline"
+              @click="openInspector(i)" style="margin-top:8px">打开 Inspector</a-button>
+          </div>
 
             <div v-else-if="msg.role === 'error'" class="msg error-msg">
               <a-alert type="error" title="Task failed" :description="msg.content" :closable="false" />
@@ -255,25 +279,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import {
-  getAcceptanceSummary,
-  getAgentCapabilities,
-  getRuntimeStatus,
-  runAgent,
-  runAgentEino
-} from '../api/agent'
-import type {
-  AcceptanceSummaryResponse,
-  AgentCapabilitiesResponse,
-  AgentRunResponse,
-  AgentStep,
-  Decision,
-  RuntimeStatusResponse
-} from '../types/agent'
+import { ref, computed, nextTick } from 'vue'
+import { runAgent, runAgentEino } from '../api/agent'
+import type { AgentRunResponse, ToolTraceItem, Plan, RecommendationItem, EvidenceItem, AgentStep, RiskGraph } from '../types/agent'
 import DecisionCard from '../components/agent/DecisionCard.vue'
 import InspectorDrawer from '../components/agent/InspectorDrawer.vue'
 import AgentRunningNarrative from '../components/agent/AgentRunningNarrative.vue'
+import FollowUpSuggestions from '../components/agent/FollowUpSuggestions.vue'
+import type { FollowUpItem } from '../components/agent/FollowUpSuggestions.vue'
+import DemoGuideNote from '../components/agent/DemoGuideNote.vue'
+import RiskGraphView from '../components/agent/RiskGraphView.vue'
 
 defineEmits<{ back: [] }>()
 
@@ -324,10 +339,7 @@ interface ChatMessage {
   hasInspector?: boolean
   agentSteps?: AgentStep[]
   runtimeBadge?: { label: string; color: string; chatModel: string }
-  session?: { taskId: string; sceneType: string; runStatus: string; createdAt: string }
-  resultSummary?: { agentSteps: number; toolTrace: number; decision: string; auditReady: boolean }
-  userMessage?: AgentRunResponse['user_message']
-  interactionType?: string
+  riskGraph?: RiskGraph | null
 }
 
 const messages = ref<ChatMessage[]>([])
@@ -432,7 +444,28 @@ async function send() {
 
   try {
     const resp = runtimeMode.value === 'eino' ? await runAgentEino(task) : await runAgent(task)
-    window.clearInterval(stepTimer)
+    clearInterval(stepTimer)
+    runStep.value = 4
+    lastResponse.value = resp
+
+    const dec = resp.decision || 'unknown'
+    const tools = resp.tool_trace ?? []
+    const evidence = resp.security_report?.evidence_chain ?? []
+    const recs = resp.security_report?.recommendations ?? []
+    const steps = resp.agent_steps ?? []
+    const finalAnswer = resp.final_answer || resp.summary || '未返回最终回答'
+    const runtimeBadge = runtimeBadgeFromResponse(resp)
+    const riskGraph = resp.risk_graph ?? null
+
+    // req 3: a pure final_answer (no executed steps) shows no audit. Only the
+    // eino/agent-loop path produces pure-final-answer responses; the stable
+    // runtime always carries plan/traces, so keep its DecisionCard.
+    const isEino = runtimeMode.value === 'eino'
+    const hasSteps = steps.length > 0
+    const hideDecision = isEino && !hasSteps
+
+    // Assistant main message always prefers the natural-language final answer.
+    const summary = finalAnswer
 
     const runtimeBadge = runtimeBadgeFromResponse(resp)
     const isSimple = isSimpleResponse(resp)
@@ -446,9 +479,9 @@ async function send() {
 
     messages.value.push({
       role: 'assistant',
-      content: finalAnswer,
-      decision: {
-        decision,
+      content: summary,
+      decision: hideDecision ? undefined : {
+        decision: dec,
         risk: resp.security_report?.risk_level || '',
         scenario: resp.scene_type || resp.plan?.scenario || '',
         auditMethod: resp.audit_result?.method || '',
@@ -461,18 +494,7 @@ async function send() {
       userMessage: resp.user_message,
       interactionType: resp.interaction_type || (isSimple ? 'chat' : 'agent_run'),
       runtimeBadge,
-      session: {
-        taskId: resp.task_id || '',
-        sceneType: resp.scene_type || 'unknown',
-        runStatus: resp.run_status || 'completed',
-        createdAt: resp.created_at || ''
-      },
-      resultSummary: isSimple ? undefined : {
-        agentSteps: steps.length,
-        toolTrace: traces.length,
-        decision,
-        auditReady: Boolean(resp.security_report || resp.audit_result)
-      }
+      riskGraph,
     })
 
     recentRuns.value.unshift({
@@ -676,49 +698,43 @@ function normalizedAgentSteps(resp: AgentRunResponse): AgentStep[] {
 .empty-state h2 { color: #1d2129; margin-bottom: 8px; font-size: 24px; }
 .msg-row { margin-bottom: 16px; }
 .msg-row.user { display: flex; justify-content: flex-end; }
-.msg { max-width: 760px; }
-.user-msg .msg-text { background: #e8f3ff; padding: 11px 16px; border-radius: 16px 16px 4px 16px; font-size: 14px; line-height: 1.55; }
-.user-msg .msg-meta { font-size: 11px; color: #86909c; margin-top: 4px; text-align: right; }
-.assistant-msg .msg-text { white-space: pre-wrap; font-size: 14px; line-height: 1.7; margin-bottom: 10px; }
-.answer-card { border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; padding: 15px 16px; margin-bottom: 10px; box-shadow: 0 6px 18px rgba(29, 33, 41, 0.04); }
-.answer-card.blocked { border-color: #ffb65d; background: #fffaf2; }
-.answer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.answer-title { font-size: 16px; font-weight: 700; color: #1d2129; }
-.answer-subtitle { margin-top: 2px; font-size: 12px; color: #86909c; }
-.answer-body { white-space: pre-wrap; font-size: 14px; line-height: 1.75; color: #1d2129; }
-.answer-sections { display: grid; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #e5e6eb; }
-.answer-section strong { display: block; margin-bottom: 5px; color: #1d2129; font-size: 13px; }
-.answer-section ul { margin: 0; padding-left: 18px; color: #4e5969; font-size: 13px; line-height: 1.65; }
-.secondary-decision { margin-top: 10px; opacity: 0.88; }
-.session-strip, .result-strip { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 10px; border-radius: 6px; background: #f7f8fa; color: #4e5969; font-size: 12px; margin-bottom: 8px; }
-.runtime-line { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.step-timeline { margin: 10px 0; }
-.panel-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: #1d2129; }
-.step-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 9px 11px; margin-bottom: 7px; background: #fafafa; }
-.step-header { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-.step-num { color: #86909c; font-weight: 700; font-size: 12px; }
-.step-summary, .step-observation { color: #4e5969; font-size: 12px; line-height: 1.5; margin-top: 4px; }
-.step-semantic { display: flex; flex-wrap: wrap; gap: 8px; color: #86909c; font-size: 11px; margin-top: 6px; }
-.composer { display: flex; gap: 8px; align-items: flex-end; padding: 12px 16px; border-top: 1px solid #e5e6eb; background: #f7f8fa; }
-.composer .a-textarea { flex: 1; }
+.msg { max-width: 680px; }
 
-.insight-panel { display: flex; flex-direction: column; overflow: hidden; }
-.insight-head { height: 48px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e6eb; }
-.insight-panel :deep(.arco-tabs-content) { padding: 0 12px 12px; }
-.insight-list, .tool-list { display: grid; gap: 8px; }
-.insight-card, .tool-row, .report-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 9px 10px; background: #fafafa; display: grid; gap: 4px; }
-.insight-card span, .tool-row span, .insight-card small { color: #4e5969; font-size: 12px; line-height: 1.45; }
-.audit-summary { padding-top: 4px; }
-.report-answer { margin-top: 10px; color: #4e5969; font-size: 12px; line-height: 1.55; padding: 8px; background: #fff; border-radius: 4px; }
+.user-msg .msg-text { background: #e8f3ff; padding: 12px 18px; border-radius: 18px 18px 4px 18px; font-size: 15px; line-height: 1.5; color: #1d2129; font-weight: 500; }
+.user-msg .msg-meta { font-size: 11px; color: #86909c; margin-top: 4px; text-align: right; padding-right: 4px; }
+.assistant-msg .msg-text { font-size: 15px; line-height: 1.65; white-space: pre-wrap; color: #1d2129; }
+.runtime-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.explain-msg { max-width: 600px; }
 
-@media (max-width: 1100px) {
-  .workspace { grid-template-columns: 220px minmax(420px, 1fr); }
-  .insight-panel { display: none; }
-}
+.composer { flex-shrink: 0; border-top: 1px solid #e5e6eb; padding: 12px 24px; background: #f7f8fa; }
+.composer-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: flex-end; }
+.composer-inner .a-textarea { flex: 1; }
 
-@media (max-width: 760px) {
-  .runtime-bar { height: auto; align-items: flex-start; gap: 10px; padding: 10px 12px; flex-direction: column; }
-  .workspace { grid-template-columns: 1fr; }
-  .task-sidebar { display: none; }
-}
+/* Prompt suggestions */
+.agent-suggestions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.sugg-chip { cursor: pointer; padding: 8px 16px; font-size: 14px; font-weight: 600; color: #1d2129; border: 1px solid #c9cdd4; background: #f7f8fa; border-radius: 18px; transition: all 0.15s; }
+.sugg-chip:hover { background: #e8e9ed; border-color: #86909c; }
+
+/* Agent step cards */
+.agent-step-list { margin-top: 10px; }
+.step-section-title { font-size: 13px; font-weight: 600; color: #1d2129; margin-bottom: 6px; }
+.step-card { border: 1px solid #e5e6eb; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; background: #fafafa; }
+.step-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.step-num { color: #86909c; font-size: 12px; min-width: 20px; font-weight: 600; }
+.step-tool { font-size: 14px; font-weight: 600; color: #1d2129; }
+.step-summary { font-size: 13px; color: #4e5969; line-height: 1.5; }
+.step-obs { margin-top: 4px; }
+.obs-label { font-size: 12px; color: #86909c; margin-right: 6px; font-weight: 600; }
+.obs-text { font-size: 12px; color: #4e5969; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; }
+.step-semantic { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; color: #86909c; }
+.step-policy-reason { margin-top: 4px; font-size: 12px; color: #86909c; line-height: 1.4; }
+/* Per-step audit block */
+.step-audit { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e5e6eb; }
+.step-audit-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.audit-label { font-size: 12px; color: #86909c; font-weight: 600; }
+.audit-risk { font-size: 12px; color: #4e5969; background: #f0f0f0; padding: 1px 8px; border-radius: 4px; }
+.audit-violations { margin: 6px 0 0 0; padding-left: 18px; }
+.audit-violations li { font-size: 12px; color: #f53f3f; line-height: 1.6; }
+.audit-evidence { margin: 4px 0 0 0; padding-left: 18px; }
+.audit-evidence li { font-size: 12px; color: #4e5969; line-height: 1.6; }
 </style>

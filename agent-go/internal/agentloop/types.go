@@ -1,5 +1,12 @@
 package agentloop
 
+import (
+	"context"
+
+	"kylin-guard-agent/agent-go/internal/auditclient"
+	"kylin-guard-agent/agent-go/internal/logtrace"
+)
+
 // AgentMode indicates the execution mode.
 type AgentMode string
 
@@ -43,6 +50,28 @@ type AgentStep struct {
 	BoundaryLevel      string            `json:"boundary_level,omitempty"`
 	AllowedByPolicy    bool              `json:"allowed_by_policy"`
 	PolicyReason       string            `json:"policy_reason,omitempty"`
+	// AuditReport is the per-tool-call audit result produced by the StepAuditor.
+	AuditReport        *AuditReport      `json:"audit_report,omitempty"`
+}
+
+// AuditReport is the audit conclusion for a single tool_call. Each tool_call
+// produces one AuditReport; all reports in a run aggregate into the RiskGraph.
+type AuditReport struct {
+	StepID     string   `json:"step_id,omitempty"`
+	StepIndex  int      `json:"step_index"`
+	ToolName   string   `json:"tool_name"`
+	Decision   string   `json:"decision"` // allow|review|deny
+	RiskScore  float64  `json:"risk_score"`
+	Violations []string `json:"violations"`
+	Evidence   []string `json:"evidence"`
+	Method     string   `json:"method"` // traceshield|fallback-mock|tool_policy|intent_guard|no-audit
+	Message    string   `json:"message,omitempty"`
+}
+
+// StepAuditor audits a single executed tool-call step and produces an AuditReport.
+// Implementations call auditclient once per step; failures must not abort the loop.
+type StepAuditor interface {
+	AuditStep(ctx context.Context, task string, stepIndex int, trace logtrace.ToolTrace) (AuditReport, error)
 }
 
 // AgentResponse is the structured response from the agent loop.
@@ -55,6 +84,9 @@ type AgentResponse struct {
 	NextSuggestions  []string            `json:"next_suggestions,omitempty"`
 	FallbackReason   string              `json:"fallback_reason,omitempty"`
 	StepCount        int                 `json:"step_count"`
+	// RiskGraph is the global risk graph aggregated from all per-step AuditReports.
+	// nil when there were no steps (pure final_answer / intent-guard deny).
+	RiskGraph        *auditclient.RiskGraph `json:"risk_graph,omitempty"`
 }
 
 // NextActionRequest is the prompt context sent to the LLM.

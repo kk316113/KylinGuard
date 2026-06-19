@@ -18,6 +18,9 @@ frontend/dist/
 .env
 .env.*
 
+# SSH helpers (may contain credentials)
+scripts/ssh_kylin.py
+
 # Logs and generated outputs
 *.log
 data/reports/*

@@ -12,10 +12,11 @@ import (
 // ToolStepExecutor implements StepExecutor using the real tool registry and security policy,
 // and collects tool traces for audit.
 type ToolStepExecutor struct {
-	registry *tools.Registry
-	policy   security.ToolPolicy
-	mu       sync.Mutex
-	traces   []logtrace.ToolTrace
+	registry  *tools.Registry
+	policy    security.ToolPolicy
+	mu        sync.Mutex
+	traces    []logtrace.ToolTrace
+	lastTrace logtrace.ToolTrace
 }
 
 func NewToolStepExecutor(registry *tools.Registry) *ToolStepExecutor {
@@ -41,6 +42,7 @@ func (e *ToolStepExecutor) ExecuteTool(ctx context.Context, toolName string, arg
 	// Record trace.
 	e.mu.Lock()
 	e.traces = append(e.traces, result.Trace)
+	e.lastTrace = result.Trace
 	e.mu.Unlock()
 
 	if err != nil {
@@ -69,6 +71,13 @@ func (e *ToolStepExecutor) GetTraces() []logtrace.ToolTrace {
 	result := make([]logtrace.ToolTrace, len(e.traces))
 	copy(result, e.traces)
 	return result
+}
+
+// LastTrace returns the ToolTrace produced by the most recent ExecuteTool call.
+func (e *ToolStepExecutor) LastTrace() logtrace.ToolTrace {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.lastTrace
 }
 
 func truncateOutput(output any) any {
