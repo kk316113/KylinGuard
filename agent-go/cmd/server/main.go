@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"kylin-guard-agent/agent-go/internal/agent"
@@ -16,6 +17,7 @@ import (
 )
 
 const serviceVersion = "0.1.0"
+const maxAgentRequestBytes = 1 << 20
 
 func main() {
 	cfg := config.Load()
@@ -100,9 +102,15 @@ func agentRunHandler(agentAdapter agent.AgentAdapter, store *agentRunStore) http
 			return
 		}
 
+		r.Body = http.MaxBytesReader(w, r.Body, maxAgentRequestBytes)
 		var req agent.RunRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		req.Task = strings.TrimSpace(req.Task)
+		if req.Task == "" {
+			writeError(w, http.StatusBadRequest, "task is required")
 			return
 		}
 

@@ -1,6 +1,6 @@
 import { ListChecks } from "lucide-react";
-import type { AgentRun } from "@/types/agent";
 import { ToolCallStepCard } from "./ToolCallStepCard";
+import type { AgentRun } from "@/types/agent";
 
 type Props = {
   run: AgentRun;
@@ -10,16 +10,16 @@ type Props = {
 
 export function AgentRunTimeline({ run, selectedStepIndex, onSelectStep }: Props) {
   const steps = run.agent_steps || [];
-  const isToolRun = run.interaction_type === "agent_run" || run.needs_tool_execution;
+  const hasTools = run.interaction_type === "agent_run" || run.needs_tool_execution || steps.length > 0;
 
-  if (!isToolRun || steps.length === 0) {
+  if (!hasTools || steps.length === 0) {
     return (
       <section className="timeline-section empty">
         <div className="section-title">
           <ListChecks size={18} />
-          <h3>执行过程</h3>
+          <h3>执行步骤</h3>
         </div>
-        <p>本次交互没有调用系统工具，因此没有工具执行时间线。</p>
+        <p>本次响应没有工具执行步骤。</p>
       </section>
     );
   }
@@ -28,7 +28,7 @@ export function AgentRunTimeline({ run, selectedStepIndex, onSelectStep }: Props
     <section className="timeline-section">
       <div className="section-title">
         <ListChecks size={18} />
-        <h3>Agent 执行步骤</h3>
+        <h3>执行步骤</h3>
       </div>
       <div className="step-list">
         {steps.map((step, index) => (

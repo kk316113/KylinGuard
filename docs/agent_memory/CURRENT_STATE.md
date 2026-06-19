@@ -179,11 +179,11 @@ Frontend-backend integration completed locally:
 
 ```text
 Go backend started at 127.0.0.1:8080
-Vite frontend started at 127.0.0.1:5173
-Runtime Status Bar loaded runtime-status through the Vite proxy
-Tools data loaded from capabilities through the Vite proxy
-Acceptance summary loaded through the Vite proxy
-Suggested prompt click sends natural-language text to /api/agent/run-eino
+Next.js frontend started at 127.0.0.1:5173
+Runtime Status Bar loaded runtime-status through Next rewrites
+Tools data loaded from capabilities through Next rewrites
+Acceptance summary loaded through Next rewrites
+CopilotSidebar sends free-form messages through CopilotKit Runtime to the Agent API
 Task 1 local deterministic integration: decision=review, method=fallback-mock, scene_type=diagnosis, run_status=completed, plan_steps=2, tool_trace=2
 Task 2 local dangerous intent integration: decision=deny, method=intent_guard, scene_type=security_check, run_status=blocked, tool_trace=0
 Steps / Evidence / Audit / Report panels update after task response
@@ -261,7 +261,8 @@ Current implementation:
 ```text
 Next.js App Router frontend runs on 127.0.0.1:5173
 CopilotKit provider wraps the app as the Agent UX foundation
-MVP uses existing non-streaming Go Agent APIs through Next rewrites
+CopilotKit Runtime adapts the existing Go Agent API to AG-UI events
+CopilotKit's native CopilotSidebar owns the chat drawer, messages, and input
 Agent Console shows final_answer first, then tool timeline and observations
 Right Insight Panel shows Audit / Risk Graph / Hotspots / Decision Path / Tools / Report
 Frontend does not store real API keys and does not decide tool execution
@@ -279,7 +280,6 @@ Pending:
 ```text
 Manual browser review
 Kylin VM / real DeepSeek frontend smoke
-Future AG-UI streaming endpoint integration
 ```
 
 ## Product/API Baseline Docs
@@ -336,21 +336,24 @@ npm run build - PASS
 browser integration - pending
 ```
 
-## Frontend Product Shell Correction
+## CopilotKit Native Sidebar Integration
 
-The previous chat-first main canvas was rejected because it made the product
-look like a prompt demo and put conversation in the wrong surface. The frontend
-has been corrected toward a dashboard-first Scenario Workspace:
+Current frontend interaction contract:
 
 ```text
 Main canvas: left navigation + single-column operations/security dashboard.
-Chat surface: right-bottom expandable Copilot task drawer.
-Natural-language task submission only happens inside the Copilot drawer.
-Dashboard updates from the latest Agent run response.
+Chat surface: CopilotKit v2's native expandable CopilotSidebar from @copilotkit/react-core/v2.
+The frontend does not replace CopilotKit Messages or Input components.
+The legacy @copilotkit/react-ui package and the custom chat drawer have been removed.
+The application imports CopilotKit's official v2 stylesheet without overriding its drawer selectors.
+CopilotKit Runtime v2 forwards free-form messages to the existing Go Agent API.
+An AG-UI frontend tool synchronizes the completed run to the dashboard by run_id.
 Audit, evidence, risk graph, tools, runs, and settings are board views.
 decision=deny is displayed as a security state, not a request failure.
 No backend Agent Loop logic was changed.
 No fixed workflow or scenario routing was added.
+Static prompt chips and leading task examples were removed from the frontend.
+The application font stack and visual tokens now align with CopilotKit defaults.
 ```
 
 Verification:
@@ -358,7 +361,53 @@ Verification:
 ```text
 npm run typecheck - PASS
 npm run build - PASS
-Local dev page contains the new dashboard title.
+Local dev page returns HTTP 200 at 127.0.0.1:5173.
+CopilotKit /info and /threads endpoints return HTTP 200.
+AG-UI run smoke returned a non-empty final answer and completed run events.
+Headless Edge verified the native v2 trigger and 480px expanded sidebar.
+CopilotKit Inspector and development controls are explicitly disabled.
+Native chat submission renders user/assistant messages and updates the dashboard.
+The internal dashboard synchronization tool has no user-visible tool card.
+Frontend source no longer contains rejected fixed prompt examples.
+```
+
+## CopilotKit Chat Backend MVP
+
+The minimal chat backend path is runnable:
+
+```text
+CopilotKit v2 CopilotSidebar
+-> POST /api/copilotkit/agent/default/run (SSE / AG-UI)
+-> POST /api/agent/run (Go)
+-> semantic interaction router
+-> remote ChatModel answer with bounded conversation history when configured
+-> deterministic greeting fallback otherwise
+```
+
+Chat-only responses do not execute tools, do not call the audit client, and return
+empty `agent_steps` and `tool_trace`. The Go handler rejects empty tasks with HTTP
+400 and limits request bodies. The CopilotKit adapter applies a backend timeout and
+returns a readable connection error when the Go service is unavailable.
+
+The deterministic fallback no longer uses a chat whitelist. Non-operational input
+defaults to safe chat, while explicit operations requests still enter the Agent Loop.
+Runtime/model identity questions report the actual configured `chat_model`; when no
+remote key is configured, the answer explicitly identifies `deterministic-stub`.
+Windows startup now accepts `OPENAI_COMPATIBLE_*`, `OPENAI_API_KEY`, or
+`DEEPSEEK_API_KEY` aliases directly; explicit `EINO_LLM_*` values keep precedence.
+
+Verification on the Windows development host:
+
+```text
+go test ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+POST /api/agent/run with a greeting - PASS
+CopilotKit AG-UI SSE run with a greeting - PASS
+Real DeepSeek CopilotKit chat smoke - PASS
+chat_model=remote-llm-deepseek-openai_compatible
+configured model identifier=deepseek-v4-flash
+No real API key stored or printed
 ```
 
 ## Current Next Suggested Work
@@ -366,9 +415,8 @@ Local dev page contains the new dashboard title.
 Priority order:
 
 1. Start backend and frontend locally for browser integration
-2. Manually review the new CopilotKit frontend in browser
+2. Manually review the native CopilotSidebar and dashboard synchronization
 3. Rerun frontend smoke on Kylin VM with real DeepSeek
-4. Decide whether to add AG-UI event streaming backend endpoint
-5. Stage 17B: task history / report export planning
-6. Stage 17: report / PPT / recording / defense script
-7. Stage 18: packaging and final stability
+4. Stage 17B: task history / report export planning
+5. Stage 17: report / PPT / recording / defense script
+6. Stage 18: packaging and final stability

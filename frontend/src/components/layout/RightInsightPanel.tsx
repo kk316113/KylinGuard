@@ -3,11 +3,11 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { FileText, GitBranch, ListChecks, Shield, Siren, Wrench } from "lucide-react";
-import type { AgentRun, AgentStep, ToolTrace } from "@/types/agent";
-import type { AcceptanceSummary, CapabilitiesResponse } from "@/types/runtime";
-import { asText, compactDate, observationSummary, traceSummary } from "@/lib/formatters";
 import { RiskDecisionBadge } from "@/components/audit/RiskDecisionBadge";
 import { RiskGraphPanel } from "@/components/risk-graph/RiskGraphPanel";
+import { asText, compactDate, observationSummary, traceSummary } from "@/lib/formatters";
+import type { AgentRun, AgentStep, ToolTrace } from "@/types/agent";
+import type { AcceptanceSummary, CapabilitiesResponse } from "@/types/runtime";
 
 type TabKey = "audit" | "risk" | "hotspots" | "decision" | "tools" | "report";
 
@@ -20,12 +20,12 @@ type Props = {
 };
 
 const tabs: Array<{ key: TabKey; label: string; icon: ReactNode }> = [
-  { key: "audit", label: "Audit", icon: <Shield size={15} /> },
-  { key: "risk", label: "Risk Graph", icon: <GitBranch size={15} /> },
-  { key: "hotspots", label: "Hotspots", icon: <Siren size={15} /> },
-  { key: "decision", label: "Decision Path", icon: <ListChecks size={15} /> },
-  { key: "tools", label: "Tools", icon: <Wrench size={15} /> },
-  { key: "report", label: "Report", icon: <FileText size={15} /> },
+  { key: "audit", label: "审计", icon: <Shield size={15} /> },
+  { key: "risk", label: "风险图", icon: <GitBranch size={15} /> },
+  { key: "hotspots", label: "热点", icon: <Siren size={15} /> },
+  { key: "decision", label: "路径", icon: <ListChecks size={15} /> },
+  { key: "tools", label: "工具", icon: <Wrench size={15} /> },
+  { key: "report", label: "报告", icon: <FileText size={15} /> },
 ];
 
 export function RightInsightPanel({ run, selectedStepIndex, onSelectStep, capabilities, acceptance }: Props) {
@@ -68,7 +68,7 @@ export function RightInsightPanel({ run, selectedStepIndex, onSelectStep, capabi
 
 function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentStep; trace?: ToolTrace }) {
   if (!run) {
-    return <EmptyPanel title="等待审计数据" description="通过 Copilot 提交运维任务后，这里展示后端返回的安全审计摘要。" />;
+    return <EmptyPanel title="等待审计数据" description="完成一次对话后，这里会展示后端返回的安全摘要。" />;
   }
 
   return (
@@ -76,20 +76,20 @@ function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentSte
       <section className="insight-section">
         <div className="section-title">
           <Shield size={17} />
-          <h3>全局安全结论</h3>
+          <h3>全局结论</h3>
         </div>
         <div className="audit-summary">
           <RiskDecisionBadge decision={run.decision || run.audit_result?.decision} />
           <span>method={run.audit_result?.method || "unknown"}</span>
           <span>risk_score={run.audit_result?.risk_score ?? "n/a"}</span>
         </div>
-        <p>{run.audit_result?.message || run.security_report?.summary || "后端未返回额外审计说明。"}</p>
+        <p>{run.audit_result?.message || run.security_report?.summary || "未返回额外审计说明。"}</p>
       </section>
 
       <section className="insight-section">
         <div className="section-title">
           <ListChecks size={17} />
-          <h3>当前步骤审计</h3>
+          <h3>当前步骤</h3>
         </div>
         {step || trace ? (
           <div className="detail-grid">
@@ -101,7 +101,7 @@ function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentSte
             <Detail label="observation" value={observationSummary(step) || (trace ? traceSummary(trace) : "")} wide />
           </div>
         ) : (
-          <p>请选择一个工具步骤查看对应审计上下文。本次如未调用工具，则只展示全局审计结论。</p>
+          <p>没有可选步骤时，只显示全局审计结论。</p>
         )}
       </section>
 
@@ -109,7 +109,7 @@ function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentSte
         <section className="insight-section">
           <div className="section-title">
             <Siren size={17} />
-            <h3>违规或高风险点</h3>
+            <h3>风险点</h3>
           </div>
           <ul className="compact-list">
             {run.audit_result.violations.map((violation, index) => (
@@ -127,13 +127,13 @@ function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentSte
 
 function HotspotsTab({ run }: { run?: AgentRun | null }) {
   if (!run) {
-    return <EmptyPanel title="暂无风险热点" description="风险热点来自后端 risk_graph 或 audit_result，前端不做推断。" />;
+    return <EmptyPanel title="暂无风险热点" description="热点来自后端审计结果，前端不自行推断。" />;
   }
   const violations = run.audit_result?.violations || [];
   const sensitiveTraces = (run.tool_trace || []).filter((trace) => trace.risk_level === "high" || trace.boundary_level === "high");
 
   if (!violations.length && !sensitiveTraces.length) {
-    return <EmptyPanel title="未发现高风险热点" description="当前响应没有返回 violation，也没有明显高边界工具证据。" />;
+    return <EmptyPanel title="未发现高风险热点" description="当前响应没有返回 violation 或高边界工具证据。" />;
   }
 
   return (
@@ -147,7 +147,7 @@ function HotspotsTab({ run }: { run?: AgentRun | null }) {
       {sensitiveTraces.map((trace, index) => (
         <section className="hotspot-item" key={`${trace.step_id || "trace"}-${index}`}>
           <strong>{trace.tool_name || "tool"}</strong>
-          <p>{trace.risk_hint || trace.output_summary || "高边界工具调用。"}</p>
+          <p>{trace.risk_hint || trace.output_summary || "高边界工具调用"}</p>
         </section>
       ))}
     </div>
@@ -164,7 +164,7 @@ function DecisionPathTab({
   onSelectStep: (index: number) => void;
 }) {
   if (!run?.agent_steps?.length) {
-    return <EmptyPanel title="暂无决策路径" description="Agent 调用工具后，这里会展示每步 policy decision 和 observation。" />;
+    return <EmptyPanel title="暂无执行路径" description="存在工具步骤时，这里会展示每一步 policy decision 和 observation。" />;
   }
 
   return (
@@ -229,7 +229,7 @@ function ToolsTab({ capabilities, acceptance }: { capabilities?: CapabilitiesRes
 
 function ReportTab({ run }: { run?: AgentRun | null }) {
   if (!run) {
-    return <EmptyPanel title="暂无任务报告" description="完成一次任务后，这里会展示任务会话摘要和最终回答。" />;
+    return <EmptyPanel title="暂无报告摘要" description="完成一次对话后，这里会展示会话摘要和最终回答。" />;
   }
 
   return (
@@ -237,7 +237,7 @@ function ReportTab({ run }: { run?: AgentRun | null }) {
       <section className="insight-section">
         <div className="section-title">
           <FileText size={17} />
-          <h3>任务会话</h3>
+          <h3>会话信息</h3>
         </div>
         <div className="detail-grid">
           <Detail label="run_id" value={run.run_id || run.task_id} />
@@ -253,7 +253,7 @@ function ReportTab({ run }: { run?: AgentRun | null }) {
       <section className="insight-section">
         <div className="section-title">
           <Shield size={17} />
-          <h3>审计报告摘要</h3>
+          <h3>审计摘要</h3>
         </div>
         <p>{run.security_report?.executive_summary || run.security_report?.summary || run.audit_result?.message || "无额外报告摘要。"}</p>
         {run.security_report?.recommendations?.length ? (

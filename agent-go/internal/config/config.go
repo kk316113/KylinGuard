@@ -20,18 +20,48 @@ func Load() Config {
 	if addr == "" {
 		addr = ":" + port
 	}
+	apiKey := firstNonEmpty(
+		os.Getenv("EINO_LLM_API_KEY"),
+		os.Getenv("OPENAI_COMPATIBLE_API_KEY"),
+		os.Getenv("OPENAI_API_KEY"),
+		os.Getenv("DEEPSEEK_API_KEY"),
+	)
+	remoteConfigured := apiKey != ""
+	providerFallback := "deterministic"
+	if remoteConfigured {
+		providerFallback = "openai_compatible"
+	}
+	endpoint := firstNonEmpty(os.Getenv("EINO_LLM_ENDPOINT"), os.Getenv("OPENAI_COMPATIBLE_BASE_URL"))
+	model := firstNonEmpty(os.Getenv("EINO_LLM_MODEL"), os.Getenv("OPENAI_COMPATIBLE_MODEL"))
+	if remoteConfigured {
+		if endpoint == "" {
+			endpoint = "https://api.deepseek.com"
+		}
+		if model == "" {
+			model = "deepseek-v4-flash"
+		}
+	}
 
 	return Config{
 		Addr:               addr,
 		AuditCoreURL:       getenv("AUDIT_CORE_URL", "http://127.0.0.1:8001"),
 		EinoRuntimeEnabled: getenvBool("EINO_RUNTIME_ENABLED", true),
 		EinoGraphEnabled:   getenvBool("EINO_GRAPH_ENABLED", true),
-		EinoLLMEnabled:     getenvBool("EINO_LLM_ENABLED", getenvBool("EINO_ENABLED", false)),
-		EinoLLMProvider:    getenv("EINO_LLM_PROVIDER", "deterministic"),
-		EinoLLMEndpoint:    os.Getenv("EINO_LLM_ENDPOINT"),
-		EinoLLMModel:       os.Getenv("EINO_LLM_MODEL"),
-		EinoLLMAPIKey:      os.Getenv("EINO_LLM_API_KEY"),
+		EinoLLMEnabled:     getenvBool("EINO_LLM_ENABLED", getenvBool("EINO_ENABLED", remoteConfigured)),
+		EinoLLMProvider:    getenv("EINO_LLM_PROVIDER", providerFallback),
+		EinoLLMEndpoint:    endpoint,
+		EinoLLMModel:       model,
+		EinoLLMAPIKey:      apiKey,
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func getenv(key string, fallback string) string {

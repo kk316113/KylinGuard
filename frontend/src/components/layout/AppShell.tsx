@@ -1,20 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { FileText, LayoutDashboard, ListChecks, MessageCircle, Settings, ShieldCheck, Wrench } from "lucide-react";
-import { getAcceptanceSummary, getCapabilities, getRuntimeStatus } from "@/lib/api";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CopilotChatToggleButton,
+  CopilotSidebar,
+  useCopilotChatConfiguration,
+  useFrontendTool,
+} from "@copilotkit/react-core/v2";
+import { FileText, LayoutDashboard, ListChecks, Settings, ShieldCheck, Wrench } from "lucide-react";
+import { z } from "zod";
+import { DashboardView, OpsDashboard } from "@/components/dashboard/OpsDashboard";
+import { useConsolePreferences } from "@/hooks/useConsolePreferences";
+import { getAcceptanceSummary, getAgentRun, getCapabilities, getRuntimeStatus } from "@/lib/api";
 import type { AgentRun } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse, RuntimeStatus } from "@/types/runtime";
-import { CopilotTaskDrawer } from "@/components/agent/CopilotTaskDrawer";
-import { DashboardView, OpsDashboard } from "@/components/dashboard/OpsDashboard";
 import { TopStatusBar } from "./TopStatusBar";
 
 const navItems: Array<{ key: DashboardView; label: string; icon: React.ReactNode }> = [
-  { key: "overview", label: "态势看板", icon: <LayoutDashboard size={17} /> },
-  { key: "audit", label: "安全审计", icon: <ShieldCheck size={17} /> },
-  { key: "tools", label: "工具能力", icon: <Wrench size={17} /> },
-  { key: "runs", label: "任务会话", icon: <FileText size={17} /> },
-  { key: "settings", label: "运行设置", icon: <Settings size={17} /> },
+  { key: "overview", label: "总览", icon: <LayoutDashboard size={17} /> },
+  { key: "audit", label: "审计", icon: <ShieldCheck size={17} /> },
+  { key: "tools", label: "工具", icon: <Wrench size={17} /> },
+  { key: "runs", label: "会话", icon: <FileText size={17} /> },
+  { key: "settings", label: "设置", icon: <Settings size={17} /> },
 ];
 
 export function AppShell() {
@@ -26,7 +33,24 @@ export function AppShell() {
   const [currentRun, setCurrentRun] = useState<AgentRun | null>(null);
   const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<DashboardView>("overview");
-  const [copilotOpen, setCopilotOpen] = useState(false);
+  const { preferences, updatePreferences, resetPreferences, hydrated } = useConsolePreferences();
+
+  useFrontendTool({
+    name: "syncKylinGuardRun",
+    description: "Synchronize the completed KylinGuard run with the dashboard.",
+    parameters: z.object({
+      runId: z.string().describe("Completed KylinGuard run identifier."),
+    }),
+    followUp: false,
+    render: () => <></>,
+    handler: async ({ runId }) => {
+      const run = await getAgentRun(runId);
+      setCurrentRun(run);
+      setSelectedStepIndex(run.agent_steps?.length ? 0 : null);
+      setActiveView("overview");
+      return "Dashboard synchronized";
+    },
+  });
 
   const loadShellData = useCallback(async () => {
     setStatusLoading(true);
@@ -51,65 +75,121 @@ export function AppShell() {
     void loadShellData();
   }, [loadShellData]);
 
-  function handleRunUpdate(run: AgentRun) {
-    setCurrentRun(run);
-    setSelectedStepIndex(run.agent_steps?.length ? 0 : null);
-    setActiveView("overview");
-  }
+  const sidebarKey = hydrated
+    ? `${preferences.chatPosition}-${preferences.chatWidth}-${preferences.chatDefaultOpen}`
+    : "copilot-sidebar-loading";
+  const SidebarToggleButton = useMemo(() => {
+    const OfficialSidebarToggle = forwardRef<
+      HTMLButtonElement,
+      React.ComponentPropsWithoutRef<typeof CopilotChatToggleButton>
+    >((props, ref) => (
+      <SidebarOpenStateSync
+        desiredOpen={preferences.chatDefaultOpen}
+        toggleProps={props}
+        toggleRef={ref}
+      />
+    ));
+    OfficialSidebarToggle.displayName = "OfficialCopilotSidebarToggle";
+    return OfficialSidebarToggle;
+  }, [preferences.chatDefaultOpen]);
 
   return (
-    <div className="app-shell">
-      <TopStatusBar
-        status={runtimeStatus}
-        loading={statusLoading}
-        error={statusError}
-        onRefresh={() => void loadShellData()}
-      />
-
-      <div className="product-workspace">
-        <aside className="left-sidebar">
-          <div className="sidebar-title">
-            <span>Workspace</span>
-            <strong>麒盾工作台</strong>
-          </div>
-          <nav className="sidebar-nav" aria-label="工作台导航">
-            {navItems.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={activeView === item.key ? "active" : ""}
-                onClick={() => setActiveView(item.key)}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </nav>
-          <div className="sidebar-footer">
-            <button className="copilot-nav-button" type="button" onClick={() => setCopilotOpen(true)}>
-              <MessageCircle size={16} />
-              打开 Copilot
-            </button>
-            <div className="sidebar-note">
-              <ListChecks size={14} />
-              <span>自然语言任务不会变成固定 workflow。</span>
-            </div>
-          </div>
-        </aside>
-
-        <OpsDashboard
-          activeView={activeView}
-          runtimeStatus={runtimeStatus}
-          capabilities={capabilities}
-          acceptance={acceptance}
-          currentRun={currentRun}
-          selectedStepIndex={selectedStepIndex}
-          onSelectStep={setSelectedStepIndex}
-          onOpenCopilot={() => setCopilotOpen(true)}
+    <div className="copilot-product-root" data-copilotkit>
+      <div className="app-shell">
+        <TopStatusBar
+          status={runtimeStatus}
+          loading={statusLoading}
+          error={statusError}
+          onRefresh={() => void loadShellData()}
         />
+
+        <div className="product-workspace">
+          <aside className="left-sidebar">
+            <div className="sidebar-title">
+              <span>KylinGuard</span>
+              <strong>麒盾控制台</strong>
+            </div>
+
+            <nav className="sidebar-nav" aria-label="控制台导航">
+              {navItems.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={activeView === item.key ? "active" : ""}
+                  onClick={() => setActiveView(item.key)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className="sidebar-footer">
+              <div className="sidebar-note">
+                <ListChecks size={14} />
+                <span>执行记录、安全审计和工具证据会在任务完成后同步到控制台。</span>
+              </div>
+            </div>
+          </aside>
+
+          <OpsDashboard
+            activeView={activeView}
+            runtimeStatus={runtimeStatus}
+            capabilities={capabilities}
+            acceptance={acceptance}
+            currentRun={currentRun}
+            selectedStepIndex={selectedStepIndex}
+            onSelectStep={setSelectedStepIndex}
+            preferences={preferences}
+            onUpdatePreferences={updatePreferences}
+            onResetPreferences={resetPreferences}
+          />
+        </div>
       </div>
 
-      <CopilotTaskDrawer open={copilotOpen} onOpenChange={setCopilotOpen} onRunUpdate={handleRunUpdate} />
+      {hydrated ? (
+        <CopilotSidebar
+          key={sidebarKey}
+          agentId="default"
+          defaultOpen={preferences.chatDefaultOpen}
+          position={preferences.chatPosition}
+          width={preferences.chatWidth}
+          toggleButton={SidebarToggleButton}
+          labels={{
+            modalHeaderTitle: "KylinGuard",
+            chatInputPlaceholder: "输入消息...",
+            welcomeMessageText: "你好，我是 KylinGuard。",
+            chatDisclaimerText: "回答由 Agent 生成，请核对重要信息。",
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+function SidebarOpenStateSync({
+  desiredOpen,
+  toggleProps,
+  toggleRef,
+}: {
+  desiredOpen: boolean;
+  toggleProps: React.ComponentPropsWithoutRef<typeof CopilotChatToggleButton>;
+  toggleRef: React.ForwardedRef<HTMLButtonElement>;
+}) {
+  const configuration = useCopilotChatConfiguration();
+  const synchronized = useRef(false);
+
+  useEffect(() => {
+    if (!configuration || synchronized.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      synchronized.current = true;
+      configuration.setModalOpen(desiredOpen);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [configuration?.setModalOpen, desiredOpen]);
+
+  return <CopilotChatToggleButton ref={toggleRef} {...toggleProps} />;
 }

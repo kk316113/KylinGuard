@@ -9,8 +9,8 @@ type Props = {
   onSelectStep: (index: number) => void;
 };
 
-// Kept only as a compatibility export for older imports. The product UI now
-// uses OpsDashboard as the main board and CopilotTaskDrawer as the chat entry.
+// Kept only as a compatibility export for older imports. The current product
+// UI uses OpsDashboard as the board and CopilotKit's native sidebar for chat.
 export function AgentConsole(_props: Props) {
   return null;
 }

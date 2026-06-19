@@ -45,7 +45,7 @@ export function runtimeModeLabel(chatModel?: string) {
 export function sceneTypeLabel(sceneType?: string) {
   switch (sceneType) {
     case "diagnosis":
-      return "系统诊断";
+      return "诊断";
     case "security_check":
       return "安全检查";
     case "service_recovery":

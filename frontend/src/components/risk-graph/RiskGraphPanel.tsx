@@ -1,6 +1,6 @@
 import { GitBranch, Route, ShieldAlert } from "lucide-react";
-import type { AgentRun, RiskGraph } from "@/types/agent";
 import { asText } from "@/lib/formatters";
+import type { AgentRun, RiskGraph } from "@/types/agent";
 
 export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
   const graph = findRiskGraph(run);
@@ -14,7 +14,7 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
       <div className="insight-empty">
         <GitBranch size={22} />
         <h3>暂无风险图</h3>
-        <p>后端未返回 risk_graph。前端不会伪造风险图，只展示后端审计核心生成的数据。</p>
+        <p>后端未返回 risk_graph。前端只展示后端审计核心生成的数据。</p>
       </div>
     );
   }
@@ -24,7 +24,7 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
       <section>
         <div className="mini-heading">
           <GitBranch size={16} />
-          <span>风险节点</span>
+          <span>节点</span>
         </div>
         <div className="graph-list">
           {(graph.nodes || []).map((node, index) => (
@@ -39,7 +39,7 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
       <section>
         <div className="mini-heading">
           <Route size={16} />
-          <span>风险边</span>
+          <span>边</span>
         </div>
         <div className="graph-list">
           {(graph.edges || []).map((edge, index) => (
@@ -55,7 +55,7 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
         <section>
           <div className="mini-heading">
             <ShieldAlert size={16} />
-            <span>风险热点</span>
+            <span>热点</span>
           </div>
           <div className="graph-list">
             {graph.risk_hotspots.map((hotspot, index) => (
@@ -75,8 +75,8 @@ function EmptyRiskGraph() {
   return (
     <div className="insight-empty">
       <GitBranch size={22} />
-      <h3>等待 Agent 任务</h3>
-      <p>任务完成后，如果后端返回 risk_graph，这里会展示执行链风险图。</p>
+      <h3>暂无会话数据</h3>
+      <p>如果后端返回 risk_graph，这里会展示对应的审计图数据。</p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { CheckCircle2, Lock, MousePointer2 } from "lucide-react";
+import { RiskDecisionBadge } from "@/components/audit/RiskDecisionBadge";
 import { observationSummary, stepTitle } from "@/lib/formatters";
 import type { AgentStep } from "@/types/agent";
-import { RiskDecisionBadge } from "@/components/audit/RiskDecisionBadge";
 
 type Props = {
   step: AgentStep;
@@ -11,7 +11,7 @@ type Props = {
 };
 
 export function ToolCallStepCard({ step, index, selected, onSelect }: Props) {
-  const summary = step.user_visible_summary || step.reason || observationSummary(step) || "Agent 执行了一个受控步骤。";
+  const summary = step.user_visible_summary || step.reason || observationSummary(step) || "Agent 完成了一个受控步骤。";
   const meta = [
     step.operation_type ? `operation=${step.operation_type}` : "",
     step.resource_type ? `resource=${step.resource_type}` : "",

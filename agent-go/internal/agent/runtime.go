@@ -23,7 +23,13 @@ type Runtime struct {
 }
 
 type RunRequest struct {
-	Task string `json:"task"`
+	Task     string                `json:"task"`
+	Messages []ConversationMessage `json:"messages,omitempty"`
+}
+
+type ConversationMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type RunResponse struct {

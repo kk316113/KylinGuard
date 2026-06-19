@@ -164,18 +164,56 @@ func TestAgentRunEinoNormalChatDoesNotExecuteToolsOrAudit(t *testing.T) {
 	}
 }
 
-func TestAgentRunEinoAmbiguousInputClarifiesWithoutTools(t *testing.T) {
+func TestAgentRunPrimaryNormalChatReturnsReadableAnswer(t *testing.T) {
+	auditor := &testAuditor{}
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
+
+	response := postAgentRequest(t, agentRunHandler(eino, newAgentRunStore()), "/api/agent/run", "hello")
+
+	if response.InteractionType != agent.InteractionTypeChat || response.AgentMode != agent.AgentModeChatOnly {
+		t.Fatalf("expected chat-only response, got interaction=%q mode=%q", response.InteractionType, response.AgentMode)
+	}
+	if strings.TrimSpace(response.FinalAnswer) == "" {
+		t.Fatal("expected non-empty final_answer")
+	}
+	if len(response.AgentSteps) != 0 || len(response.ToolTrace) != 0 {
+		t.Fatalf("normal chat must not execute tools, got steps=%d traces=%d", len(response.AgentSteps), len(response.ToolTrace))
+	}
+	if auditor.called {
+		t.Fatal("normal chat must not call audit client")
+	}
+}
+
+func TestAgentRunRejectsEmptyTask(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, &testAuditor{}, nil, einoruntime.DefaultRuntimeConfig())
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/run", strings.NewReader(`{"task":"   "}`))
+	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	recorder := httptest.NewRecorder()
+
+	agentRunHandler(eino, newAgentRunStore()).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected HTTP 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "task is required") {
+		t.Fatalf("expected clear validation error, got %s", recorder.Body.String())
+	}
+}
+
+func TestAgentRunEinoNonOperationalInputDefaultsToChatWithoutTools(t *testing.T) {
 	auditor := &testAuditor{}
 	registry := tools.NewDefaultRegistry()
 	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
 
 	response := postAgentRequest(t, agentRunEinoHandler(eino, newAgentRunStore()), "/api/agent/run-eino", "你帮我看看")
 
-	if response.InteractionType != agent.InteractionTypeClarify {
-		t.Fatalf("expected clarify response, got %q", response.InteractionType)
+	if response.InteractionType != agent.InteractionTypeChat {
+		t.Fatalf("expected safe chat response, got %q", response.InteractionType)
 	}
 	if response.FinalAnswer == "" || response.UserMessage == nil {
-		t.Fatalf("expected clarification answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+		t.Fatalf("expected chat answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 	if len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
 		t.Fatalf("ambiguous input should not execute tools, got traces=%d steps=%d", len(response.ToolTrace), len(response.AgentSteps))

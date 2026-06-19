@@ -49,15 +49,6 @@ func ConservativeRoute(task string) InteractionRoute {
 	if text == "" {
 		return clarifyRoute("empty input")
 	}
-	if isPlainChatRequest(text) {
-		return InteractionRoute{
-			InteractionType:    InteractionTypeChat,
-			RouterSource:       RouterSourceDeterministicConservative,
-			Confidence:         RouterConfidenceHigh,
-			NeedsToolExecution: false,
-			Reason:             "casual chat or product help request",
-		}
-	}
 	if isExplicitDemoOpsRequest(text) {
 		return InteractionRoute{
 			InteractionType:    InteractionTypeAgentRun,
@@ -67,21 +58,31 @@ func ConservativeRoute(task string) InteractionRoute {
 			Reason:             "concrete operations task; deterministic fallback allows Agent Loop to plan next_action",
 		}
 	}
-	return clarifyRoute("ambiguous request; ask for the concrete operations symptom before tools")
+	return InteractionRoute{
+		InteractionType:    InteractionTypeChat,
+		RouterSource:       RouterSourceDeterministicConservative,
+		Confidence:         RouterConfidenceLow,
+		NeedsToolExecution: false,
+		Reason:             "non-operational input defaults to safe chat when no semantic LLM router is available",
+	}
 }
 
 func NewChatOnlyResponse(task string, route InteractionRoute) RunResponse {
-	answer := "你好，我是 KylinGuard 智能运维助手。你可以直接描述遇到的系统问题，例如 SSH 连不上、机器很卡、服务访问不了、端口异常或日志风险。我会在安全策略约束下帮助你一步步排查。"
-	return newNonToolResponse(task, route, AgentModeChatOnly, "你好，我在", answer, []string{
-		"直接描述一个具体运维问题，例如 SSH 连不上、服务访问不了或机器卡顿。",
-	})
+	answer := "你好，我是 KylinGuard。有什么可以帮你？"
+	return NewChatOnlyResponseWithAnswer(task, route, answer)
+}
+
+func NewChatOnlyResponseWithAnswer(task string, route InteractionRoute, answer string) RunResponse {
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		answer = "你好，我是 KylinGuard。有什么可以帮你？"
+	}
+	return newNonToolResponse(task, route, AgentModeChatOnly, "KylinGuard", answer, []string{})
 }
 
 func NewClarifyResponse(task string, route InteractionRoute) RunResponse {
-	answer := "我可以帮你排查系统问题。请补充一下具体现象，例如是 SSH 连不上、服务访问不了、机器卡顿，还是日志里出现异常？在信息明确前，我不会调用系统工具。"
-	return newNonToolResponse(task, route, AgentModeChatOnly, "需要更多信息", answer, []string{
-		"请补充具体故障现象、涉及的服务名、端口或日志位置。",
-	})
+	answer := "我还不确定你希望我处理什么。你可以继续描述，我会先理解你的请求，再决定是否需要调用工具。"
+	return newNonToolResponse(task, route, AgentModeChatOnly, "需要更多信息", answer, []string{})
 }
 
 func NewSafeRefusalResponse(task string, route InteractionRoute) RunResponse {
@@ -140,21 +141,6 @@ func clarifyRoute(reason string) InteractionRoute {
 		NeedsToolExecution: false,
 		Reason:             reason,
 	}
-}
-
-func isPlainChatRequest(text string) bool {
-	normalized := strings.Join(strings.Fields(text), " ")
-	switch normalized {
-	case "hello", "hi", "help", "你好", "您好", "你好呀", "你好，请你回答我的问题":
-		return true
-	}
-	return strings.Contains(normalized, "你是谁") ||
-		strings.Contains(normalized, "你能做什么") ||
-		strings.Contains(normalized, "怎么使用") ||
-		strings.Contains(normalized, "使用说明") ||
-		strings.Contains(normalized, "请你回答我的问题") ||
-		strings.Contains(normalized, "what can you do") ||
-		strings.Contains(normalized, "how to use")
 }
 
 func isExplicitDemoOpsRequest(text string) bool {
