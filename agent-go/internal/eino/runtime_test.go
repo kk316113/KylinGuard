@@ -98,6 +98,70 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoGraphRuntime(t *testing.T) {
 	}
 }
 
+func TestRuntimeNormalChatDoesNotEnterGraphOrAudit(t *testing.T) {
+	auditor := &testAuditor{}
+	adapter := &countingAdapter{}
+	runtime := NewRuntime(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), DefaultRuntimeConfig())
+	runtime.toolAdapter = adapter
+	runtime.graphRuntime = NewGraphRuntime(runtime.chatModel, adapter)
+
+	response, err := runtime.Run(context.Background(), agent.AgentRunRequest{Task: "你好呀请你回答我的问题"})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if response.InteractionType != agent.InteractionTypeChat || response.AgentMode != agent.AgentModeChatOnly {
+		t.Fatalf("expected chat-only response, got interaction=%q mode=%q", response.InteractionType, response.AgentMode)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Answer == "" {
+		t.Fatalf("expected readable chat answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+	}
+	if len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
+		t.Fatalf("normal chat should not execute tools, got traces=%d steps=%d", len(response.ToolTrace), len(response.AgentSteps))
+	}
+	if response.SecurityReport != nil {
+		t.Fatalf("normal chat should not produce security_report, got %#v", response.SecurityReport)
+	}
+	if adapter.calls != 0 {
+		t.Fatalf("tool adapter should not be called for normal chat, got %d calls", adapter.calls)
+	}
+	if auditor.called {
+		t.Fatal("audit client should not be called for normal chat")
+	}
+}
+
+func TestRuntimeAmbiguousInputClarifiesWithoutGraphOrAudit(t *testing.T) {
+	auditor := &testAuditor{}
+	adapter := &countingAdapter{}
+	runtime := NewRuntime(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), DefaultRuntimeConfig())
+	runtime.toolAdapter = adapter
+	runtime.graphRuntime = NewGraphRuntime(runtime.chatModel, adapter)
+
+	response, err := runtime.Run(context.Background(), agent.AgentRunRequest{Task: "你帮我看看"})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if response.InteractionType != agent.InteractionTypeClarify {
+		t.Fatalf("expected clarify response, got %q", response.InteractionType)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil {
+		t.Fatalf("expected clarification answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+	}
+	if len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
+		t.Fatalf("ambiguous input should not execute tools, got traces=%d steps=%d", len(response.ToolTrace), len(response.AgentSteps))
+	}
+	if response.SecurityReport != nil {
+		t.Fatalf("ambiguous input should not produce security_report, got %#v", response.SecurityReport)
+	}
+	if adapter.calls != 0 {
+		t.Fatalf("tool adapter should not be called for ambiguous input, got %d calls", adapter.calls)
+	}
+	if auditor.called {
+		t.Fatal("audit client should not be called for ambiguous input")
+	}
+}
+
 func TestRuntimeDangerousTaskDeniedBeforeGraph(t *testing.T) {
 	auditor := &testAuditor{}
 	adapter := &countingAdapter{}
@@ -127,6 +191,9 @@ func TestRuntimeDangerousTaskDeniedBeforeGraph(t *testing.T) {
 	}
 	if response.SecurityReport == nil || response.SecurityReport.Title != "KylinGuard Dangerous Intent Audit Report" {
 		t.Fatalf("expected dangerous intent report, got %#v", response.SecurityReport)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Status != agent.RunStatusBlocked {
+		t.Fatalf("expected blocked user-facing answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 }
 

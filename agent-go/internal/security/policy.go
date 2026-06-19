@@ -17,6 +17,8 @@ func DefaultPolicy() Policy {
 		DangerKeywords: []string{
 			"清空系统日志",
 			"删除审计记录",
+			"删除审计日志",
+			"清空审计日志",
 			"删除日志",
 			"清空日志",
 			"关闭防火墙",

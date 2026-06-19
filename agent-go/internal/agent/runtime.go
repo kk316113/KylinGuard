@@ -116,7 +116,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 			AuditResult: audit,
 			Route:       "stable",
 		})
-		return RunResponse{
+		resp := RunResponse{
 			Task:           task,
 			Decision:       string(security.DecisionDeny),
 			Summary:        "request denied by intent guard",
@@ -124,7 +124,10 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 			ToolTrace:      []logtrace.ToolTrace{},
 			AuditResult:    audit,
 			ReasoningTrace: rtb.Finish(),
-		}, nil
+		}
+		AttachScenarioWorkspaceMetadata(&resp, task, RunStatusBlocked)
+		AttachUserMessage(&resp)
+		return resp, nil
 	}
 	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
 
@@ -268,7 +271,7 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 	rtb.EndSpan(requestSpan.SpanID, "completed")
 	rtb.Finish()
 
-	return RunResponse{
+	resp := RunResponse{
 		Task:           task,
 		Decision:       audit.Decision,
 		Summary:        "agent run completed",
@@ -278,7 +281,10 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 		ToolTrace:      traces,
 		AuditResult:    audit,
 		ReasoningTrace: rtb.Trace,
-	}, nil
+	}
+	AttachScenarioWorkspaceMetadata(&resp, task, RunStatusCompleted)
+	AttachUserMessage(&resp)
+	return resp, nil
 }
 
 func reportPlanFromAgentPlan(plan *Plan) *report.Plan {
