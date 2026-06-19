@@ -8,6 +8,8 @@ const backendTarget =
 const normalizedBackendTarget = backendTarget.replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
+  // The Next.js developer toolbar is English-only and is not part of the product UI.
+  devIndicators: false,
   async rewrites() {
     return [
       {

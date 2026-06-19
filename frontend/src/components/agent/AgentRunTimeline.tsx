@@ -19,7 +19,7 @@ export function AgentRunTimeline({ run, selectedStepIndex, onSelectStep }: Props
           <ListChecks size={18} />
           <h3>执行步骤</h3>
         </div>
-        <p>本次响应没有工具执行步骤。</p>
+        <p>本次响应没有执行工具。</p>
       </section>
     );
   }

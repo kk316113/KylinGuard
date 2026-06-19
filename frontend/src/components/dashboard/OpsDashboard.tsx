@@ -15,7 +15,20 @@ import { RiskDecisionBadge } from "@/components/audit/RiskDecisionBadge";
 import { RightInsightPanel } from "@/components/layout/RightInsightPanel";
 import { RiskGraphPanel } from "@/components/risk-graph/RiskGraphPanel";
 import type { ConsolePreferences } from "@/hooks/useConsolePreferences";
-import { compactDate, finalAnswerOf, runtimeModeLabel, sceneTypeLabel, traceSummary } from "@/lib/formatters";
+import {
+  boundaryLevelLabel,
+  compactDate,
+  decisionLabel,
+  finalAnswerOf,
+  operationTypeLabel,
+  resourceTypeLabel,
+  runStatusLabel,
+  runtimeModeLabel,
+  sceneTypeLabel,
+  toolDescriptionLabel,
+  toolNameLabel,
+  traceSummary,
+} from "@/lib/formatters";
 import type { AgentRun } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse, RuntimeStatus } from "@/types/runtime";
 
@@ -63,8 +76,6 @@ export function OpsDashboard({
       {activeView === "runs" ? <RunsBoard currentRun={currentRun} /> : null}
       {activeView === "settings" ? (
         <SettingsBoard
-          runtimeStatus={runtimeStatus}
-          acceptance={acceptance}
           preferences={preferences}
           onUpdatePreferences={onUpdatePreferences}
           onResetPreferences={onResetPreferences}
@@ -92,7 +103,7 @@ function OverviewBoard({
     <div className="board-stack">
       <section className="board-hero">
         <div>
-          <p className="eyebrow">KylinGuard Agent Console</p>
+          <p className="eyebrow">麒盾智能体控制台</p>
           <h1>系统状态与安全看板</h1>
           <p>运行状态、执行记录、工具证据和安全审计在这里集中呈现。</p>
         </div>
@@ -103,10 +114,10 @@ function OverviewBoard({
         <MetricCard
           icon={<ShieldCheck size={18} />}
           label="安全层"
-          value={`${Object.keys(runtimeStatus?.security_layers || {}).length || 0} layers`}
+          value={`${Object.keys(runtimeStatus?.security_layers || {}).length || 0} 层`}
         />
         <MetricCard icon={<Wrench size={18} />} label="工具" value={`${tools.length || 0}`} />
-        <MetricCard icon={<ListChecks size={18} />} label="验收" value={`${stagesPassed}/${acceptance?.stages.length || 0} PASS`} />
+        <MetricCard icon={<ListChecks size={18} />} label="验证结果" value={`${stagesPassed}/${acceptance?.stages.length || 0} 项通过`} />
       </section>
 
       {currentRun ? (
@@ -119,7 +130,7 @@ function OverviewBoard({
               <p>{finalAnswerOf(currentRun)}</p>
             </div>
             <div className="run-overview-meta">
-              <Detail label="run_id" value={currentRun.run_id || currentRun.task_id} />
+              <Detail label="运行编号" value={currentRun.run_id || currentRun.task_id} />
               <Detail label="分类" value={sceneTypeLabel(currentRun.scene_type)} />
               <Detail label="步骤" value={currentRun.agent_steps?.length || 0} />
               <Detail label="证据" value={currentRun.tool_trace?.length || 0} />
@@ -178,16 +189,16 @@ function ToolsBoard({ capabilities }: { capabilities?: CapabilitiesResponse }) {
     <div className="board-stack">
       <section className="board-section">
         <SectionHeading icon={<Wrench size={18} />} title="工具能力" />
-        <p className="section-copy">工具选择来自 Agent Loop，实际执行仍由后端安全策略控制。</p>
+        <p className="section-copy">工具选择来自智能体规划，实际执行仍由后端安全策略控制。</p>
         <div className="tool-catalog">
           {tools.length ? (
             tools.map((tool) => (
               <div className="tool-catalog-row" key={tool.tool_name}>
                 <div>
-                  <strong>{tool.display_name || tool.tool_name}</strong>
-                  <span>{tool.description || "受控工具"}</span>
+                  <strong>{toolNameLabel(tool.tool_name)}</strong>
+                  <span>{toolDescriptionLabel(tool.tool_name)}</span>
                 </div>
-                <small>{tool.operation_type} / {tool.resource_type} / {tool.boundary_level}</small>
+                <small>{operationTypeLabel(tool.operation_type)} / {resourceTypeLabel(tool.resource_type)} / {boundaryLevelLabel(tool.boundary_level)}</small>
               </div>
             ))
           ) : (
@@ -217,12 +228,12 @@ function RunsBoard({ currentRun }: { currentRun?: AgentRun | null }) {
       <section className="board-section">
         <SectionHeading icon={<FileText size={18} />} title="最近会话" />
         <div className="detail-grid">
-          <Detail label="run_id" value={currentRun.run_id || currentRun.task_id} />
-          <Detail label="input" value={currentRun.task} />
-          <Detail label="scene_type" value={sceneTypeLabel(currentRun.scene_type)} />
-          <Detail label="run_status" value={currentRun.run_status} />
-          <Detail label="created_at" value={compactDate(currentRun.created_at)} />
-          <Detail label="decision" value={currentRun.decision || currentRun.audit_result?.decision} />
+          <Detail label="运行编号" value={currentRun.run_id || currentRun.task_id} />
+          <Detail label="用户输入" value={currentRun.task} />
+          <Detail label="任务类型" value={sceneTypeLabel(currentRun.scene_type)} />
+          <Detail label="运行状态" value={runStatusLabel(currentRun.run_status)} />
+          <Detail label="创建时间" value={compactDate(currentRun.created_at)} />
+          <Detail label="安全结论" value={decisionLabel(currentRun.decision || currentRun.audit_result?.decision)} />
         </div>
       </section>
       <section className="board-section">
@@ -231,7 +242,7 @@ function RunsBoard({ currentRun }: { currentRun?: AgentRun | null }) {
           {(currentRun.tool_trace || []).length ? (
             (currentRun.tool_trace || []).map((trace, index) => (
               <div className="evidence-row" key={trace.step_id || `${trace.tool_name}-${index}`}>
-                <strong>{trace.tool_name || `tool-${index + 1}`}</strong>
+                <strong>{trace.tool_name ? toolNameLabel(trace.tool_name) : `工具 ${index + 1}`}</strong>
                 <span>{traceSummary(trace)}</span>
               </div>
             ))
@@ -245,14 +256,10 @@ function RunsBoard({ currentRun }: { currentRun?: AgentRun | null }) {
 }
 
 function SettingsBoard({
-  runtimeStatus,
-  acceptance,
   preferences,
   onUpdatePreferences,
   onResetPreferences,
 }: {
-  runtimeStatus?: RuntimeStatus;
-  acceptance?: AcceptanceSummary;
   preferences: ConsolePreferences;
   onUpdatePreferences: (patch: Partial<ConsolePreferences>) => void;
   onResetPreferences: () => void;
@@ -265,9 +272,6 @@ function SettingsBoard({
             <SectionHeading icon={<Settings size={18} />} title="界面设置" />
             <p className="section-copy">更改会立即生效，并保存在当前浏览器。</p>
           </div>
-          <button className="icon-button" type="button" onClick={onResetPreferences} title="恢复默认设置" aria-label="恢复默认设置">
-            <RotateCcw size={16} />
-          </button>
         </div>
 
         <div className="settings-list">
@@ -287,7 +291,7 @@ function SettingsBoard({
             </div>
           </SettingRow>
 
-          <SettingRow label="聊天位置" description="使用 CopilotKit 官方侧边栏，选择从左侧或右侧展开。">
+          <SettingRow label="聊天位置" description="使用官方聊天侧边栏，选择从左侧或右侧展开。">
             <div className="segmented-control" role="group" aria-label="聊天侧边栏位置">
               {(["left", "right"] as const).map((chatPosition) => (
                 <button
@@ -303,7 +307,7 @@ function SettingsBoard({
             </div>
           </SettingRow>
 
-          <SettingRow label="聊天宽度" description={`${preferences.chatWidth}px`}>
+          <SettingRow label="聊天宽度" description={`${preferences.chatWidth} 像素`}>
             <div className="range-control">
               <span>360</span>
               <input
@@ -319,7 +323,7 @@ function SettingsBoard({
             </div>
           </SettingRow>
 
-          <SettingRow label="默认展开聊天" description="页面加载后直接打开 CopilotKit 聊天侧边栏。">
+          <SettingRow label="默认展开聊天" description="页面加载后直接打开聊天侧边栏。">
             <label className="switch-control">
               <input
                 type="checkbox"
@@ -333,31 +337,15 @@ function SettingsBoard({
         </div>
       </section>
 
-      <section className="board-section">
-        <SectionHeading icon={<Activity size={18} />} title="运行状态" />
-        <p className="section-copy">模型与凭据由服务端配置，此处仅显示脱敏后的只读状态。</p>
-        <div className="detail-grid">
-          <Detail label="chat_model" value={runtimeStatus?.runtime.chat_model} />
-          <Detail label="provider" value={runtimeStatus?.runtime.provider} />
-          <Detail label="remote_llm_used" value={runtimeStatus?.runtime.remote_llm_used} />
-          <Detail label="api_key" value={runtimeStatus?.secret_safety.api_key_display || "[REDACTED]"} />
+      <section className="board-section preference-storage-section">
+        <div>
+          <SectionHeading icon={<RotateCcw size={18} />} title="本地偏好" />
+          <p className="section-copy">这些设置仅保存在当前浏览器，不会上传到服务端。</p>
         </div>
-      </section>
-
-      <section className="board-section">
-        <SectionHeading icon={<ListChecks size={18} />} title="验收基线" />
-        <div className="acceptance-list">
-          {(acceptance?.stages || []).length ? (
-            (acceptance?.stages || []).map((stage) => (
-              <div className="acceptance-row" key={stage.name}>
-                <strong>{stage.status}</strong>
-                <span>{stage.name}: {stage.title}</span>
-              </div>
-            ))
-          ) : (
-            <EmptyInline>暂无验收数据</EmptyInline>
-          )}
-        </div>
+        <button className="secondary-action" type="button" onClick={onResetPreferences}>
+          <RotateCcw size={15} />
+          恢复默认设置
+        </button>
       </section>
     </div>
   );

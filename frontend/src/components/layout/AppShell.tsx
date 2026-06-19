@@ -106,7 +106,7 @@ export function AppShell() {
         <div className="product-workspace">
           <aside className="left-sidebar">
             <div className="sidebar-title">
-              <span>KylinGuard</span>
+              <span>安全智能体</span>
               <strong>麒盾控制台</strong>
             </div>
 
@@ -156,10 +156,10 @@ export function AppShell() {
           width={preferences.chatWidth}
           toggleButton={SidebarToggleButton}
           labels={{
-            modalHeaderTitle: "KylinGuard",
+            modalHeaderTitle: "麒盾",
             chatInputPlaceholder: "输入消息...",
-            welcomeMessageText: "你好，我是 KylinGuard。",
-            chatDisclaimerText: "回答由 Agent 生成，请核对重要信息。",
+            welcomeMessageText: "你好，我是麒盾。",
+            chatDisclaimerText: "回答由智能体生成，请核对重要信息。",
           }}
         />
       ) : null}

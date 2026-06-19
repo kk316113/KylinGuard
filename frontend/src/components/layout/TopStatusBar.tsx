@@ -1,6 +1,6 @@
 import { Activity, DatabaseZap, KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { runtimeModeLabel } from "@/lib/formatters";
+import { runtimeModeLabel, serviceStatusLabel } from "@/lib/formatters";
 import type { RuntimeStatus } from "@/types/runtime";
 
 type Props = {
@@ -20,15 +20,19 @@ export function TopStatusBar({ status, loading, error, onRefresh }: Props) {
         <div className="brand-mark">麒</div>
         <div>
           <strong>KylinGuard</strong>
-          <span>Agent Console</span>
+          <span>麒盾智能体控制台</span>
         </div>
       </div>
 
       <div className="status-items">
-        <StatusPill icon={<Activity size={15} />} label="Runtime" value={runtimeModeLabel(runtime?.chat_model)} />
-        <StatusPill icon={<DatabaseZap size={15} />} label="Backend" value={status?.services.go_agent.status || "unknown"} />
-        <StatusPill icon={<ShieldCheck size={15} />} label="Guardrails" value={layers.length ? `${layers.length} layers` : "unknown"} />
-        <StatusPill icon={<KeyRound size={15} />} label="API Key" value={status?.secret_safety.api_key_display || "[REDACTED]"} />
+        <StatusPill icon={<Activity size={15} />} label="运行模式" value={runtimeModeLabel(runtime?.chat_model)} />
+        <StatusPill icon={<DatabaseZap size={15} />} label="后端服务" value={serviceStatusLabel(status?.services.go_agent.status)} />
+        <StatusPill icon={<ShieldCheck size={15} />} label="安全防护" value={layers.length ? `${layers.length} 层` : "未知"} />
+        <StatusPill
+          icon={<KeyRound size={15} />}
+          label="接口凭据"
+          value={status?.secret_safety.api_key_present ? "已配置并隐藏" : "未配置"}
+        />
       </div>
 
       {error ? <span className="status-error">{error}</span> : null}

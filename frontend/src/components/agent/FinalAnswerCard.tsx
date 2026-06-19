@@ -13,7 +13,7 @@ export function FinalAnswerCard({ run }: { run: AgentRun }) {
           <ShieldCheck size={18} />
         </div>
         <div>
-          <p className="eyebrow">Final Answer</p>
+          <p className="eyebrow">最终回答</p>
           <h2>{message?.title || "处理建议"}</h2>
         </div>
         <RiskDecisionBadge decision={run.decision || run.audit_result?.decision} />
@@ -23,9 +23,9 @@ export function FinalAnswerCard({ run }: { run: AgentRun }) {
 
       {(message?.what_i_checked?.length || message?.key_findings?.length || message?.next_steps?.length) ? (
         <div className="answer-grid">
-          <AnswerList title="已检查" items={message?.what_i_checked} />
+          <AnswerList title="检查内容" items={message?.what_i_checked} />
           <AnswerList title="关键发现" items={message?.key_findings} />
-          <AnswerList title="建议" items={message?.next_steps} />
+          <AnswerList title="后续建议" items={message?.next_steps} />
         </div>
       ) : null}
     </section>

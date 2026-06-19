@@ -665,6 +665,36 @@ html.dark body {
   gap: 16px;
 }
 
+.preference-storage-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.preference-storage-section > div {
+  display: grid;
+  gap: 7px;
+}
+
+.secondary-action {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.secondary-action:hover {
+  background: var(--surface-strong);
+}
+
 .settings-heading .section-copy {
   margin-top: 7px;
 }
@@ -880,5 +910,10 @@ html.dark body {
   .segmented-control,
   .range-control {
     width: 100%;
+  }
+
+  .preference-storage-section {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
