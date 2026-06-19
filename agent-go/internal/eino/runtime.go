@@ -122,10 +122,27 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	}
 	rtb.EndSpan(intentGuardSpan.SpanID, "allow")
 
-	// Stage 16A+: run-eino always uses the Agent Loop. When a remote LLM is
-	// configured it drives the loop; otherwise the deterministic adapter acts as
-	// the fallback generator. The graph-runtime path is no longer reached here.
-	return r.runAgentLoop(ctx, task, rtb, requestSpan, intent)
+	route := r.routeInteraction(ctx, task)
+	if route.InteractionType == agent.InteractionTypeChat {
+		rtb.EndSpan(requestSpan.SpanID, "chat_only")
+		rtb.Finish()
+		return r.runChatOnly(ctx, task, req.Messages, route), nil
+	}
+	if route.InteractionType == agent.InteractionTypeClarify {
+		rtb.EndSpan(requestSpan.SpanID, "clarify")
+		rtb.Finish()
+		return agent.NewClarifyResponse(task, route), nil
+	}
+	if route.InteractionType == agent.InteractionTypeSafeRefusal {
+		rtb.EndSpan(requestSpan.SpanID, "safe_refusal")
+		rtb.Finish()
+		return agent.NewSafeRefusalResponse(task, route), nil
+	}
+
+	// Stage 16A+: run-eino uses the Agent Loop for concrete operations tasks.
+	// When a remote LLM is configured it drives the loop; otherwise the
+	// deterministic adapter acts as the fallback generator.
+	return r.runAgentLoop(ctx, task, rtb, requestSpan, intent, route)
 }
 
 func (r *Runtime) Name() string {
@@ -146,12 +163,7 @@ func (r *Runtime) routeInteraction(ctx context.Context, task string) agent.Inter
 }
 
 func (r *Runtime) routeInteractionWithLLM(ctx context.Context, task string) (agent.InteractionRoute, error) {
-	var llmAdapter *RemoteLLMAdapter
-	if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
-		if primary, ok := fb.primary.(*RemoteLLMAdapter); ok {
-			llmAdapter = primary
-		}
-	}
+	llmAdapter := r.remoteLLMAdapter()
 	if llmAdapter == nil {
 		return agent.InteractionRoute{}, errors.New("remote LLM adapter not available for router")
 	}
@@ -186,6 +198,76 @@ func (r *Runtime) routeInteractionWithLLM(ctx context.Context, task string) (age
 		route.NeedsToolExecution = false
 	}
 	return route, nil
+}
+
+func (r *Runtime) runChatOnly(ctx context.Context, task string, history []agent.ConversationMessage, route agent.InteractionRoute) agent.AgentRunResponse {
+	llmAdapter := r.remoteLLMAdapter()
+	if llmAdapter == nil {
+		return agent.NewChatOnlyResponseWithAnswer(task, route, r.deterministicChatAnswer(task))
+	}
+
+	messages := []map[string]any{
+		{
+			"role":    "system",
+			"content": fmt.Sprintf(`You are KylinGuard's conversational assistant. Answer the user naturally and directly in the user's language. The configured provider is %s and the configured model identifier is %s. If the user asks which model you use, state those values accurately. Do not claim that you inspected the system, executed tools, or observed live machine state unless tool results were actually provided. Keep the answer concise and helpful.`, r.config.LLMProvider, r.config.LLMModel),
+		},
+	}
+	messages = append(messages, chatHistoryMessages(task, history)...)
+	answer, err := llmAdapter.callChatCompletions(ctx, messages)
+	if err != nil || strings.TrimSpace(answer) == "" {
+		return agent.NewChatOnlyResponse(task, route)
+	}
+	return agent.NewChatOnlyResponseWithAnswer(task, route, answer)
+}
+
+func (r *Runtime) deterministicChatAnswer(task string) string {
+	normalized := strings.ToLower(strings.Join(strings.Fields(task), " "))
+	if strings.Contains(normalized, "什么模型") ||
+		strings.Contains(normalized, "哪个模型") ||
+		strings.Contains(normalized, "模型是什么") ||
+		strings.Contains(normalized, "what model") ||
+		strings.Contains(normalized, "which model") {
+		return fmt.Sprintf("我是 KylinGuard Agent。当前运行的是 %s，未启用远程大模型。配置远程模型后，普通对话会由对应模型生成回答。", r.config.ChatModelName())
+	}
+	return "你好，我是 KylinGuard。有什么可以帮你？"
+}
+
+func chatHistoryMessages(task string, history []agent.ConversationMessage) []map[string]any {
+	const maxMessages = 20
+	const maxContentLength = 4000
+
+	if len(history) > maxMessages {
+		history = history[len(history)-maxMessages:]
+	}
+	messages := make([]map[string]any, 0, len(history)+1)
+	for _, message := range history {
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		contentRunes := []rune(content)
+		if len(contentRunes) > maxContentLength {
+			content = string(contentRunes[:maxContentLength])
+		}
+		messages = append(messages, map[string]any{"role": role, "content": content})
+	}
+	if len(messages) == 0 || messages[len(messages)-1]["role"] != "user" || messages[len(messages)-1]["content"] != task {
+		messages = append(messages, map[string]any{"role": "user", "content": task})
+	}
+	return messages
+}
+
+func (r *Runtime) remoteLLMAdapter() *RemoteLLMAdapter {
+	if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
+		if primary, ok := fb.primary.(*RemoteLLMAdapter); ok {
+			return primary
+		}
+	}
+	return nil
 }
 
 func interactionRouterPrompt() string {
@@ -535,7 +617,7 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 }
 
 // runAgentLoop executes the Stage 16A Agent Loop for remote LLM.
-func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult) (agent.AgentRunResponse, error) {
+func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult, route agent.InteractionRoute) (agent.AgentRunResponse, error) {
 	// Choose the agent-loop generator. A configured remote LLM drives the loop;
 	// otherwise the deterministic adapter acts as the fallback generator so run-eino
 	// always runs an Agent Loop (req 1).
@@ -609,15 +691,15 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		}
 		if step.AuditReport != nil {
 			m["audit_report"] = map[string]any{
-				"step_id":     step.AuditReport.StepID,
-				"step_index":  step.AuditReport.StepIndex,
-				"tool_name":   step.AuditReport.ToolName,
-				"decision":    step.AuditReport.Decision,
-				"risk_score":  step.AuditReport.RiskScore,
-				"violations":  step.AuditReport.Violations,
-				"evidence":    step.AuditReport.Evidence,
-				"method":      step.AuditReport.Method,
-				"message":     step.AuditReport.Message,
+				"step_id":    step.AuditReport.StepID,
+				"step_index": step.AuditReport.StepIndex,
+				"tool_name":  step.AuditReport.ToolName,
+				"decision":   step.AuditReport.Decision,
+				"risk_score": step.AuditReport.RiskScore,
+				"violations": step.AuditReport.Violations,
+				"evidence":   step.AuditReport.Evidence,
+				"method":     step.AuditReport.Method,
+				"message":    step.AuditReport.Message,
 			}
 		}
 		stepMaps = append(stepMaps, m)
@@ -680,7 +762,10 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		AuditResult:    audit,
 		RiskGraph:      loopResp.RiskGraph,
 		ReasoningTrace: rtb.Finish(),
-	}, nil
+	}
+	agent.AttachScenarioWorkspaceMetadata(&resp, task, agent.RunStatusCompleted)
+	agent.AttachUserMessage(&resp)
+	return resp, nil
 }
 
 // aggregateAuditFromSteps synthesizes a single auditclient.Result from the

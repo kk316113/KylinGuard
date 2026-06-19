@@ -2,7 +2,7 @@
 
 ## Project Identity
 
-KylinGuard / 麒麟 is a security-aware intelligent operations Agent for Kylin OS.
+KylinGuard / 麒盾 is a security-aware intelligent operations Agent for Kylin OS.
 
 It is not a security audit dashboard. The main product line is:
 
@@ -15,6 +15,22 @@ user natural-language ops task
 ```
 
 TraceShield, intent_guard, Tool Policy, Exec Proxy, reasoning_trace, and risk graph are safety and explanation layers around tool calls.
+
+## Product Baseline Docs
+
+Use `AGENTS.md` as the compact workspace-memory entrypoint. Do not paste full product or API specs here.
+
+- Product requirements baseline: `docs/product/PRODUCT_REQUIREMENTS_BASELINE.md`
+- Agent API baseline: `docs/backend/AGENT_API_BASELINE.md`
+- Current implementation state: `docs/agent_memory/CURRENT_STATE.md`
+- Working rules and constraints: `docs/agent_memory/WORKING_RULES.md`
+
+Development priority:
+
+1. Agent experience first: user-facing `final_answer` is the main product output.
+2. Guardrails are embedded in every tool call, not a separate after-the-fact dashboard.
+3. Risk graph is an explanation layer generated from real execution evidence.
+4. Natural-language tasks and prompt suggestions must not become fixed workflows.
 
 ## Current Baseline
 
@@ -77,12 +93,15 @@ When the user gives a normal development task:
 - Do not turn natural-language tasks into hardcoded scenarios.
 - Do not write `if task contains SSH then ...` in Agent Loop logic.
 - User task examples are acceptance samples, not fixed workflows.
+- Do not use keyword rules as the main task router.
+- Do not let `scene_type` decide tool order.
 - mock LLM behavior is only a test double; never treat it as the real Agent.
 - deterministic baseline is only fallback/regression, not the main Agent.
 - LLM can only propose structured `next_action`; system decides whether/how to execute.
 - Never let LLM execute raw shell directly.
 - Never bypass Tool Policy.
 - Never bypass Exec Proxy.
+- Never fabricate tool results, audit reports, or risk graphs.
 - Never commit real API keys.
 - Never print real API keys in logs.
 - `run/demo.env` must not store real keys; use `[REDACTED]`.

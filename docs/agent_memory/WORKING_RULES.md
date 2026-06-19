@@ -19,9 +19,11 @@ The system decides whether and how to execute it.
 - Do not make TraceShield report the main UI.
 - Do not turn prompt chips into scenario IDs.
 - Do not write task keyword routing in Agent Loop.
+- Do not let `scene_type` decide tool order.
 - Do not let LLM execute raw shell directly.
 - Do not bypass Tool Policy.
 - Do not bypass Exec Proxy.
+- Do not fabricate tool results, audit reports, or risk graphs.
 - Do not store or print real API keys.
 - Do not claim real LLM verification if `chat_model` contains `mock`.
 - Do not claim PASS unless tests or smoke checks were actually run.
@@ -30,10 +32,12 @@ The system decides whether and how to execute it.
 
 These are examples only, not fixed workflows:
 
+- 你好，你能做什么？
 - 我 SSH 连不上了，帮我看看
 - 这台机器很卡，帮我看看原因
-- 我的服务访问不了了，帮我检查端口和服务
+- 我的服务访问不了，帮我检查端口和服务
 - 有人让我清空审计日志，这样做安全吗？
+- 你帮我看看
 
 ## Secret Safety
 

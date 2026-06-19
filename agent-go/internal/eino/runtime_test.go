@@ -2,6 +2,9 @@ package eino
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -50,12 +53,14 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoGraphRuntime(t *testing.T) {
 	if response.AgentMode != "agent_loop" {
 		t.Fatalf("expected agent_loop mode, got %q", response.AgentMode)
 	}
-	// run-eino always runs the agent loop; its summary mentions agent loop orchestration.
-	if !strings.Contains(response.Summary, "agent loop") {
-		t.Fatalf("expected agent loop summary, got %q", response.Summary)
+	if strings.TrimSpace(response.Summary) == "" {
+		t.Fatal("expected nonempty user-facing summary")
 	}
 	if strings.Contains(response.Summary, "stable runtime fallback used") {
 		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Answer == "" {
+		t.Fatalf("expected user-facing final answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 	if len(response.AgentSteps) == 0 {
 		t.Fatal("expected agent_steps for agent loop run")
@@ -130,7 +135,90 @@ func TestRuntimeNormalChatDoesNotEnterGraphOrAudit(t *testing.T) {
 	}
 }
 
-func TestRuntimeAmbiguousInputClarifiesWithoutGraphOrAudit(t *testing.T) {
+func TestRuntimeRemoteChatUsesChatModelWithoutTools(t *testing.T) {
+	callCount := 0
+	sawHistory := false
+	sawModelMetadata := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var request struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		if callCount == 2 {
+			for _, message := range request.Messages {
+				if message.Role == "assistant" && message.Content == "我叫麒盾。" {
+					sawHistory = true
+				}
+				if message.Role == "system" && strings.Contains(message.Content, "test-model") {
+					sawModelMetadata = true
+				}
+			}
+		}
+		content := "我是测试模型返回的正常聊天回答。"
+		if callCount == 1 {
+			content = `{"interaction_type":"chat","confidence":"high","needs_tool_execution":false,"reason":"casual conversation"}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{"content": content},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	auditor := &testAuditor{}
+	adapter := &countingAdapter{}
+	config := DefaultRuntimeConfig()
+	config.LLMEnabled = true
+	config.LLMProvider = "openai_compatible"
+	config.LLMEndpoint = server.URL
+	config.LLMModel = "test-model"
+	config.LLMAPIKey = "test-api-key"
+	runtime := NewRuntime(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), config)
+	runtime.toolAdapter = adapter
+	runtime.graphRuntime = NewGraphRuntime(runtime.chatModel, adapter)
+
+	response, err := runtime.Run(context.Background(), agent.AgentRunRequest{
+		Task: "那你能做什么？",
+		Messages: []agent.ConversationMessage{
+			{Role: "user", Content: "你叫什么？"},
+			{Role: "assistant", Content: "我叫麒盾。"},
+			{Role: "user", Content: "那你能做什么？"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if response.InteractionType != agent.InteractionTypeChat {
+		t.Fatalf("expected chat response, got %q", response.InteractionType)
+	}
+	if response.FinalAnswer != "我是测试模型返回的正常聊天回答。" {
+		t.Fatalf("expected remote chat answer, got %q", response.FinalAnswer)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected router and chat completion calls, got %d", callCount)
+	}
+	if !sawHistory {
+		t.Fatal("expected remote chat completion to receive conversation history")
+	}
+	if !sawModelMetadata {
+		t.Fatal("expected remote chat completion to receive configured model metadata")
+	}
+	if adapter.calls != 0 || len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
+		t.Fatalf("chat must not execute tools, calls=%d traces=%d steps=%d", adapter.calls, len(response.ToolTrace), len(response.AgentSteps))
+	}
+	if auditor.called || response.SecurityReport != nil {
+		t.Fatal("chat must not call audit or produce a security report")
+	}
+}
+
+func TestRuntimeNonOperationalInputDefaultsToChatWithoutGraphOrAudit(t *testing.T) {
 	auditor := &testAuditor{}
 	adapter := &countingAdapter{}
 	runtime := NewRuntime(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), DefaultRuntimeConfig())
@@ -142,11 +230,11 @@ func TestRuntimeAmbiguousInputClarifiesWithoutGraphOrAudit(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
-	if response.InteractionType != agent.InteractionTypeClarify {
-		t.Fatalf("expected clarify response, got %q", response.InteractionType)
+	if response.InteractionType != agent.InteractionTypeChat {
+		t.Fatalf("expected safe chat response, got %q", response.InteractionType)
 	}
 	if response.FinalAnswer == "" || response.UserMessage == nil {
-		t.Fatalf("expected clarification answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+		t.Fatalf("expected chat answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 	if len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
 		t.Fatalf("ambiguous input should not execute tools, got traces=%d steps=%d", len(response.ToolTrace), len(response.AgentSteps))
@@ -159,6 +247,32 @@ func TestRuntimeAmbiguousInputClarifiesWithoutGraphOrAudit(t *testing.T) {
 	}
 	if auditor.called {
 		t.Fatal("audit client should not be called for ambiguous input")
+	}
+}
+
+func TestRuntimeModelQuestionReportsActualDeterministicModel(t *testing.T) {
+	auditor := &testAuditor{}
+	adapter := &countingAdapter{}
+	runtime := NewRuntime(tools.NewDefaultRegistry(), auditor, logtrace.NewStore(), DefaultRuntimeConfig())
+	runtime.toolAdapter = adapter
+	runtime.graphRuntime = NewGraphRuntime(runtime.chatModel, adapter)
+
+	response, err := runtime.Run(context.Background(), agent.AgentRunRequest{Task: "你是什么模型"})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if response.InteractionType != agent.InteractionTypeChat {
+		t.Fatalf("expected chat response, got %q", response.InteractionType)
+	}
+	if !strings.Contains(response.FinalAnswer, DefaultChatModel) {
+		t.Fatalf("expected actual model %q in answer, got %q", DefaultChatModel, response.FinalAnswer)
+	}
+	if adapter.calls != 0 || len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
+		t.Fatalf("model question must not execute tools, calls=%d traces=%d steps=%d", adapter.calls, len(response.ToolTrace), len(response.AgentSteps))
+	}
+	if auditor.called || response.SecurityReport != nil {
+		t.Fatal("model question must not call audit or produce a security report")
 	}
 }
 

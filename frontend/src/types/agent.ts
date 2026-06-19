@@ -118,6 +118,7 @@ export type SecurityReport = {
 };
 
 export type AgentRun = {
+  run_id?: string;
   task_id?: string;
   task: string;
   scene_type?: string;
@@ -137,6 +138,7 @@ export type AgentRun = {
   tool_trace: ToolTrace[];
   audit_result?: AuditResult;
   security_report?: SecurityReport | null;
+  risk_graph?: RiskGraph;
   final_answer?: string;
   user_message?: UserMessage | null;
 };

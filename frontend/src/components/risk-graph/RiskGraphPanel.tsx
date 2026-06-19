@@ -1,6 +1,6 @@
 import { GitBranch, Route, ShieldAlert } from "lucide-react";
+import { asText, riskLevelLabel } from "@/lib/formatters";
 import type { AgentRun, RiskGraph } from "@/types/agent";
-import { asText } from "@/lib/formatters";
 
 export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
   const graph = findRiskGraph(run);
@@ -14,7 +14,7 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
       <div className="insight-empty">
         <GitBranch size={22} />
         <h3>暂无风险图</h3>
-        <p>后端未返回 risk_graph。前端不会伪造风险图，只显示后端审计核心生成的数据。</p>
+        <p>本次审计没有生成风险图数据。</p>
       </div>
     );
   }
@@ -29,8 +29,8 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
         <div className="graph-list">
           {(graph.nodes || []).map((node, index) => (
             <div className="graph-node" key={node.id || `node-${index}`}>
-              <strong>{node.label || node.id || `Node ${index + 1}`}</strong>
-              <span>{node.type || "node"} {node.risk_level ? ` / ${node.risk_level}` : ""}</span>
+              <strong>{node.label || `节点 ${index + 1}`}</strong>
+              <span>{node.risk_level ? riskLevelLabel(node.risk_level) : "普通节点"}</span>
             </div>
           ))}
         </div>
@@ -39,13 +39,13 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
       <section>
         <div className="mini-heading">
           <Route size={16} />
-          <span>风险边</span>
+          <span>关联路径</span>
         </div>
         <div className="graph-list">
           {(graph.edges || []).map((edge, index) => (
             <div className="graph-edge" key={`${edge.source || "s"}-${edge.target || "t"}-${index}`}>
-              <strong>{edge.source || "source"} → {edge.target || "target"}</strong>
-              <span>{edge.label || edge.type || "edge"}</span>
+              <strong>节点关联 {index + 1}</strong>
+              <span>{edge.label || "审计关联"}</span>
             </div>
           ))}
         </div>
@@ -60,8 +60,8 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
           <div className="graph-list">
             {graph.risk_hotspots.map((hotspot, index) => (
               <div className="graph-node danger" key={`hotspot-${index}`}>
-                <strong>{asText(hotspot.summary || hotspot.node_id || `Hotspot ${index + 1}`)}</strong>
-                <span>{asText(hotspot.risk_level)}</span>
+                <strong>{asText(hotspot.summary || `热点 ${index + 1}`)}</strong>
+                <span>{riskLevelLabel(typeof hotspot.risk_level === "string" ? hotspot.risk_level : undefined)}</span>
               </div>
             ))}
           </div>
@@ -75,12 +75,12 @@ function EmptyRiskGraph() {
   return (
     <div className="insight-empty">
       <GitBranch size={22} />
-      <h3>等待 Agent 任务</h3>
-      <p>任务完成后，如果后端返回 risk_graph，这里会展示执行链风险图。</p>
+      <h3>暂无会话数据</h3>
+      <p>完成一次对话后，这里会展示对应的审计图数据。</p>
     </div>
   );
 }
 
 function findRiskGraph(run?: AgentRun | null): RiskGraph {
-  return run?.audit_result?.risk_graph || run?.security_report?.risk_graph || null;
+  return run?.risk_graph || run?.audit_result?.risk_graph || run?.security_report?.risk_graph || null;
 }

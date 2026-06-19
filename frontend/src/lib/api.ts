@@ -52,8 +52,24 @@ export function getAcceptanceSummary() {
 }
 
 export function runAgentTask(task: string) {
-  return requestJSON<AgentRun>("/api/agent/run-eino", {
+  return requestJSON<AgentRun>("/api/agent/run", {
     method: "POST",
     body: JSON.stringify({ task }),
   });
+}
+
+export function getAgentRun(runId: string) {
+  return requestJSON<AgentRun>(`/api/agent/runs/${encodeURIComponent(runId)}`, { method: "GET" });
+}
+
+export function getAgentAuditReports(runId: string) {
+  return requestJSON(`/api/agent/runs/${encodeURIComponent(runId)}/audit-reports`, { method: "GET" });
+}
+
+export function getAgentRiskGraph(runId: string) {
+  return requestJSON(`/api/agent/runs/${encodeURIComponent(runId)}/risk-graph`, { method: "GET" });
+}
+
+export function getAgentReport(runId: string) {
+  return requestJSON(`/api/agent/runs/${encodeURIComponent(runId)}/report`, { method: "GET" });
 }

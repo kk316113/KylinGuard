@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"kylin-guard-agent/agent-go/internal/agent"
@@ -16,13 +17,13 @@ import (
 )
 
 const serviceVersion = "0.1.0"
+const maxAgentRequestBytes = 1 << 20
 
 func main() {
 	cfg := config.Load()
 	registry := tools.NewDefaultRegistry()
 	traceStore := logtrace.NewStore()
 	auditor := auditclient.NewHTTPClient(cfg.AuditCoreURL)
-	runtime := agent.NewRuntime(registry, auditor, traceStore)
 	einoAdapter := einoruntime.NewRuntimeAdapter(einoruntime.NewRuntime(registry, auditor, traceStore, einoruntime.RuntimeConfig{
 		RuntimeEnabled: cfg.EinoRuntimeEnabled,
 		GraphEnabled:   cfg.EinoGraphEnabled,
@@ -36,13 +37,15 @@ func main() {
 		LLMModel:       cfg.EinoLLMModel,
 		LLMAPIKey:      cfg.EinoLLMAPIKey,
 	}))
+	runStore := newAgentRunStore()
 	toolPolicy := security.NewToolPolicy()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/os/info", osInfoHandler(registry, traceStore))
-	mux.HandleFunc("/api/agent/run", agentRunHandler(runtime))
-	mux.HandleFunc("/api/agent/run-eino", agentRunEinoHandler(einoAdapter))
+	mux.HandleFunc("/api/agent/run", agentRunHandler(einoAdapter, runStore))
+	mux.HandleFunc("/api/agent/run-eino", agentRunEinoHandler(einoAdapter, runStore))
+	mux.HandleFunc("/api/agent/runs/", agentRunsHandler(runStore))
 	mux.HandleFunc("/api/agent/runtime-status", runtimeStatusHandler(cfg))
 	mux.HandleFunc("/api/agent/capabilities", capabilitiesHandler(registry))
 	mux.HandleFunc("/api/agent/acceptance-summary", acceptanceSummaryHandler())
@@ -93,52 +96,42 @@ func osInfoHandler(registry *tools.Registry, traceStore *logtrace.Store) http.Ha
 	}
 }
 
-func agentRunHandler(runtime *agent.Runtime) http.HandlerFunc {
+func agentRunHandler(agentAdapter agent.AgentAdapter, store *agentRunStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodPost) {
 			return
 		}
 
+		r.Body = http.MaxBytesReader(w, r.Body, maxAgentRequestBytes)
 		var req agent.RunRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
+		req.Task = strings.TrimSpace(req.Task)
+		if req.Task == "" {
+			writeError(w, http.StatusBadRequest, "task is required")
+			return
+		}
 
-		resp, err := runtime.Run(r.Context(), req)
+		if !agentAdapter.Enabled() {
+			writeError(w, http.StatusServiceUnavailable, agentAdapter.Name()+" is disabled")
+			return
+		}
+
+		resp, err := agentAdapter.Run(r.Context(), req)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		resp = store.Save(resp)
 
 		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
-func agentRunEinoHandler(einoAdapter agent.AgentAdapter) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireMethod(w, r, http.MethodPost) {
-			return
-		}
-
-		var req agent.AgentRunRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
-			return
-		}
-
-		if !einoAdapter.Enabled() {
-			writeError(w, http.StatusServiceUnavailable, "eino graph runtime is disabled")
-			return
-		}
-
-		resp, err := einoAdapter.Run(r.Context(), req)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, resp)
-	}
+func agentRunEinoHandler(einoAdapter agent.AgentAdapter, store *agentRunStore) http.HandlerFunc {
+	return agentRunHandler(einoAdapter, store)
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {

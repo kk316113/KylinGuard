@@ -38,78 +38,38 @@ func (a *testAuditor) AuditTrace(ctx context.Context, task string, traces []logt
 	}, nil
 }
 
-func TestAgentRunHandlerKeepsStableRuntimeBehavior(t *testing.T) {
+func TestAgentRunHandlerUsesPrimaryAgentLoopAPI(t *testing.T) {
 	auditor := &testAuditor{}
-	runtime := agent.NewRuntime(nil, auditor, nil)
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
+	store := newAgentRunStore()
 
-	response := postAgentRequest(t, agentRunHandler(runtime), "/api/agent/run", "检查当前系统 SSH 登录异常")
+	response := postAgentRequest(t, agentRunHandler(eino, store), "/api/agent/run", "检查当前系统 SSH 登录异常")
 
-	if response.Decision != "allow" {
-		t.Fatalf("expected allow, got %q", response.Decision)
-	}
-	if response.AuditResult.Method != "traceshield" {
-		t.Fatalf("expected traceshield method, got %q", response.AuditResult.Method)
-	}
-	if strings.Contains(response.Summary, "stable runtime fallback") {
-		t.Fatalf("stable /api/agent/run summary should not contain fallback marker: %q", response.Summary)
-	}
-	if strings.Contains(response.Summary, "Eino graph runtime") {
-		t.Fatalf("stable /api/agent/run summary should not contain Eino marker: %q", response.Summary)
-	}
-	if len(response.ToolTrace) == 0 {
-		t.Fatal("expected nonempty tool_trace")
-	}
-	if response.Plan == nil || response.Plan.Scenario != "ssh_anomaly_check" {
-		t.Fatalf("expected ssh_anomaly_check plan, got %#v", response.Plan)
-	}
-	if response.Diagnosis == nil || response.Diagnosis.Scenario != "ssh_anomaly_check" {
-		t.Fatalf("expected ssh anomaly diagnosis, got %#v", response.Diagnosis)
-	}
-	if response.SecurityReport == nil || response.SecurityReport.OverallDecision != response.Decision {
-		t.Fatalf("expected security_report to preserve decision, got %#v", response.SecurityReport)
+	assertAgentLoopResponse(t, response)
+	if response.AuditResult.Method == "" {
+		t.Fatal("expected aggregate audit result method")
 	}
 	if !auditor.called {
 		t.Fatal("expected audit client to be called")
 	}
+	stored, ok := store.Get(response.RunID)
+	if !ok {
+		t.Fatalf("expected run %q to be stored", response.RunID)
+	}
+	if stored.Task != response.Task {
+		t.Fatalf("stored run mismatch: %#v", stored)
+	}
 }
 
-func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
+func TestAgentRunEinoCompatibilityUsesAgentLoop(t *testing.T) {
 	auditor := &testAuditor{}
 	registry := tools.NewDefaultRegistry()
 	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
 
-	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "检查当前系统 SSH 登录异常")
+	response := postAgentRequest(t, agentRunEinoHandler(eino, newAgentRunStore()), "/api/agent/run-eino", "检查当前系统 SSH 登录异常")
 
-	// run-eino always uses the Agent Loop (req 1). With no remote LLM configured,
-	// the deterministic adapter drives the loop: agent_loop mode, agent_steps with
-	// per-step audit_reports, an aggregated risk_graph, and no graph-runtime Plan.
-	if response.AgentMode != "agent_loop" {
-		t.Fatalf("expected agent_loop mode, got %q", response.AgentMode)
-	}
-	if !strings.Contains(response.Summary, "agent loop") {
-		t.Fatalf("expected agent loop summary, got %q", response.Summary)
-	}
-	if strings.Contains(response.Summary, "stable runtime fallback") {
-		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
-	}
-	if len(response.AgentSteps) == 0 {
-		t.Fatal("expected agent_steps for agent loop run")
-	}
-	for i, step := range response.AgentSteps {
-		ar, ok := step["audit_report"]
-		if !ok {
-			t.Fatalf("step %d missing audit_report", i)
-		}
-		if m, ok := ar.(map[string]any); !ok || m["decision"] == "" {
-			t.Fatalf("step %d audit_report missing decision", i)
-		}
-	}
-	if response.RiskGraph == nil || len(response.RiskGraph.Nodes) != len(response.AgentSteps) {
-		t.Fatalf("expected risk_graph with %d nodes", len(response.AgentSteps))
-	}
-	if response.SecurityReport == nil {
-		t.Fatal("expected run-eino to return security_report")
-	}
+	assertAgentLoopResponse(t, response)
 	metadata := response.SecurityReport.AuditMetadata
 	if metadata["route"] != einoruntime.DefaultRoute {
 		t.Fatalf("expected eino-runtime route, got %#v", metadata["route"])
@@ -136,7 +96,44 @@ func TestAgentRunEinoSafeTaskUsesEinoGraphRuntime(t *testing.T) {
 		t.Fatalf("expected Stage 9B runtime version, got %#v", metadata["eino_runtime_version"])
 	}
 	if !auditor.called {
-		t.Fatal("expected agent loop to call audit client (per step)")
+		t.Fatal("expected agent loop to call audit client")
+	}
+}
+
+func TestAgentRunQueryEndpoints(t *testing.T) {
+	auditor := &testAuditor{}
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
+	store := newAgentRunStore()
+
+	run := postAgentRequest(t, agentRunHandler(eino, store), "/api/agent/run", "检查当前系统 SSH 登录异常")
+
+	getJSON(t, agentRunsHandler(store), "/api/agent/runs/"+run.RunID, http.StatusOK, &agent.AgentRunResponse{})
+	var auditReports auditReportsResponse
+	getJSON(t, agentRunsHandler(store), "/api/agent/runs/"+run.RunID+"/audit-reports", http.StatusOK, &auditReports)
+	if auditReports.RunID != run.RunID || len(auditReports.AuditReports) == 0 {
+		t.Fatalf("expected audit reports for run, got %#v", auditReports)
+	}
+	var graph riskGraphResponse
+	getJSON(t, agentRunsHandler(store), "/api/agent/runs/"+run.RunID+"/risk-graph", http.StatusOK, &graph)
+	if graph.RunID != run.RunID || graph.RiskGraph == nil {
+		t.Fatalf("expected risk graph response, got %#v", graph)
+	}
+	var report runReportResponse
+	getJSON(t, agentRunsHandler(store), "/api/agent/runs/"+run.RunID+"/report", http.StatusOK, &report)
+	if report.RunID != run.RunID || report.FinalAnswer == "" || report.Counts["agent_steps"] == 0 {
+		t.Fatalf("expected run report response, got %#v", report)
+	}
+}
+
+func TestAgentRunQueryEndpointNotFound(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/agent/runs/kg-missing", nil)
+	recorder := httptest.NewRecorder()
+
+	agentRunsHandler(newAgentRunStore()).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected HTTP 404, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -145,7 +142,7 @@ func TestAgentRunEinoNormalChatDoesNotExecuteToolsOrAudit(t *testing.T) {
 	registry := tools.NewDefaultRegistry()
 	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
 
-	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "你好呀请你回答我的问题")
+	response := postAgentRequest(t, agentRunEinoHandler(eino, newAgentRunStore()), "/api/agent/run-eino", "你好呀，请你回答我的问题")
 
 	if response.InteractionType != agent.InteractionTypeChat || response.AgentMode != agent.AgentModeChatOnly {
 		t.Fatalf("expected chat-only response, got interaction=%q mode=%q", response.InteractionType, response.AgentMode)
@@ -167,18 +164,56 @@ func TestAgentRunEinoNormalChatDoesNotExecuteToolsOrAudit(t *testing.T) {
 	}
 }
 
-func TestAgentRunEinoAmbiguousInputClarifiesWithoutTools(t *testing.T) {
+func TestAgentRunPrimaryNormalChatReturnsReadableAnswer(t *testing.T) {
 	auditor := &testAuditor{}
 	registry := tools.NewDefaultRegistry()
 	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
 
-	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "你帮我看看")
+	response := postAgentRequest(t, agentRunHandler(eino, newAgentRunStore()), "/api/agent/run", "hello")
 
-	if response.InteractionType != agent.InteractionTypeClarify {
-		t.Fatalf("expected clarify response, got %q", response.InteractionType)
+	if response.InteractionType != agent.InteractionTypeChat || response.AgentMode != agent.AgentModeChatOnly {
+		t.Fatalf("expected chat-only response, got interaction=%q mode=%q", response.InteractionType, response.AgentMode)
+	}
+	if strings.TrimSpace(response.FinalAnswer) == "" {
+		t.Fatal("expected non-empty final_answer")
+	}
+	if len(response.AgentSteps) != 0 || len(response.ToolTrace) != 0 {
+		t.Fatalf("normal chat must not execute tools, got steps=%d traces=%d", len(response.AgentSteps), len(response.ToolTrace))
+	}
+	if auditor.called {
+		t.Fatal("normal chat must not call audit client")
+	}
+}
+
+func TestAgentRunRejectsEmptyTask(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, &testAuditor{}, nil, einoruntime.DefaultRuntimeConfig())
+	request := httptest.NewRequest(http.MethodPost, "/api/agent/run", strings.NewReader(`{"task":"   "}`))
+	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	recorder := httptest.NewRecorder()
+
+	agentRunHandler(eino, newAgentRunStore()).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected HTTP 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "task is required") {
+		t.Fatalf("expected clear validation error, got %s", recorder.Body.String())
+	}
+}
+
+func TestAgentRunEinoNonOperationalInputDefaultsToChatWithoutTools(t *testing.T) {
+	auditor := &testAuditor{}
+	registry := tools.NewDefaultRegistry()
+	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
+
+	response := postAgentRequest(t, agentRunEinoHandler(eino, newAgentRunStore()), "/api/agent/run-eino", "你帮我看看")
+
+	if response.InteractionType != agent.InteractionTypeChat {
+		t.Fatalf("expected safe chat response, got %q", response.InteractionType)
 	}
 	if response.FinalAnswer == "" || response.UserMessage == nil {
-		t.Fatalf("expected clarification answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+		t.Fatalf("expected chat answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
 	}
 	if len(response.ToolTrace) != 0 || len(response.AgentSteps) != 0 {
 		t.Fatalf("ambiguous input should not execute tools, got traces=%d steps=%d", len(response.ToolTrace), len(response.AgentSteps))
@@ -196,7 +231,7 @@ func TestAgentRunEinoDangerousTaskDeniesBeforeAudit(t *testing.T) {
 	registry := tools.NewDefaultRegistry()
 	eino := einoruntime.NewRuntime(registry, auditor, nil, einoruntime.DefaultRuntimeConfig())
 
-	response := postAgentRequest(t, agentRunEinoHandler(eino), "/api/agent/run-eino", "delete audit logs and clear system logs")
+	response := postAgentRequest(t, agentRunEinoHandler(eino, newAgentRunStore()), "/api/agent/run-eino", "delete audit logs and clear system logs")
 
 	if response.Decision != "deny" {
 		t.Fatalf("expected deny, got %q", response.Decision)
@@ -218,12 +253,6 @@ func TestAgentRunEinoDangerousTaskDeniesBeforeAudit(t *testing.T) {
 	}
 	if response.SecurityReport.OverallDecision != "deny" {
 		t.Fatalf("expected deny report, got %q", response.SecurityReport.OverallDecision)
-	}
-	if response.SecurityReport.AuditMetadata["route"] != einoruntime.DefaultRoute {
-		t.Fatalf("expected eino-runtime route, got %#v", response.SecurityReport.AuditMetadata["route"])
-	}
-	if response.SecurityReport.AuditMetadata["eino_graph_enabled"] != true {
-		t.Fatalf("expected eino_graph_enabled=true, got %#v", response.SecurityReport.AuditMetadata["eino_graph_enabled"])
 	}
 	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Status != agent.RunStatusBlocked {
 		t.Fatalf("expected blocked user-facing answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
@@ -434,6 +463,52 @@ func TestToolCallHandlerSafeShellDangerousCommandDenied(t *testing.T) {
 	}
 }
 
+func assertAgentLoopResponse(t *testing.T, response agent.AgentRunResponse) {
+	t.Helper()
+	if response.Decision != "allow" && response.Decision != "review" {
+		t.Fatalf("expected allow or review, got %q", response.Decision)
+	}
+	if response.AgentMode != "agent_loop" {
+		t.Fatalf("expected agent_loop mode, got %q", response.AgentMode)
+	}
+	if response.RunID == "" || response.TaskID == "" || response.CreatedAt == "" {
+		t.Fatalf("expected run metadata, got run=%q task=%q created=%q", response.RunID, response.TaskID, response.CreatedAt)
+	}
+	if response.SceneType == "" || response.SceneSummary == "" || response.RunStatus == "" {
+		t.Fatalf("expected scene metadata, got type=%q summary=%q status=%q", response.SceneType, response.SceneSummary, response.RunStatus)
+	}
+	if strings.TrimSpace(response.Summary) == "" {
+		t.Fatal("expected nonempty user-facing summary")
+	}
+	if strings.Contains(response.Summary, "stable runtime fallback") {
+		t.Fatalf("summary should not contain fallback marker: %q", response.Summary)
+	}
+	if response.FinalAnswer == "" || response.UserMessage == nil || response.UserMessage.Answer == "" {
+		t.Fatalf("expected user-facing final answer, got final=%q message=%#v", response.FinalAnswer, response.UserMessage)
+	}
+	if len(response.AgentSteps) == 0 {
+		t.Fatal("expected agent_steps for agent loop run")
+	}
+	for i, step := range response.AgentSteps {
+		ar, ok := step["audit_report"]
+		if !ok {
+			t.Fatalf("step %d missing audit_report", i)
+		}
+		if m, ok := ar.(map[string]any); !ok || m["decision"] == "" {
+			t.Fatalf("step %d audit_report missing decision", i)
+		}
+	}
+	if len(response.ToolTrace) == 0 {
+		t.Fatal("expected nonempty tool_trace")
+	}
+	if response.RiskGraph == nil || len(response.RiskGraph.Nodes) != len(response.AgentSteps) {
+		t.Fatalf("expected risk_graph with %d nodes", len(response.AgentSteps))
+	}
+	if response.SecurityReport == nil {
+		t.Fatal("expected security_report")
+	}
+}
+
 func postAgentRequest(t *testing.T, handler http.HandlerFunc, path string, task string) agent.AgentRunResponse {
 	t.Helper()
 	body, err := json.Marshal(agent.AgentRunRequest{Task: task})
@@ -454,6 +529,21 @@ func postAgentRequest(t *testing.T, handler http.HandlerFunc, path string, task 
 		t.Fatalf("decode response: %v", err)
 	}
 	return response
+}
+
+func getJSON(t *testing.T, handler http.HandlerFunc, path string, wantStatus int, out any) {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != wantStatus {
+		t.Fatalf("expected HTTP %d, got %d: %s", wantStatus, recorder.Code, recorder.Body.String())
+	}
+	if out != nil {
+		if err := json.Unmarshal(recorder.Body.Bytes(), out); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+	}
 }
 
 func postToolCallRequest(t *testing.T, auditor *testAuditor, req toolCallRequest) toolCallResponse {
