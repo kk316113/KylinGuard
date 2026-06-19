@@ -282,6 +282,30 @@ Kylin VM / real DeepSeek frontend smoke
 Future AG-UI streaming endpoint integration
 ```
 
+## Product/API Baseline Docs
+
+The product requirements and Agent API design baselines from the desktop docx
+files have been converted into repository Markdown docs:
+
+```text
+docs/product/PRODUCT_REQUIREMENTS_BASELINE.md
+docs/backend/AGENT_API_BASELINE.md
+```
+
+`AGENTS.md` now stays compact and points future Codex runs to these baseline
+documents instead of embedding the full specifications. This is a documentation
+baseline only and does not mark a new implementation stage as PASS.
+
+The baseline docs record:
+
+```text
+Agent completion is the product mainline.
+Guardrails are embedded into every tool call.
+Risk graph is generated from real execution and audit evidence.
+/api/agent/run is the target primary task API.
+/api/agent/run-eino remains the current compatibility path.
+```
+
 ## Current Next Suggested Work
 
 Priority order:
