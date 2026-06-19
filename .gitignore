@@ -13,10 +13,15 @@ __pycache__/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.next/
+frontend/out/
+frontend/*.tsbuildinfo
 
 # Local environment
 .env
 .env.*
+!.env.example
+!frontend/.env.example
 
 # SSH helpers (may contain credentials)
 scripts/ssh_kylin.py

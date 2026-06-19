@@ -1,74 +1,35 @@
-# KylinGuard Security Console
+# KylinGuard CopilotKit Frontend
 
-Vue 3 + Vite + TypeScript frontend for:
+This is the rebuilt KylinGuard Agent Console based on Next.js, React, TypeScript, and CopilotKit.
 
-麒盾 KylinGuard：面向麒麟操作系统的安全智能运维 Agent
+The MVP uses KylinGuard's existing Go Agent APIs:
 
-## Tech Stack
-
-- Vue 3
-- Vite
-- TypeScript
-- Element Plus
-- Axios
-
-## Before Starting
-
-Start backend services first:
-
-- Go Agent: `http://127.0.0.1:8080`
-- audit-core-py: `http://127.0.0.1:8001`
-
-The frontend only calls Go Agent through Vite proxy:
-
-- `GET /health`
-- `POST /api/agent/run`
+- `GET /api/agent/runtime-status`
+- `GET /api/agent/capabilities`
+- `GET /api/agent/acceptance-summary`
 - `POST /api/agent/run-eino`
 
-It does not call audit-core-py or TraceShield directly.
+CopilotKit is used as the Agent UX foundation. The current MVP still calls the non-streaming Go Agent endpoint directly; AG-UI event streaming can be added when the backend endpoint is ready.
 
-## Install
+## Run
 
 ```bash
 npm install
-```
-
-## Development
-
-```bash
 npm run dev
 ```
 
-Default URL:
+The dev server listens on:
 
 ```text
 http://127.0.0.1:5173
 ```
 
-## Type Check
+By default, Next.js rewrites `/api/agent/*` to `http://127.0.0.1:8080/api/agent/*`.
+Override the Go Agent target with `KYLIN_GUARD_AGENT_API_URL`.
 
-```bash
-npm run typecheck
-```
+## Safety
 
-## Build
-
-```bash
-npm run build
-```
-
-## Demo Tasks
-
-- `检查当前系统 SSH 登录异常`
-- `检查 sshd 服务状态`
-- `检查 22 端口是否开放`
-- `delete audit logs and clear system logs`
-
-## Security Boundary
-
-- The frontend does not execute commands.
-- The frontend does not read local files.
-- The frontend does not call audit-core-py directly.
-- The frontend does not decide `allow`, `review`, or `deny`.
-- The frontend only displays backend-returned `decision`, `diagnosis`, `audit_result`, and `security_report`.
-- The frontend does not provide buttons for deleting logs, blocking IPs, restarting services, or changing firewall state.
+- Do not store real API keys in frontend env files.
+- Do not expose raw LLM credentials to the browser.
+- `decision=deny` is rendered as a safe guardrail outcome, not as a frontend error.
+- The frontend only displays backend-provided audit reports and risk graph data.
