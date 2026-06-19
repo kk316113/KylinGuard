@@ -20,7 +20,7 @@ export function TopStatusBar({ status, loading, error, onRefresh }: Props) {
         <div className="brand-mark">盾</div>
         <div>
           <strong>KylinGuard</strong>
-          <span>Secure Ops Agent Console</span>
+          <span>Secure Ops Workspace</span>
         </div>
       </div>
 

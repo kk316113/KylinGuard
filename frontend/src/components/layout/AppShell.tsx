@@ -1,12 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { FileText, LayoutDashboard, ListChecks, MessageCircle, Settings, ShieldCheck, Wrench } from "lucide-react";
 import { getAcceptanceSummary, getCapabilities, getRuntimeStatus } from "@/lib/api";
 import type { AgentRun } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse, RuntimeStatus } from "@/types/runtime";
-import { AgentConsole } from "@/components/agent/AgentConsole";
-import { RightInsightPanel } from "./RightInsightPanel";
+import { CopilotTaskDrawer } from "@/components/agent/CopilotTaskDrawer";
+import { DashboardView, OpsDashboard } from "@/components/dashboard/OpsDashboard";
 import { TopStatusBar } from "./TopStatusBar";
+
+const navItems: Array<{ key: DashboardView; label: string; icon: React.ReactNode }> = [
+  { key: "overview", label: "态势看板", icon: <LayoutDashboard size={17} /> },
+  { key: "audit", label: "安全审计", icon: <ShieldCheck size={17} /> },
+  { key: "tools", label: "工具能力", icon: <Wrench size={17} /> },
+  { key: "runs", label: "任务会话", icon: <FileText size={17} /> },
+  { key: "settings", label: "运行设置", icon: <Settings size={17} /> },
+];
 
 export function AppShell() {
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>();
@@ -16,6 +25,8 @@ export function AppShell() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [currentRun, setCurrentRun] = useState<AgentRun | null>(null);
   const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(null);
+  const [activeView, setActiveView] = useState<DashboardView>("overview");
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const loadShellData = useCallback(async () => {
     setStatusLoading(true);
@@ -43,6 +54,7 @@ export function AppShell() {
   function handleRunUpdate(run: AgentRun) {
     setCurrentRun(run);
     setSelectedStepIndex(run.agent_steps?.length ? 0 : null);
+    setActiveView("overview");
   }
 
   return (
@@ -53,22 +65,51 @@ export function AppShell() {
         error={statusError}
         onRefresh={() => void loadShellData()}
       />
-      <div className="workspace-grid">
-        <AgentConsole
+
+      <div className="product-workspace">
+        <aside className="left-sidebar">
+          <div className="sidebar-title">
+            <span>Workspace</span>
+            <strong>麒盾工作台</strong>
+          </div>
+          <nav className="sidebar-nav" aria-label="工作台导航">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={activeView === item.key ? "active" : ""}
+                onClick={() => setActiveView(item.key)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-footer">
+            <button className="copilot-nav-button" type="button" onClick={() => setCopilotOpen(true)}>
+              <MessageCircle size={16} />
+              打开 Copilot
+            </button>
+            <div className="sidebar-note">
+              <ListChecks size={14} />
+              <span>自然语言任务不会变成固定 workflow。</span>
+            </div>
+          </div>
+        </aside>
+
+        <OpsDashboard
+          activeView={activeView}
           runtimeStatus={runtimeStatus}
-          currentRun={currentRun}
-          selectedStepIndex={selectedStepIndex}
-          onRunUpdate={handleRunUpdate}
-          onSelectStep={setSelectedStepIndex}
-        />
-        <RightInsightPanel
-          run={currentRun}
-          selectedStepIndex={selectedStepIndex}
-          onSelectStep={setSelectedStepIndex}
           capabilities={capabilities}
           acceptance={acceptance}
+          currentRun={currentRun}
+          selectedStepIndex={selectedStepIndex}
+          onSelectStep={setSelectedStepIndex}
+          onOpenCopilot={() => setCopilotOpen(true)}
         />
       </div>
+
+      <CopilotTaskDrawer open={copilotOpen} onOpenChange={setCopilotOpen} onRunUpdate={handleRunUpdate} />
     </div>
   );
 }

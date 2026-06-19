@@ -39,7 +39,7 @@ export function RightInsightPanel({ run, selectedStepIndex, onSelectStep, capabi
   const selectedTrace = useMemo(() => findTraceForStep(run, selectedStepIndex, selectedStep), [run, selectedStepIndex, selectedStep]);
 
   return (
-    <aside className="insight-panel">
+    <section className="insight-panel">
       <nav className="insight-tabs" aria-label="Agent insight tabs">
         {tabs.map((tab) => (
           <button
@@ -62,13 +62,13 @@ export function RightInsightPanel({ run, selectedStepIndex, onSelectStep, capabi
         {activeTab === "tools" ? <ToolsTab capabilities={capabilities} acceptance={acceptance} /> : null}
         {activeTab === "report" ? <ReportTab run={run} /> : null}
       </div>
-    </aside>
+    </section>
   );
 }
 
 function AuditTab({ run, step, trace }: { run?: AgentRun | null; step?: AgentStep; trace?: ToolTrace }) {
   if (!run) {
-    return <EmptyPanel title="等待审计数据" description="提交一个运维任务后，这里会展示后端返回的安全审计摘要。" />;
+    return <EmptyPanel title="等待审计数据" description="通过 Copilot 提交运维任务后，这里展示后端返回的安全审计摘要。" />;
   }
 
   return (

@@ -336,6 +336,31 @@ npm run build - PASS
 browser integration - pending
 ```
 
+## Frontend Product Shell Correction
+
+The previous chat-first main canvas was rejected because it made the product
+look like a prompt demo and put conversation in the wrong surface. The frontend
+has been corrected toward a dashboard-first Scenario Workspace:
+
+```text
+Main canvas: left navigation + single-column operations/security dashboard.
+Chat surface: right-bottom expandable Copilot task drawer.
+Natural-language task submission only happens inside the Copilot drawer.
+Dashboard updates from the latest Agent run response.
+Audit, evidence, risk graph, tools, runs, and settings are board views.
+decision=deny is displayed as a security state, not a request failure.
+No backend Agent Loop logic was changed.
+No fixed workflow or scenario routing was added.
+```
+
+Verification:
+
+```text
+npm run typecheck - PASS
+npm run build - PASS
+Local dev page contains the new dashboard title.
+```
+
 ## Current Next Suggested Work
 
 Priority order:
