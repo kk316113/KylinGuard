@@ -106,3 +106,18 @@ func TestSemanticForDangerousSafeShell(t *testing.T) {
 		t.Fatal("dangerous shell command should require privilege")
 	}
 }
+
+func TestSemanticForCompetitionSensingTools(t *testing.T) {
+	openFiles := SemanticForTool("open_file_inspector", map[string]any{"path": "/var/log/messages"})
+	if openFiles.ResourceType != "open_file_metadata" || openFiles.BoundaryLevel != "sensitive_system_resource" || !openFiles.AllowedByPolicy {
+		t.Fatalf("unexpected open-file semantic: %#v", openFiles)
+	}
+	diskIO := SemanticForTool("disk_io_checker", map[string]any{"sample_ms": 250})
+	if diskIO.ResourcePath != "procfs:diskstats" || diskIO.OperationType != "read" {
+		t.Fatalf("unexpected disk-I/O semantic: %#v", diskIO)
+	}
+	zombies := SemanticForTool("process_inspector", map[string]any{"state": "ZOMBIE"})
+	if zombies.ResourcePath != "process:all:state=ZOMBIE" {
+		t.Fatalf("unexpected zombie semantic path: %#v", zombies)
+	}
+}

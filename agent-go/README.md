@@ -45,6 +45,18 @@ export EINO_ENABLED=false
 - 允许和拒绝调用都写入 tool trace，并调用 TraceShield audit client。
 - MCP 不提供让模型执行任意 shell 的接口。
 
+## A2 深度 OS 感知工具
+
+- `open_file_inspector`：通过受限 `lsof` 查询批准路径或 PID 的打开文件元数据，不读取文件内容。
+- `process_inspector`：支持进程状态筛选，并汇总僵尸进程数量和风险等级。
+- `disk_io_checker`：对 `/proc/diskstats` 做有界双采样，返回 IOPS、吞吐、利用率和队列指标。
+
+麒麟/LoongArch 实机验收：
+
+```bash
+bash scripts/linux/test_os_sensing_tools.sh
+```
+
 `/api/agent/run` 是稳定主链路：
 
 ```text

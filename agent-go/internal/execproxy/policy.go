@@ -2,8 +2,10 @@ package execproxy
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -80,6 +82,11 @@ func (ExecPolicy) Evaluate(command string, args []string, profile ExecutionProfi
 			return denyDecision(reason)
 		}
 	}
+	if command == "lsof" {
+		if reason := validateLsofArgs(args); reason != "" {
+			return denyDecision(reason)
+		}
+	}
 
 	return ExecPolicyDecision{
 		Allowed: true,
@@ -139,6 +146,7 @@ func commandAllowlist() map[string]bool {
 		"df":         true, "free": true,
 		"uptime": true,
 		"cat":    true,
+		"lsof":   true,
 		"uname":  true, "hostname": true, "whoami": true, "date": true,
 		// systemctl read-only subcommands only (args are validated separately).
 		"systemctl": true,
@@ -229,6 +237,30 @@ func validateCatArgs(args []string) string {
 		return fmt.Sprintf("cat path %q is not in the read allowlist", args[0])
 	}
 	return ""
+}
+
+func validateLsofArgs(args []string) string {
+	if len(args) != 5 || args[0] != "-nP" || args[1] != "-F" || args[2] != "pcuftn" {
+		return "lsof arguments must use the bounded KylinGuard field-output profile"
+	}
+	switch args[3] {
+	case "-p":
+		pid, err := strconv.Atoi(args[4])
+		if err != nil || pid < 1 || pid > 4194304 {
+			return "lsof pid must be between 1 and 4194304"
+		}
+		return ""
+	case "--":
+		path := filepath.ToSlash(filepath.Clean(args[4]))
+		for _, prefix := range []string{"/var/log/", "/tmp/", "/var/tmp/", "/opt/kylin-guard/"} {
+			if strings.HasPrefix(path, prefix) {
+				return ""
+			}
+		}
+		return fmt.Sprintf("lsof path %q is not in the inspection allowlist", path)
+	default:
+		return "lsof requires either an approved path or a numeric pid"
+	}
 }
 
 // Platform returns the current OS platform string.

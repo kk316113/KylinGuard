@@ -135,6 +135,35 @@ func TestStreamableHTTPHandlerNegotiatesMCPAndListsTools(t *testing.T) {
 	}
 }
 
+func TestDefaultServerPublishesCompetitionSensingTools(t *testing.T) {
+	server := NewServer(Dependencies{
+		Registry:   tools.NewDefaultRegistry(),
+		Policy:     security.NewToolPolicy(),
+		TraceStore: logtrace.NewStore(),
+		Auditor:    auditclient.NewMockClient(),
+	})
+	clientSession, serverSession := connectTestClient(t, server)
+	defer clientSession.Close()
+	defer serverSession.Close()
+
+	listed, err := clientSession.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools failed: %v", err)
+	}
+	names := make(map[string]bool, len(listed.Tools))
+	for _, tool := range listed.Tools {
+		names[tool.Name] = true
+	}
+	for _, required := range []string{"open_file_inspector", "process_inspector", "disk_io_checker"} {
+		if !names[required] {
+			t.Fatalf("MCP tool list missing %s: %#v", required, names)
+		}
+	}
+	if names["safe_shell"] {
+		t.Fatal("safe_shell must not be published by MCP")
+	}
+}
+
 func connectTestClient(t *testing.T, server *mcp.Server) (*mcp.ClientSession, *mcp.ServerSession) {
 	t.Helper()
 	ctx := context.Background()

@@ -90,6 +90,31 @@ func TestExecPolicyRestrictsCatToApprovedSystemFacts(t *testing.T) {
 	}
 }
 
+func TestExecPolicyRestrictsLsofArguments(t *testing.T) {
+	policy := NewExecPolicy()
+	allowed := [][]string{
+		{"-nP", "-F", "pcuftn", "--", "/var/log/messages"},
+		{"-nP", "-F", "pcuftn", "--", "/tmp/demo.log"},
+		{"-nP", "-F", "pcuftn", "-p", "123"},
+	}
+	for _, args := range allowed {
+		if decision := policy.Evaluate("lsof", args, ProfileSensitiveRead); !decision.Allowed {
+			t.Fatalf("expected lsof args %v to be allowed: %s", args, decision.Reason)
+		}
+	}
+	denied := [][]string{
+		{"/etc/shadow"},
+		{"-nP", "-F", "pcuftn", "--", "/etc/shadow"},
+		{"-nP", "-F", "pcuftn", "-p", "0"},
+		{"-nP", "-F", "pcuftn", "-p", "1;id"},
+	}
+	for _, args := range denied {
+		if decision := policy.Evaluate("lsof", args, ProfileSensitiveRead); decision.Allowed {
+			t.Fatalf("expected lsof args %v to be denied", args)
+		}
+	}
+}
+
 func TestExecPolicyDeniesShellInterpreters(t *testing.T) {
 	policy := NewExecPolicy()
 
@@ -250,7 +275,7 @@ func TestIsSafeSystemctlArg(t *testing.T) {
 
 func TestCommandAllowlistContainsExpectedCommands(t *testing.T) {
 	allowlist := commandAllowlist()
-	expected := []string{"ps", "ss", "netstat", "journalctl", "df", "uname", "systemctl"}
+	expected := []string{"ps", "ss", "netstat", "journalctl", "df", "uname", "systemctl", "lsof"}
 	for _, cmd := range expected {
 		if !allowlist[cmd] {
 			t.Fatalf("expected %q in command allowlist", cmd)

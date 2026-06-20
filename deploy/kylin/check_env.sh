@@ -62,6 +62,7 @@ run_optional "pip3 --version" pip3 --version
 run_optional "gcc --version" gcc --version
 run_optional "systemctl --version" systemctl --version
 run_optional "journalctl --version" journalctl --version
+run_optional "lsof -v" lsof -v
 
 section "network inspection tool"
 if command -v ss >/dev/null 2>&1; then

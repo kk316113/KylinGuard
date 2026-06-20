@@ -100,6 +100,11 @@ func (ToolPolicy) Evaluate(name string, metadata tools.ToolMetadata, exists bool
 		if limit != 0 && (limit < 1 || limit > 100) {
 			return denyToolCall("process_inspector limit must be between 1 and 100")
 		}
+		state := strings.ToUpper(strings.TrimSpace(stringFromInput(input, "state", "ALL")))
+		allowedStates := map[string]bool{"ALL": true, "RUNNING": true, "SLEEPING": true, "ZOMBIE": true, "STOPPED": true}
+		if !allowedStates[state] {
+			return denyToolCall("process_inspector state is not in the allowed whitelist")
+		}
 	case "network_connection_inspector":
 		state := strings.ToUpper(strings.TrimSpace(stringFromInput(input, "state", "ALL")))
 		canonical := normalizeNetworkPolicyState(state)
@@ -125,6 +130,39 @@ func (ToolPolicy) Evaluate(name string, metadata tools.ToolMetadata, exists bool
 		lines, _ := intFromAny(input["lines"])
 		if lines != 0 && (lines < 1 || lines > 500) {
 			return denyToolCall("journalctl_reader lines must be between 1 and 500")
+		}
+	case "open_file_inspector":
+		path := stringFromInput(input, "path", "")
+		pidValue, pidProvided := input["pid"]
+		pid, pidValid := intFromAny(pidValue)
+		if pidProvided && !pidValid {
+			return denyToolCall("open_file_inspector pid must be an integer")
+		}
+		if (path == "") == !pidProvided {
+			return denyToolCall("open_file_inspector requires exactly one of path or pid")
+		}
+		if path != "" && !tools.IsAllowedOpenFilePath(path) {
+			return denyToolCall("open_file_inspector path is outside the inspection allowlist")
+		}
+		if pidProvided && (pid < 1 || pid > 4194304) {
+			return denyToolCall("open_file_inspector pid must be between 1 and 4194304")
+		}
+		limitValue, limitProvided := input["limit"]
+		limit, limitValid := intFromAny(limitValue)
+		if limitProvided && !limitValid {
+			return denyToolCall("open_file_inspector limit must be an integer")
+		}
+		if limit != 0 && (limit < 1 || limit > 200) {
+			return denyToolCall("open_file_inspector limit must be between 1 and 200")
+		}
+	case "disk_io_checker":
+		sampleValue, sampleProvided := input["sample_ms"]
+		sampleMS, sampleValid := intFromAny(sampleValue)
+		if sampleProvided && !sampleValid {
+			return denyToolCall("disk_io_checker sample_ms must be an integer")
+		}
+		if sampleMS != 0 && (sampleMS < 100 || sampleMS > 2000) {
+			return denyToolCall("disk_io_checker sample_ms must be between 100 and 2000")
 		}
 	}
 

@@ -18,6 +18,7 @@ KylinGuard has completed:
 - Stage 17A-3: Semantic Interaction Router - IN PROGRESS
 - Stage 18A: Competition A2 Standard MCP Server - IN PROGRESS
 - Stage 18B: Prompt Injection and Unauthorized Mutation Guardrails - IN PROGRESS
+- Stage 18C: A2 Deep OS Sensing Tools - IN PROGRESS
 - Real DeepSeek Smoke Test - PASS
 - Real DeepSeek natural-language acceptance on Kylin VM - PASS
 
@@ -490,12 +491,55 @@ local HTTP guardrail acceptance (4 attack classes) - PASS
 
 Kylin V11 runtime execution of `scripts/linux/test_security_guardrails.sh` remains pending before Stage 18B PASS.
 
+## Stage 18C A2 Deep OS Sensing Tools
+
+Three general-purpose read-only sensing capabilities have been added to the shared Tool Registry, so they are available to both the LLM Agent Loop and the standard MCP server without fixed scenario routing:
+
+```text
+open_file_inspector
+  -> bounded lsof field output
+  -> approved operational path or numeric PID only
+  -> file contents are never read
+
+process_inspector
+  -> ALL / RUNNING / SLEEPING / ZOMBIE / STOPPED filters
+  -> complete zombie count even when displayed records are limited
+  -> low / medium / high zombie accumulation risk
+
+disk_io_checker
+  -> bounded two-sample /proc/diskstats reader
+  -> IOPS, bytes/sec, utilization, in-progress I/O, weighted I/O time
+  -> physical whole-disk filtering for sd/vd/xvd/hd/nvme/mmcblk names
+```
+
+Security constraints:
+
+```text
+lsof command arguments are independently enforced by Exec Proxy
+/etc, /root, /home, /proc and relative path inspection are denied
+sample interval is bounded to 100-2000 ms
+safe_shell remains absent from Agent and MCP tool definitions
+```
+
+Verification completed locally:
+
+```text
+go test ./... - PASS
+MCP default tool discovery for all three sensing tools - PASS
+lsof parser, path policy and Exec Proxy argument tests - PASS
+ps zombie parser/filter/risk tests - PASS
+diskstats parser/delta/risk tests - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+bash -n scripts/linux/test_os_sensing_tools.sh - PASS
+```
+
+Runtime verification remains pending because the Windows host has no Docker or Linux runtime. On Kylin V11, run `scripts/linux/test_os_sensing_tools.sh`; it creates a temporary held-open file, requires the Agent to find the real holder PID through lsof, checks live diskstats and zombie output, and verifies sensitive-path denial.
+
 ## Current Next Suggested Work
 
 Priority order:
 
-1. Add dedicated non-root service account and systemd sandbox deployment
-2. Build prompt-injection and unauthorized-config-change acceptance tests
-3. Run MCP and Agent Loop smoke on LoongArch + Kylin V11
-4. Add lsof / zombie process / disk I/O / configuration drift sensing
-5. Complete performance report and the nine competition submission artifacts
+1. Run MCP, guardrail, OS sensing, and non-root systemd smoke on LoongArch + Kylin V11
+2. Add configuration-drift baselines and read-only drift detection
+3. Add repeatable API/Agent performance benchmarks and report generation
+4. Complete the nine competition submission artifacts and seven-minute demo

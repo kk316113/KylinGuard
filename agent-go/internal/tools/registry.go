@@ -44,6 +44,8 @@ func NewDefaultRegistry() *Registry {
 	registry.RegisterWithMetadata("journalctl_reader", JournalctlReader, metadata["journalctl_reader"])
 	registry.RegisterWithMetadata("resource_usage_checker", ResourceUsageChecker, metadata["resource_usage_checker"])
 	registry.RegisterWithMetadata("disk_memory_checker", DiskMemoryChecker, metadata["disk_memory_checker"])
+	registry.RegisterWithMetadata("open_file_inspector", OpenFileInspector, metadata["open_file_inspector"])
+	registry.RegisterWithMetadata("disk_io_checker", DiskIOChecker, metadata["disk_io_checker"])
 	return registry
 }
 
@@ -234,6 +236,22 @@ func extractExecutionContext(output any) *logtrace.ExecutionContext {
 			return typed.ExecutionContext
 		}
 	case *PortCheckerResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case OpenFileInspectorResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *OpenFileInspectorResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case DiskIOCheckerResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *DiskIOCheckerResult:
 		if typed != nil && typed.ExecutionContext != nil {
 			return typed.ExecutionContext
 		}

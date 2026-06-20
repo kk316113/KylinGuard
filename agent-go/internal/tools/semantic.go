@@ -76,6 +76,10 @@ func SemanticForTool(toolName string, input map[string]any) ToolSemantic {
 		return resourceUsageCheckerSemantic()
 	case "disk_memory_checker":
 		return diskMemoryCheckerSemantic()
+	case "open_file_inspector":
+		return openFileInspectorSemantic(input)
+	case "disk_io_checker":
+		return diskIOCheckerSemantic()
 	default:
 		return unknownSemantic(toolName)
 	}
@@ -239,6 +243,9 @@ func processInspectorSemantic(input map[string]any) ToolSemantic {
 	if name != "" {
 		resourcePath = "process:" + name
 	}
+	if state := strings.ToUpper(strings.TrimSpace(stringValue(input, "state", "ALL"))); state != "" && state != "ALL" {
+		resourcePath += ":state=" + state
+	}
 	return ToolSemantic{
 		OperationType:     "inspect",
 		ResourceType:      "process",
@@ -249,6 +256,38 @@ func processInspectorSemantic(input map[string]any) ToolSemantic {
 		RequiresPrivilege: false,
 		AllowedByPolicy:   true,
 		PolicyReason:      "Process status inspection is allowed for diagnostics",
+	}
+}
+
+func openFileInspectorSemantic(input map[string]any) ToolSemantic {
+	resourcePath := strings.TrimSpace(stringValue(input, "path", ""))
+	if pid := intValue(input, "pid", 0); pid > 0 {
+		resourcePath = fmt.Sprintf("process:%d:open-files", pid)
+	}
+	return ToolSemantic{
+		OperationType:     "inspect",
+		ResourceType:      "open_file_metadata",
+		ResourcePath:      resourcePath,
+		PermissionScope:   "open_file_metadata_inspect",
+		BoundaryLevel:     "sensitive_system_resource",
+		ToolSemantic:      "open_file_ownership_inspection",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Bounded lsof metadata inspection is allowed for diagnosis; file contents are not read",
+	}
+}
+
+func diskIOCheckerSemantic() ToolSemantic {
+	return ToolSemantic{
+		OperationType:     "read",
+		ResourceType:      "disk_io",
+		ResourcePath:      "procfs:diskstats",
+		PermissionScope:   "disk_io_read",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "disk_io_pressure_sampling",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Read-only disk statistics sampling is allowed for performance diagnosis",
 	}
 }
 

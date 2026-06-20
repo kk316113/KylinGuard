@@ -98,6 +98,45 @@ func TestToolPolicyDeniesNestedInjection(t *testing.T) {
 	assertToolPolicyDeny(t, decision)
 }
 
+func TestToolPolicyValidatesOpenFileInspectorScope(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	metadata, ok := registry.GetTool("open_file_inspector")
+	if !ok {
+		t.Fatal("missing open_file_inspector metadata")
+	}
+	allowed := NewToolPolicy().Evaluate("open_file_inspector", metadata, true, map[string]any{"path": "/var/log/messages"})
+	if allowed.Decision != "allow" {
+		t.Fatalf("expected approved lsof path, got %#v", allowed)
+	}
+	for _, input := range []map[string]any{
+		{},
+		{"path": "/etc/shadow"},
+		{"pid": 0},
+		{"path": "/tmp/a", "pid": 1},
+		{"pid": 1, "limit": 1000},
+		{"path": "/tmp/a", "pid": "not-a-number"},
+		{"pid": 1, "limit": "many"},
+	} {
+		assertToolPolicyDeny(t, NewToolPolicy().Evaluate("open_file_inspector", metadata, true, input))
+	}
+}
+
+func TestToolPolicyValidatesProcessStateAndDiskIOSample(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	processMetadata, _ := registry.GetTool("process_inspector")
+	if decision := NewToolPolicy().Evaluate("process_inspector", processMetadata, true, map[string]any{"state": "ZOMBIE"}); decision.Decision != "allow" {
+		t.Fatalf("expected ZOMBIE filter allowed: %#v", decision)
+	}
+	assertToolPolicyDeny(t, NewToolPolicy().Evaluate("process_inspector", processMetadata, true, map[string]any{"state": "KILLED"}))
+
+	diskMetadata, _ := registry.GetTool("disk_io_checker")
+	if decision := NewToolPolicy().Evaluate("disk_io_checker", diskMetadata, true, map[string]any{"sample_ms": 250}); decision.Decision != "allow" {
+		t.Fatalf("expected bounded disk sample allowed: %#v", decision)
+	}
+	assertToolPolicyDeny(t, NewToolPolicy().Evaluate("disk_io_checker", diskMetadata, true, map[string]any{"sample_ms": 5000}))
+	assertToolPolicyDeny(t, NewToolPolicy().Evaluate("disk_io_checker", diskMetadata, true, map[string]any{"sample_ms": "slow"}))
+}
+
 func assertToolPolicyDeny(t *testing.T, decision ToolPolicyDecision) {
 	t.Helper()
 	if decision.Decision != "deny" {
