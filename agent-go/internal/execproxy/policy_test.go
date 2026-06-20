@@ -52,14 +52,41 @@ func TestExecPolicyAllowsSystemctlReadOnlyActions(t *testing.T) {
 		}
 	}
 
-	// systemctl --version and --no-pager are safe args.
+	// systemctl --version is a safe standalone action.
 	decision := policy.Evaluate("systemctl", []string{"--version"}, ProfileLowRead)
 	if !decision.Allowed {
 		t.Fatalf("expected systemctl --version to be allowed")
 	}
-	decision = policy.Evaluate("systemctl", []string{"status", "sshd", "--no-pager"}, ProfileLowRead)
+	decision = policy.Evaluate("systemctl", []string{"status", "sshd", "--no-pager", "-n", "20"}, ProfileLowRead)
 	if !decision.Allowed {
-		t.Fatalf("expected systemctl status sshd --no-pager to be allowed")
+		t.Fatalf("expected read-only systemctl status arguments to be allowed: %s", decision.Reason)
+	}
+}
+
+func TestExecPolicyDeniesSystemctlMutations(t *testing.T) {
+	policy := NewExecPolicy()
+	for _, action := range []string{"start", "stop", "restart", "enable", "disable", "mask", "daemon-reload", "kill"} {
+		decision := policy.Evaluate("systemctl", []string{action, "sshd"}, ProfileLowRead)
+		if decision.Allowed {
+			t.Fatalf("expected systemctl %s to be denied", action)
+		}
+		if !strings.Contains(decision.Reason, "not read-only") {
+			t.Fatalf("unexpected denial for systemctl %s: %s", action, decision.Reason)
+		}
+	}
+}
+
+func TestExecPolicyRestrictsCatToApprovedSystemFacts(t *testing.T) {
+	policy := NewExecPolicy()
+	for _, path := range []string{"/etc/os-release", "/proc/loadavg", "/proc/meminfo", "/proc/uptime"} {
+		if decision := policy.Evaluate("cat", []string{path}, ProfilePublicRead); !decision.Allowed {
+			t.Fatalf("expected approved cat path %s: %s", path, decision.Reason)
+		}
+	}
+	for _, path := range []string{"/etc/shadow", "/root/.ssh/id_rsa", "/etc/ssh/sshd_config", "/dev/zero"} {
+		if decision := policy.Evaluate("cat", []string{path}, ProfileSensitiveRead); decision.Allowed {
+			t.Fatalf("expected sensitive cat path %s to be denied", path)
+		}
 	}
 }
 
@@ -180,12 +207,16 @@ func TestExecPolicyDeniesShellInjectionArgs(t *testing.T) {
 func TestExecPolicyNormalizesMixedCaseCommand(t *testing.T) {
 	policy := NewExecPolicy()
 
-	cases := []string{"PS", "Ps", "pS", "Systemctl", "JOURNALCTL", "NetStat"}
+	cases := []string{"PS", "Ps", "pS", "JOURNALCTL", "NetStat"}
 	for _, cmd := range cases {
 		decision := policy.Evaluate(cmd, []string{}, ProfileLowRead)
 		if !decision.Allowed {
 			t.Fatalf("expected mixed-case %q to be allowed after normalization", cmd)
 		}
+	}
+	decision := policy.Evaluate("Systemctl", []string{"status", "sshd"}, ProfileLowRead)
+	if !decision.Allowed {
+		t.Fatalf("expected mixed-case Systemctl with read-only action to be allowed: %s", decision.Reason)
 	}
 }
 

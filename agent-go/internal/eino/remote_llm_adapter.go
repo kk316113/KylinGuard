@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"kylin-guard-agent/agent-go/internal/agent"
+	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
@@ -85,6 +86,9 @@ func (a *RemoteLLMAdapter) Provider() string {
 
 // GenerateToolCalls calls the remote LLM API and returns structured tool calls.
 func (a *RemoteLLMAdapter) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
+	if intent := security.NewIntentGuard().Evaluate(task); intent.Decision == security.DecisionDeny {
+		return nil, agent.Plan{}, fmt.Errorf("remote LLM request denied by intent guard: %s", intent.Reason)
+	}
 	// Validate config before making any request.
 	if reason := ValidateLLMConfig(a.config.Provider, a.config.Endpoint, a.config.APIKey); reason != "" {
 		return nil, agent.Plan{}, fmt.Errorf("remote LLM config invalid: %s", reason)

@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	DefaultMaxSteps = 6
-	ActionToolCall  = "tool_call"
+	DefaultMaxSteps   = 6
+	ActionToolCall    = "tool_call"
 	ActionFinalAnswer = "final_answer"
 )
 
@@ -34,12 +34,12 @@ type StepExecutor interface {
 
 // Engine runs the agent loop: plan → act → observe → repeat.
 type Engine struct {
-	generator      NextActionGenerator
-	executor       StepExecutor
-	auditor        StepAuditor
-	guard          security.IntentGuard
-	registry       *tools.Registry
-	MaxSteps       int
+	generator NextActionGenerator
+	executor  StepExecutor
+	auditor   StepAuditor
+	guard     security.IntentGuard
+	registry  *tools.Registry
+	MaxSteps  int
 }
 
 func NewEngine(generator NextActionGenerator, executor StepExecutor, registry *tools.Registry) *Engine {
@@ -72,11 +72,11 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 	// Check intent guard first.
 	if intent := e.guard.Evaluate(task); intent.Decision == security.DecisionDeny {
 		return &AgentResponse{
-			AgentMode:  ModeAgentLoop,
-			AgentSteps: []AgentStep{},
+			AgentMode:   ModeAgentLoop,
+			AgentSteps:  []AgentStep{},
 			FinalAnswer: "该请求包含危险意图，已在安全检查阶段阻断，未执行任何系统工具。请确认操作目的后再试。",
-			Confidence: "high",
-			StepCount:  0,
+			Confidence:  "high",
+			StepCount:   0,
 		}, nil
 	}
 
@@ -118,7 +118,7 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 
 		if action.ActionType == ActionFinalAnswer {
 			return &AgentResponse{
-				AgentMode:       ModeAgentLoop,
+				AgentMode: ModeAgentLoop,
 				TaskUnderstanding: &TaskUnderstanding{
 					UserGoal:   task,
 					IntentType: classifyIntent(task),
@@ -151,12 +151,12 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 
 	// Max steps reached without final answer.
 	return &AgentResponse{
-		AgentMode:  ModeAgentLoop,
-		AgentSteps: steps,
+		AgentMode:   ModeAgentLoop,
+		AgentSteps:  steps,
 		FinalAnswer: "已达到最大推理步数限制。建议重新描述问题或拆分后分别查询。",
-		Confidence: "low",
-		StepCount:  len(steps),
-		RiskGraph:  buildRiskGraph(steps),
+		Confidence:  "low",
+		StepCount:   len(steps),
+		RiskGraph:   buildRiskGraph(steps),
 	}, nil
 }
 
@@ -323,7 +323,7 @@ func buildToolDefs(registry *tools.Registry) []ToolDef {
 	all := registry.ListTools()
 	defs := make([]ToolDef, 0, len(all))
 	for _, t := range all {
-		if !t.Enabled {
+		if !registry.IsToolEnabledForDirectCall(t.Name) {
 			continue
 		}
 		keys := make([]string, 0)

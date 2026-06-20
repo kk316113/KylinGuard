@@ -148,8 +148,8 @@ func TestExecutorTimeout(t *testing.T) {
 	result, err := exec.Execute(context.Background(), CommandSpec{
 		ToolName: "test_tool",
 		Profile:  ProfileLowRead,
-		Command:  "cat",
-		Args:     []string{"/dev/zero"},
+		Command:  "uptime",
+		Args:     []string{},
 		Timeout:  100 * time.Millisecond,
 		Reason:   "timeout test",
 	})

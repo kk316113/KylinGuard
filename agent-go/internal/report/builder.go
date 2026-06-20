@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"kylin-guard-agent/agent-go/internal/auditclient"
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
@@ -114,7 +116,9 @@ func buildRiskExplanation(input BuildInput, report *SecurityReport) []RiskExplan
 	if report.Scenario != "" {
 		items = appendRisk(items, "info", "planner", "Planner selected scenario "+report.Scenario+" and generated a multi-step security diagnosis workflow.", nil)
 	}
-	if isDangerousIntent(input) {
+	if hasAuditViolation(input.AuditResult, security.ThreatTypePromptInjection) {
+		items = appendRisk(items, "high", "prompt_injection", "Intent Guard detected a prompt-injection attempt and denied it before any tool execution.", nil)
+	} else if isDangerousIntent(input) {
 		items = appendRisk(items, "high", "dangerous_intent", "Intent Guard denied the request before tool execution because it matched dangerous operational intent.", nil)
 	}
 	if len(report.SensitiveResources) > 0 {
@@ -136,6 +140,15 @@ func buildRiskExplanation(input BuildInput, report *SecurityReport) []RiskExplan
 		items = appendRisk(items, "info", "boundary_audit", "KylinGuard generated a minimal report even though audit context was incomplete.", nil)
 	}
 	return items
+}
+
+func hasAuditViolation(result auditclient.Result, violationType string) bool {
+	for _, violation := range result.Violations {
+		if violation.Type == violationType {
+			return true
+		}
+	}
+	return false
 }
 
 func appendRisk(items []RiskExplanationItem, severity string, category string, description string, evidenceIDs []string) []RiskExplanationItem {

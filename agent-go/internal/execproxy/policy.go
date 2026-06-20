@@ -2,6 +2,7 @@ package execproxy
 
 import (
 	"fmt"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -66,6 +67,17 @@ func (ExecPolicy) Evaluate(command string, args []string, profile ExecutionProfi
 	for _, arg := range args {
 		if containsShellChars(arg) {
 			return denyDecision(fmt.Sprintf("argument %q contains forbidden shell characters", arg))
+		}
+	}
+
+	if command == "systemctl" {
+		if reason := validateSystemctlArgs(args); reason != "" {
+			return denyDecision(reason)
+		}
+	}
+	if command == "cat" {
+		if reason := validateCatArgs(args); reason != "" {
+			return denyDecision(reason)
 		}
 	}
 
@@ -159,6 +171,64 @@ func IsSafeSystemctlArg(arg string) bool {
 		"--version": true, "--no-pager": true,
 	}
 	return allowed[arg]
+}
+
+var safeSystemdUnitPattern = regexp.MustCompile(`^[A-Za-z0-9_.@-]+$`)
+
+func validateSystemctlArgs(args []string) string {
+	if len(args) == 0 {
+		return "systemctl requires an explicit read-only action"
+	}
+	if !IsSafeSystemctlArg(args[0]) || args[0] == "--no-pager" {
+		return fmt.Sprintf("systemctl action %q is not read-only", args[0])
+	}
+	if args[0] == "--version" {
+		if len(args) == 1 {
+			return ""
+		}
+		return "systemctl --version does not accept additional arguments"
+	}
+
+	expectLineCount := false
+	for _, arg := range args[1:] {
+		if expectLineCount {
+			if !regexp.MustCompile(`^[0-9]{1,4}$`).MatchString(arg) {
+				return "systemctl -n requires a numeric line count"
+			}
+			expectLineCount = false
+			continue
+		}
+		switch arg {
+		case "--no-pager":
+			continue
+		case "-n":
+			expectLineCount = true
+			continue
+		}
+		if !safeSystemdUnitPattern.MatchString(arg) {
+			return fmt.Sprintf("systemctl argument %q is not a safe unit name", arg)
+		}
+	}
+	if expectLineCount {
+		return "systemctl -n requires a line count"
+	}
+	return ""
+}
+
+func validateCatArgs(args []string) string {
+	if len(args) != 1 {
+		return "cat requires exactly one approved read-only path"
+	}
+	allowedPaths := map[string]bool{
+		"/etc/os-release": true,
+		"/proc/loadavg":   true,
+		"/proc/meminfo":   true,
+		"/proc/uptime":    true,
+	}
+	if !allowedPaths[args[0]] {
+		return fmt.Sprintf("cat path %q is not in the read allowlist", args[0])
+	}
+	return ""
 }
 
 // Platform returns the current OS platform string.

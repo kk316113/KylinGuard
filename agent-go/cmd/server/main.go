@@ -12,6 +12,7 @@ import (
 	"kylin-guard-agent/agent-go/internal/config"
 	einoruntime "kylin-guard-agent/agent-go/internal/eino"
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/mcpserver"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
@@ -52,6 +53,12 @@ func main() {
 	mux.HandleFunc("/api/tools", toolsListHandler(registry))
 	mux.HandleFunc("/api/tools/call", toolCallHandler(registry, auditor, traceStore, toolPolicy))
 	mux.HandleFunc("/api/tools/", toolDetailHandler(registry))
+	mux.Handle("/mcp", mcpserver.NewHTTPHandler(mcpserver.Dependencies{
+		Registry:   registry,
+		Policy:     toolPolicy,
+		TraceStore: traceStore,
+		Auditor:    auditor,
+	}))
 
 	server := &http.Server{
 		Addr:              cfg.Addr,

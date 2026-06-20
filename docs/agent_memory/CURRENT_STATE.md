@@ -16,6 +16,8 @@ KylinGuard has completed:
 - Stage 17A-1: Product Shell Implementation - IN PROGRESS
 - Stage 17A-2: User-Facing Agent Experience Fix - IN PROGRESS
 - Stage 17A-3: Semantic Interaction Router - IN PROGRESS
+- Stage 18A: Competition A2 Standard MCP Server - IN PROGRESS
+- Stage 18B: Prompt Injection and Unauthorized Mutation Guardrails - IN PROGRESS
 - Real DeepSeek Smoke Test - PASS
 - Real DeepSeek natural-language acceptance on Kylin VM - PASS
 
@@ -410,13 +412,90 @@ configured model identifier=deepseek-v4-flash
 No real API key stored or printed
 ```
 
+## Stage 18A Competition A2 Standard MCP Server
+
+The official 2026 China Software Cup A2 requirements have been mapped in:
+
+```text
+docs/product/COMPETITION_A2_DELIVERY_PLAN.md
+```
+
+Local implementation now provides an official MCP Go SDK Streamable HTTP endpoint at `/mcp`:
+
+```text
+MCP initialize / tools/list / tools/call
+-> registered direct-call tools only
+-> JSON Schema validation
+-> Tool Policy
+-> existing Tool Registry / Exec Proxy
+-> tool trace
+-> TraceShield audit client
+```
+
+`safe_shell` and other non-direct-call tools are not advertised. Policy-denied MCP calls produce a denied trace and do not invoke the tool handler.
+
+Verification completed on the Windows development host:
+
+```text
+go test ./... - PASS
+official MCP in-memory client list/call tests - PASS
+official MCP Streamable HTTP negotiation/list test - PASS
+prompt-injected process_inspector call denied before handler execution - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+```
+
+Pending before Stage 18A PASS:
+
+```text
+Run the loong64 binary on the provided Kylin Advanced Server OS V11 VM
+Verify MCP initialize / tools/list / tools/call on that VM
+Verify real OS observations and audit-core integration on that VM
+```
+
+The first least-privilege deployment scaffold is also present:
+
+```text
+deploy/kylin/install_agent_service.sh
+deploy/kylin/systemd/kylin-guard-agent.service
+```
+
+It installs the backend under a dedicated `kylinguard` system account, binds to loopback by default, removes Linux capabilities, forbids privilege escalation, and enables systemd filesystem/device/kernel hardening. Git Bash `bash -n` passes locally; the unit still requires `systemd-analyze verify` and runtime tool checks on Kylin V11 before it can be marked PASS.
+
+## Stage 18B Prompt Injection and Mutation Guardrails
+
+The first competition-focused anti-injection hardening pass is implemented:
+
+```text
+direct prompt injection -> Intent Guard deny with threat_type=prompt_injection
+prior chat / tool-observation injection -> neutralized in model-facing context
+original observation -> retained in audit trace
+unknown tool arguments -> Tool Policy deny
+nested shell metacharacters -> Tool Policy deny
+safe_shell -> absent from LLM and MCP tool definitions
+systemctl -> explicit read-only actions only
+cat -> /etc/os-release and selected /proc facts only
+```
+
+Verification completed locally:
+
+```text
+go test ./... - PASS
+direct prompt injection produces decision=deny, run_status=blocked, tool_trace=0 - PASS
+indirect observation/history injection neutralization tests - PASS
+systemctl mutation and sensitive cat path denial tests - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+bash -n scripts/linux/test_security_guardrails.sh - PASS
+local HTTP guardrail acceptance (4 attack classes) - PASS
+```
+
+Kylin V11 runtime execution of `scripts/linux/test_security_guardrails.sh` remains pending before Stage 18B PASS.
+
 ## Current Next Suggested Work
 
 Priority order:
 
-1. Start backend and frontend locally for browser integration
-2. Manually review the native CopilotSidebar and dashboard synchronization
-3. Rerun frontend smoke on Kylin VM with real DeepSeek
-4. Stage 17B: task history / report export planning
-5. Stage 17: report / PPT / recording / defense script
-6. Stage 18: packaging and final stability
+1. Add dedicated non-root service account and systemd sandbox deployment
+2. Build prompt-injection and unauthorized-config-change acceptance tests
+3. Run MCP and Agent Loop smoke on LoongArch + Kylin V11
+4. Add lsof / zombie process / disk I/O / configuration drift sensing
+5. Complete performance report and the nine competition submission artifacts

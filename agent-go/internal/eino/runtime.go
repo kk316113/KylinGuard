@@ -92,7 +92,7 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 		rtb.EndSpan(requestSpan.SpanID, "deny")
 		rtb.Finish()
 
-		audit := intentGuardAuditResult()
+		audit := intentGuardAuditResult(intent)
 		securityReport := report.BuildSecurityReport(report.BuildInput{
 			Task:        task,
 			Decision:    string(security.DecisionDeny),
@@ -253,6 +253,7 @@ func chatHistoryMessages(task string, history []agent.ConversationMessage) []map
 		if len(contentRunes) > maxContentLength {
 			content = string(contentRunes[:maxContentLength])
 		}
+		content, _ = security.NeutralizeUntrustedText(content)
 		messages = append(messages, map[string]any{"role": role, "content": content})
 	}
 	if len(messages) == 0 || messages[len(messages)-1]["role"] != "user" || messages[len(messages)-1]["content"] != task {
@@ -302,22 +303,30 @@ func normalizeRouterConfidence(value string) string {
 	}
 }
 
-func intentGuardAuditResult() auditclient.Result {
+func intentGuardAuditResult(intent security.IntentResult) auditclient.Result {
+	threatType := intent.ThreatType
+	if threatType == "" {
+		threatType = security.ThreatTypeDangerousIntent
+	}
+	message := "dangerous task denied before tool execution"
+	if threatType == security.ThreatTypePromptInjection {
+		message = "prompt injection attempt denied before tool execution"
+	}
 	return auditclient.Result{
 		Decision:  string(security.DecisionDeny),
 		RiskScore: 1.0,
 		Violations: []auditclient.Violation{
 			{
-				Type:     "dangerous_intent",
+				Type:     threatType,
 				Severity: "high",
-				Message:  "dangerous task denied before tool execution",
+				Message:  message,
 				StepID:   "",
 			},
 		},
 		EvidenceChain: []auditclient.EvidenceItem{},
 		RiskGraph:     nil,
 		Method:        "intent_guard",
-		Message:       "dangerous task denied before tool execution",
+		Message:       message,
 	}
 }
 

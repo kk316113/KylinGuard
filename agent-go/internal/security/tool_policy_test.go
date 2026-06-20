@@ -80,6 +80,24 @@ func TestToolPolicyDeniesUnsafeServiceName(t *testing.T) {
 	assertToolPolicyDeny(t, decision)
 }
 
+func TestToolPolicyDeniesUnknownArguments(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	metadata, _ := registry.GetTool("os_info")
+	decision := NewToolPolicy().Evaluate("os_info", metadata, true, map[string]any{
+		"command": "cat /etc/shadow",
+	})
+	assertToolPolicyDeny(t, decision)
+}
+
+func TestToolPolicyDeniesNestedInjection(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	metadata, _ := registry.GetTool("log_reader")
+	decision := NewToolPolicy().Evaluate("log_reader", metadata, true, map[string]any{
+		"paths": []any{"/var/log/auth.log", map[string]any{"payload": "ok; rm -rf /"}},
+	})
+	assertToolPolicyDeny(t, decision)
+}
+
 func assertToolPolicyDeny(t *testing.T, decision ToolPolicyDecision) {
 	t.Helper()
 	if decision.Decision != "deny" {
