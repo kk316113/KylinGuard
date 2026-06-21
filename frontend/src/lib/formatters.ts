@@ -1,10 +1,13 @@
 import type { AgentRun, AgentStep, Decision, ToolTrace } from "@/types/agent";
 
 const toolNames: Record<string, string> = {
+  configuration_drift_detector: "配置漂移检测",
+  disk_io_checker: "磁盘 I/O 检查",
   disk_memory_checker: "磁盘与内存检查",
   journalctl_reader: "系统日志读取",
   log_reader: "日志读取",
   network_connection_inspector: "网络连接检查",
+  open_file_inspector: "文件占用检查",
   os_info: "系统信息检查",
   port_checker: "端口检查",
   process_inspector: "进程检查",
@@ -15,10 +18,13 @@ const toolNames: Record<string, string> = {
 };
 
 const toolDescriptions: Record<string, string> = {
+  configuration_drift_detector: "依据可信 RPM 数据库检查软件包配置漂移，不读取文件正文。",
+  disk_io_checker: "采样磁盘吞吐、IOPS、队列和利用率。",
   disk_memory_checker: "检查磁盘空间和内存使用概况，不修改系统数据。",
   journalctl_reader: "读取指定服务近期的系统日志。",
   log_reader: "读取受控范围内的系统日志。",
   network_connection_inspector: "检查网络连接和监听状态。",
+  open_file_inspector: "检查受控路径或进程的文件占用关系，不读取文件正文。",
   os_info: "获取操作系统和架构等基础信息。",
   port_checker: "检查本地或远程端口是否可达。",
   process_inspector: "按名称检查进程状态。",
@@ -35,16 +41,20 @@ const operationNames: Record<string, string> = {
   execute: "执行",
   write: "写入",
   delete: "删除",
+  verify: "校验",
 };
 
 const resourceNames: Record<string, string> = {
   disk_memory: "磁盘与内存",
+  disk_io: "磁盘 I/O",
   journal_log: "系统日志",
   system_log: "系统日志",
   network_connection: "网络连接",
+  open_file_metadata: "文件占用元数据",
   os_info: "系统信息",
   network_port: "网络端口",
   process: "系统进程",
+  package_configuration: "软件包配置",
   system_resource: "系统资源",
   safe_command: "受控命令",
   system_service: "系统服务",
@@ -198,8 +208,8 @@ export function auditMethodLabel(method?: string) {
       return "安全审计核心";
     case "intent_guard":
       return "意图安全护栏";
-    case "fallback-mock":
-      return "降级审计";
+    case "local-safety-fallback":
+      return "本地安全降级审查";
     default:
       return "常规审计";
   }

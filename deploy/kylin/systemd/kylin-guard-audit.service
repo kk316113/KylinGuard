@@ -1,0 +1,38 @@
+[Unit]
+Description=KylinGuard TraceShield Audit Core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kylinguard-audit
+Group=kylinguard-audit
+WorkingDirectory=/opt/kylin-guard/audit
+ExecStart=/opt/kylin-guard/audit/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+EnvironmentFile=-/etc/kylin-guard/audit.env
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+StateDirectory=kylinguard-audit
+StateDirectoryMode=0700
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

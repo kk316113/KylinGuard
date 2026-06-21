@@ -129,9 +129,16 @@ class KylinGuardAgent extends AbstractAgent {
       throw new Error(text.slice(0, 240) || `Agent returned HTTP ${response.status}`);
     }
 
-    const run = (await response.json()) as AgentRun & { error?: string };
+    const run = (await response.json()) as AgentRun & {
+      error?: string | { code?: string; message?: string; details?: Record<string, unknown> };
+    };
     if (!response.ok) {
-      throw new Error(run.error || `Agent returned HTTP ${response.status}`);
+      const message =
+        typeof run.error === "string"
+          ? run.error
+          : run.error?.message || `Agent returned HTTP ${response.status}`;
+      const code = typeof run.error === "object" ? run.error?.code : undefined;
+      throw new Error(code ? `${code}: ${message}` : message);
     }
     return run;
   }

@@ -30,11 +30,19 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
 
   const data = (await response.json()) as T;
   if (!response.ok) {
+    const payload = data as { error?: unknown };
+    const structured =
+      typeof payload?.error === "object" && payload.error !== null
+        ? (payload.error as { code?: unknown; message?: unknown })
+        : null;
     const message =
-      typeof data === "object" && data !== null && "error" in data
-        ? String((data as { error?: unknown }).error)
-        : `HTTP ${response.status}`;
-    throw new Error(message);
+      typeof structured?.message === "string"
+        ? structured.message
+        : typeof payload?.error === "string"
+          ? payload.error
+          : `HTTP ${response.status}`;
+    const code = typeof structured?.code === "string" ? structured.code : `HTTP_${response.status}`;
+    throw new Error(`${code}: ${message}`);
   }
   return data;
 }

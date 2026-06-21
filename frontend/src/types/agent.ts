@@ -25,6 +25,9 @@ export type AgentStep = {
     deny_reason?: string;
     data_redacted?: boolean;
     data?: Record<string, unknown>;
+    status?: string;
+    result?: unknown;
+    [key: string]: unknown;
   } | string | null;
   operation_type?: string;
   resource_type?: string;
@@ -52,6 +55,15 @@ export type ToolTrace = {
   allowed_by_policy?: boolean;
   policy_reason?: string;
   risk_level?: string;
+  execution_context?: {
+    executor?: string;
+    profile?: string;
+    command_name?: string;
+    shell_used?: boolean;
+    sudo_used?: boolean;
+    effective_user?: string;
+    [key: string]: unknown;
+  };
 };
 
 export type EvidenceItem = {

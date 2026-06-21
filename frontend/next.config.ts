@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 
+process.env.NEXT_TELEMETRY_DISABLED ||= "1";
+process.env.COPILOTKIT_TELEMETRY_DISABLED ||= "true";
+
 const backendTarget =
   process.env.KYLIN_GUARD_AGENT_API_URL ||
   process.env.KYLINGUARD_AGENT_API_URL ||
@@ -8,6 +11,8 @@ const backendTarget =
 const normalizedBackendTarget = backendTarget.replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
+	output: "standalone",
+	images: { unoptimized: true },
   // The Next.js developer toolbar is English-only and is not part of the product UI.
   devIndicators: false,
   async rewrites() {

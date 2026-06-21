@@ -1,0 +1,41 @@
+[Unit]
+Description=KylinGuard Web Console
+After=network-online.target kylin-guard-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kylinguard-web
+Group=kylinguard-web
+WorkingDirectory=/opt/kylin-guard/web
+ExecStart=/usr/bin/node /opt/kylin-guard/web/server.js
+Environment=NODE_ENV=production
+Environment=HOSTNAME=0.0.0.0
+Environment=PORT=5173
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=COPILOTKIT_TELEMETRY_DISABLED=true
+Environment=KYLIN_GUARD_AGENT_API_URL=http://127.0.0.1:8080
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
