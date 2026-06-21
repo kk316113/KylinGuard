@@ -93,6 +93,14 @@ func TestServerDeniesInjectedArgumentsBeforeToolExecution(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("expected MCP tool error for policy denial")
 	}
+	structured, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured denial content, got %#v", result.StructuredContent)
+	}
+	audit, ok := structured["audit_result"].(map[string]any)
+	if !ok || audit["decision"] != "deny" || audit["method"] != security.ToolPolicyMethod {
+		t.Fatalf("policy denial must remain authoritative in audit_result: %#v", structured["audit_result"])
+	}
 	if calls.Load() != 0 {
 		t.Fatalf("denied handler executed %d times", calls.Load())
 	}

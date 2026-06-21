@@ -55,6 +55,7 @@ export EINO_ENABLED=false
 
 ```bash
 bash scripts/linux/test_os_sensing_tools.sh
+bash scripts/linux/test_mcp_protocol.sh
 ```
 
 `/api/agent/run` 是稳定主链路：

@@ -453,6 +453,20 @@ Verify MCP initialize / tools/list / tools/call on that VM
 Verify real OS observations and audit-core integration on that VM
 ```
 
+Kylin Advanced Server V11 x86_64 runtime verification completed on 2026-06-21:
+
+```text
+OS: Kylin Linux Advanced Server V11 (Swan25)
+architecture: x86_64
+runtime account: lihuan (uid=1000, no sudo used)
+MCP initialize: PASS, protocolVersion=2025-06-18
+MCP tools/list: PASS, 12 tools, safe_shell absent
+MCP allowed disk_io_checker call through Exec Proxy: PASS
+MCP sensitive-path denial: PASS, isError=true, decision=deny, method=tool_policy
+```
+
+The runtime check exposed and fixed an MCP audit precedence defect: a Tool Policy denial could retain the fallback auditor's `review` decision. Policy denial is now authoritative and includes tool-policy violation/evidence fields. Full Go tests and Kylin runtime retest pass.
+
 The first least-privilege deployment scaffold is also present:
 
 ```text
@@ -489,7 +503,7 @@ bash -n scripts/linux/test_security_guardrails.sh - PASS
 local HTTP guardrail acceptance (4 attack classes) - PASS
 ```
 
-Kylin V11 runtime execution of `scripts/linux/test_security_guardrails.sh` remains pending before Stage 18B PASS.
+Kylin V11 x86_64 runtime execution is now PASS for all four guardrail attack classes. LoongArch repetition remains required before final competition acceptance.
 
 ## Stage 18C A2 Deep OS Sensing Tools
 
@@ -533,7 +547,20 @@ CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
 bash -n scripts/linux/test_os_sensing_tools.sh - PASS
 ```
 
-Runtime verification remains pending because the Windows host has no Docker or Linux runtime. On Kylin V11, run `scripts/linux/test_os_sensing_tools.sh`; it creates a temporary held-open file, requires the Agent to find the real holder PID through lsof, checks live diskstats and zombie output, and verifies sensitive-path denial.
+The Windows host has no Docker or Linux runtime, so runtime verification was executed over SSH on the provided Kylin V11 VM with `scripts/linux/test_os_sensing_tools.sh`.
+
+Kylin V11 x86_64 runtime execution is now PASS:
+
+```text
+real lsof holder PID detection - PASS
+zombie process sensing - PASS
+live /proc/diskstats sampling (sda) - PASS
+sensitive lsof path denial - PASS
+process identity - uid=1000 lihuan, no shell/sudo execution in tool traces
+temporary validation service stopped - PASS
+```
+
+The deterministic no-key Agent Loop also completed a natural-language performance task with `agent_mode=agent_loop`, one real `os_info` trace, per-step aggregate audit, and a non-empty final answer. This is fallback-path evidence only; it does not replace the existing or future real DeepSeek multi-step acceptance.
 
 ## Current Next Suggested Work
 

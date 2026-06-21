@@ -103,6 +103,22 @@ func callTool(ctx context.Context, deps Dependencies, metadata tools.ToolMetadat
 		if auditErr != nil {
 			audit.Message = appendMessage(audit.Message, auditErr.Error())
 		}
+		audit.Decision = "deny"
+		audit.RiskScore = 1.0
+		audit.Method = security.ToolPolicyMethod
+		audit.Message = decisionMessage(decision)
+		audit.Violations = append(audit.Violations, auditclient.Violation{
+			Type:     "tool_policy",
+			Severity: "high",
+			Message:  decisionMessage(decision),
+			StepID:   trace.StepID,
+		})
+		audit.EvidenceChain = append(audit.EvidenceChain, auditclient.EvidenceItem{
+			StepID:   trace.StepID,
+			ToolName: metadata.Name,
+			Resource: trace.ResourcePath,
+			Reason:   decision.Reason,
+		})
 		return &mcp.CallToolResult{IsError: true}, map[string]any{
 			"tool_name":    metadata.Name,
 			"status":       "denied",
