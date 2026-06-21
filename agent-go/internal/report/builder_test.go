@@ -270,7 +270,7 @@ func TestBuildSecurityReportPortCheck(t *testing.T) {
 	}
 }
 
-func TestBuildSecurityReportFallbackMockAudit(t *testing.T) {
+func TestBuildSecurityReportLocalSafetyFallbackAudit(t *testing.T) {
 	report := BuildSecurityReport(BuildInput{
 		Task:      "检查系统状态",
 		Decision:  "review",
@@ -279,8 +279,8 @@ func TestBuildSecurityReportFallbackMockAudit(t *testing.T) {
 		AuditResult: auditclient.Result{
 			Decision:  "review",
 			RiskScore: 0.5,
-			Method:    "fallback-mock",
-			Message:   "TraceShield core unavailable, using fallback mock",
+			Method:    "local-safety-fallback",
+			Message:   "TraceShield core unavailable, using local safety fallback",
 		},
 	})
 
@@ -290,8 +290,8 @@ func TestBuildSecurityReportFallbackMockAudit(t *testing.T) {
 	if report.OverallDecision != "review" {
 		t.Fatalf("expected review decision, got %q", report.OverallDecision)
 	}
-	if report.AuditMetadata["audit_method"] != "fallback-mock" {
-		t.Fatalf("expected fallback-mock method, got %#v", report.AuditMetadata["audit_method"])
+	if report.AuditMetadata["audit_method"] != "local-safety-fallback" {
+		t.Fatalf("expected local fallback method, got %#v", report.AuditMetadata["audit_method"])
 	}
 	if report.Summary == "" {
 		t.Fatal("expected summary")

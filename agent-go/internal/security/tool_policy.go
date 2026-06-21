@@ -164,6 +164,16 @@ func (ToolPolicy) Evaluate(name string, metadata tools.ToolMetadata, exists bool
 		if sampleMS != 0 && (sampleMS < 100 || sampleMS > 2000) {
 			return denyToolCall("disk_io_checker sample_ms must be between 100 and 2000")
 		}
+	case "configuration_drift_detector":
+		packages, valid := packageNamesForPolicy(input["packages"])
+		if !valid || len(packages) < 1 || len(packages) > 5 {
+			return denyToolCall("configuration_drift_detector requires 1-5 packages")
+		}
+		for _, name := range packages {
+			if !tools.IsSafeRPMPackageName(name) {
+				return denyToolCall("configuration_drift_detector package name contains unsafe characters")
+			}
+		}
 	}
 
 	return ToolPolicyDecision{
@@ -171,6 +181,25 @@ func (ToolPolicy) Evaluate(name string, metadata tools.ToolMetadata, exists bool
 		Method:   ToolPolicyMethod,
 		Message:  "tool call allowed by tool policy",
 	}
+}
+
+func packageNamesForPolicy(value any) ([]string, bool) {
+	names := []string{}
+	switch typed := value.(type) {
+	case []string:
+		names = append(names, typed...)
+	case []any:
+		for _, item := range typed {
+			if name, ok := item.(string); ok {
+				names = append(names, name)
+			} else {
+				return nil, false
+			}
+		}
+	default:
+		return nil, false
+	}
+	return names, true
 }
 
 func denyToolCall(reason string) ToolPolicyDecision {

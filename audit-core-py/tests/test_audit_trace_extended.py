@@ -48,7 +48,7 @@ def test_audit_trace_risky_log_delete(server_url):
 
     assert status == 200
     assert body["decision"] in {"deny", "review"}
-    assert body["method"] in {"traceshield", "fallback-mock"}
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
     assert body["risk_score"] > 0
     nodes = body["risk_graph"]["nodes"]
     assert len(nodes) > 0
@@ -62,8 +62,8 @@ def test_audit_trace_privilege_escalation(server_url):
 
     assert status == 200
     assert body["decision"] in {"deny", "review"}
-    assert body["method"] in {"traceshield", "fallback-mock"}
-    # fallback-mock may not generate violations for all samples
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
+    # local fallback does not invent violations
     if body["method"] == "traceshield":
         assert len(body["violations"]) > 0
 
@@ -74,8 +74,8 @@ def test_audit_trace_sensitive_log_read(server_url):
 
     assert status == 200
     assert body["decision"] in {"allow", "review"}
-    assert body["method"] in {"traceshield", "fallback-mock"}
-    # fallback-mock may return empty evidence_chain
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
+    # local fallback may return an empty evidence chain
     if body["method"] == "traceshield":
         assert len(body["evidence_chain"]) > 0
         ev = body["evidence_chain"][0]
@@ -89,7 +89,7 @@ def test_audit_trace_sensitive_journal_read(server_url):
 
     assert status == 200
     assert body["decision"] in {"allow", "review"}
-    assert body["method"] in {"traceshield", "fallback-mock"}
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
     if body["method"] == "traceshield":
         assert len(body["evidence_chain"]) > 0
         ev = body["evidence_chain"][0]
@@ -103,7 +103,7 @@ def test_audit_trace_safe_system_check(server_url):
 
     assert status == 200
     assert body["decision"] in {"allow", "review"}
-    assert body["method"] in {"traceshield", "fallback-mock"}
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
     assert len(body["risk_graph"]["nodes"]) > 0
 
 
@@ -119,7 +119,7 @@ def test_audit_trace_empty_steps(server_url):
 
     assert status == 200
     assert body["decision"] in {"allow", "deny", "review"}
-    assert body["method"] in {"traceshield", "fallback-mock"}
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
     assert isinstance(body["violations"], list)
     assert isinstance(body["evidence_chain"], list)
 
@@ -146,7 +146,7 @@ def test_audit_trace_backward_compat_traces_field(server_url):
     status, body = _post_json(f"{server_url}/audit/trace", payload)
 
     assert status == 200
-    assert body["method"] in {"traceshield", "fallback-mock"}
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
     assert len(body["risk_graph"]["nodes"]) > 0
 
 
@@ -172,7 +172,7 @@ def test_audit_trace_backward_compat_tool_trace_field(server_url):
     status, body = _post_json(f"{server_url}/audit/trace", payload)
 
     assert status == 200
-    assert body["method"] in {"traceshield", "fallback-mock"}
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
     assert len(body["risk_graph"]["nodes"]) > 0
 
 
@@ -235,7 +235,7 @@ def test_audit_trace_multiple_mixed_risk_steps(server_url):
 
     assert status == 200
     assert body["decision"] in {"deny", "review"}
-    assert body["method"] in {"traceshield", "fallback-mock"}
+    assert body["method"] in {"traceshield", "local-safety-fallback"}
     nodes = body["risk_graph"]["nodes"]
     assert len(nodes) >= 3
     # First node should be allowed, last should be denied

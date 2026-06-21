@@ -77,7 +77,8 @@ func matchPatterns(normalized string, patterns []string) []string {
 
 // NeutralizeUntrustedText prevents tool observations or arguments from being
 // replayed as instructions in the next LLM turn. The original evidence stays
-// in the tool trace; only the model-facing copy is replaced.
+// in the tool trace; only the model-facing copy is replaced. Whole-value
+// replacement prevents split or obfuscated instructions from surviving.
 func NeutralizeUntrustedText(value string) (string, bool) {
 	policy := DefaultPolicy()
 	if len(matchPatterns(normalizeIntentText(value), policy.PromptInjectionPatterns)) == 0 {

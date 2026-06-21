@@ -84,7 +84,7 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 		registry = tools.NewDefaultRegistry()
 	}
 	if auditor == nil {
-		auditor = auditclient.NewMockClient()
+		auditor = auditclient.NewLocalSafetyClient()
 	}
 	if traceStore == nil {
 		traceStore = logtrace.NewStore()

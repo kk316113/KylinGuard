@@ -200,6 +200,19 @@ func TestAgentRunRejectsEmptyTask(t *testing.T) {
 	if !strings.Contains(recorder.Body.String(), "task is required") {
 		t.Fatalf("expected clear validation error, got %s", recorder.Body.String())
 	}
+	var payload struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("expected structured JSON error: %v", err)
+	}
+	if payload.Error.Code != "INVALID_REQUEST" || payload.Error.Message == "" || payload.Error.Details == nil {
+		t.Fatalf("unexpected structured error: %#v", payload.Error)
+	}
 }
 
 func TestAgentRunEinoNonOperationalInputDefaultsToChatWithoutTools(t *testing.T) {
@@ -332,8 +345,23 @@ func TestCapabilitiesHandlerUsesRegisteredTools(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(response.AvailableTools) != len(registry.ListTools()) {
-		t.Fatalf("expected registered tool count, got %d", len(response.AvailableTools))
+	expected := 0
+	foundDrift := false
+	for _, metadata := range registry.ListTools() {
+		if registry.IsToolEnabledForDirectCall(metadata.Name) {
+			expected++
+		}
+	}
+	for _, tool := range response.AvailableTools {
+		if tool.ToolName == "safe_shell" {
+			t.Fatal("disabled safe_shell must not be advertised as available")
+		}
+		if tool.ToolName == "configuration_drift_detector" {
+			foundDrift = true
+		}
+	}
+	if len(response.AvailableTools) != expected || !foundDrift {
+		t.Fatalf("expected %d enabled tools including configuration drift, got %#v", expected, response.AvailableTools)
 	}
 	if !response.ToolPolicy.Enabled || !response.ToolPolicy.DangerousActionsBlocked {
 		t.Fatalf("expected enabled tool policy, got %#v", response.ToolPolicy)

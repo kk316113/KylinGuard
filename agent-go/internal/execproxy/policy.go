@@ -87,6 +87,11 @@ func (ExecPolicy) Evaluate(command string, args []string, profile ExecutionProfi
 			return denyDecision(reason)
 		}
 	}
+	if command == "rpm" {
+		if reason := validateRPMArgs(args); reason != "" {
+			return denyDecision(reason)
+		}
+	}
 
 	return ExecPolicyDecision{
 		Allowed: true,
@@ -147,6 +152,7 @@ func commandAllowlist() map[string]bool {
 		"uptime": true,
 		"cat":    true,
 		"lsof":   true,
+		"rpm":    true,
 		"uname":  true, "hostname": true, "whoami": true, "date": true,
 		// systemctl read-only subcommands only (args are validated separately).
 		"systemctl": true,
@@ -261,6 +267,18 @@ func validateLsofArgs(args []string) string {
 	default:
 		return "lsof requires either an approved path or a numeric pid"
 	}
+}
+
+var safeRPMPackagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$`)
+
+func validateRPMArgs(args []string) string {
+	if len(args) != 2 || args[0] != "--verify" {
+		return "rpm is restricted to exactly: rpm --verify <package>"
+	}
+	if !safeRPMPackagePattern.MatchString(args[1]) {
+		return "rpm package name contains unsafe characters"
+	}
+	return ""
 }
 
 // Platform returns the current OS platform string.

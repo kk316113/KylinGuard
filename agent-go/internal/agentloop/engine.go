@@ -134,7 +134,15 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 		}
 
 		if action.ActionType != ActionToolCall {
-			continue
+			return &AgentResponse{
+				AgentMode:      ModeAgentLoop,
+				AgentSteps:     steps,
+				FinalAnswer:    "模型返回了无法识别的操作，安全起见未执行任何新增工具。请稍后重试。",
+				Confidence:     "low",
+				FallbackReason: fmt.Sprintf("invalid action_type %q", action.ActionType),
+				StepCount:      len(steps),
+				RiskGraph:      buildRiskGraph(steps),
+			}, nil
 		}
 
 		// Execute tool call through security pipeline.
@@ -247,7 +255,11 @@ func (e *Engine) executeStep(ctx context.Context, task string, index int, action
 		rtb.SetAttr(es.SpanID, "resource_type", step.ResourceType)
 		rtb.SetAttr(es.SpanID, "boundary_level", step.BoundaryLevel)
 		rtb.SetAttr(es.SpanID, "status", step.Observation["status"])
-		rtb.EndSpan(es.SpanID, "ok")
+		execStatus := "ok"
+		if step.Observation["status"] == "error" || step.Observation["status"] == "denied" {
+			execStatus = "error"
+		}
+		rtb.EndSpan(es.SpanID, execStatus)
 	}
 	return step
 }
@@ -261,13 +273,15 @@ func (e *Engine) auditStepSafe(ctx context.Context, task string, stepIndex int, 
 	rep, err := e.auditor.AuditStep(ctx, task, stepIndex, trace)
 	if err != nil || rep.Decision == "" {
 		return AuditReport{
-			StepID:    trace.StepID,
-			StepIndex: stepIndex,
-			ToolName:  trace.ToolName,
-			Decision:  "review",
-			RiskScore: 0.35,
-			Method:    "fallback-mock",
-			Message:   "audit step failed, fallback used",
+			StepID:     trace.StepID,
+			StepIndex:  stepIndex,
+			ToolName:   trace.ToolName,
+			Decision:   "review",
+			RiskScore:  0.35,
+			Method:     "local-safety-fallback",
+			Message:    "audit service unavailable; local safety review required",
+			Violations: []string{"external audit result unavailable"},
+			Evidence:   []string{"tool execution trace retained for later audit"},
 		}
 	}
 	rep.StepID = trace.StepID

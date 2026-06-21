@@ -19,11 +19,6 @@ type toolsListResponse struct {
 	Tools    []tools.ToolMetadata `json:"tools"`
 }
 
-type toolNotFoundResponse struct {
-	Error    string `json:"error"`
-	ToolName string `json:"tool_name"`
-}
-
 type toolCallRequest struct {
 	ToolName string         `json:"tool_name"`
 	Input    map[string]any `json:"input"`
@@ -65,13 +60,13 @@ func toolDetailHandler(registry *tools.Registry) http.HandlerFunc {
 
 		name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/tools/"), "/")
 		if name == "" || strings.Contains(name, "/") {
-			writeJSON(w, http.StatusNotFound, toolNotFoundResponse{Error: "tool not found", ToolName: name})
+			writeAPIError(w, http.StatusNotFound, "TOOL_NOT_FOUND", "tool not found", map[string]any{"tool_name": name})
 			return
 		}
 
 		metadata, ok := registry.GetTool(name)
 		if !ok {
-			writeJSON(w, http.StatusNotFound, toolNotFoundResponse{Error: "tool not found", ToolName: name})
+			writeAPIError(w, http.StatusNotFound, "TOOL_NOT_FOUND", "tool not found", map[string]any{"tool_name": name})
 			return
 		}
 
@@ -81,7 +76,7 @@ func toolDetailHandler(registry *tools.Registry) http.HandlerFunc {
 
 func toolCallHandler(registry *tools.Registry, auditor auditclient.Client, traceStore *logtrace.Store, policy security.ToolPolicy) http.HandlerFunc {
 	if auditor == nil {
-		auditor = auditclient.NewMockClient()
+		auditor = auditclient.NewLocalSafetyClient()
 	}
 	if traceStore == nil {
 		traceStore = logtrace.NewStore()

@@ -129,6 +129,23 @@ func TestEngineDangerousTaskDenied(t *testing.T) {
 	}
 }
 
+func TestEngineUnknownActionStopsWithoutExecution(t *testing.T) {
+	gen := &mockGenerator{actions: []NextAction{{ActionType: "run_shell", ToolName: "safe_shell"}}}
+	exec := newMockExecutor(tools.NewDefaultRegistry())
+	engine := NewEngine(gen, exec, tools.NewDefaultRegistry())
+
+	resp, err := engine.Run(context.Background(), "检查系统状态", nil, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.AgentSteps) != 0 || exec.LastTrace().StepID != "" {
+		t.Fatalf("unknown action must not execute or create a tool step: %#v", resp.AgentSteps)
+	}
+	if resp.FallbackReason == "" || resp.FinalAnswer == "" {
+		t.Fatalf("expected controlled diagnostic response: %#v", resp)
+	}
+}
+
 func TestEngineMaxStepsReached(t *testing.T) {
 	// Generator always returns tool_call, never final_answer.
 	gen := &mockGenerator{

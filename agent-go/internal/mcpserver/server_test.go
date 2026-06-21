@@ -32,7 +32,7 @@ func TestServerListsOnlyDirectPolicyToolsAndExecutesThroughTraceChain(t *testing
 		Registry:   registry,
 		Policy:     security.NewToolPolicy(),
 		TraceStore: traceStore,
-		Auditor:    auditclient.NewMockClient(),
+		Auditor:    auditclient.NewLocalSafetyClient(),
 	})
 	clientSession, serverSession := connectTestClient(t, server)
 	defer clientSession.Close()
@@ -77,7 +77,7 @@ func TestServerDeniesInjectedArgumentsBeforeToolExecution(t *testing.T) {
 		Registry:   registry,
 		Policy:     security.NewToolPolicy(),
 		TraceStore: traceStore,
-		Auditor:    auditclient.NewMockClient(),
+		Auditor:    auditclient.NewLocalSafetyClient(),
 	})
 	clientSession, serverSession := connectTestClient(t, server)
 	defer clientSession.Close()
@@ -120,7 +120,7 @@ func TestStreamableHTTPHandlerNegotiatesMCPAndListsTools(t *testing.T) {
 		Registry:   registry,
 		Policy:     security.NewToolPolicy(),
 		TraceStore: logtrace.NewStore(),
-		Auditor:    auditclient.NewMockClient(),
+		Auditor:    auditclient.NewLocalSafetyClient(),
 	}))
 	defer httpServer.Close()
 
@@ -148,7 +148,7 @@ func TestDefaultServerPublishesCompetitionSensingTools(t *testing.T) {
 		Registry:   tools.NewDefaultRegistry(),
 		Policy:     security.NewToolPolicy(),
 		TraceStore: logtrace.NewStore(),
-		Auditor:    auditclient.NewMockClient(),
+		Auditor:    auditclient.NewLocalSafetyClient(),
 	})
 	clientSession, serverSession := connectTestClient(t, server)
 	defer clientSession.Close()
@@ -162,7 +162,7 @@ func TestDefaultServerPublishesCompetitionSensingTools(t *testing.T) {
 	for _, tool := range listed.Tools {
 		names[tool.Name] = true
 	}
-	for _, required := range []string{"open_file_inspector", "process_inspector", "disk_io_checker"} {
+	for _, required := range []string{"open_file_inspector", "process_inspector", "disk_io_checker", "configuration_drift_detector"} {
 		if !names[required] {
 			t.Fatalf("MCP tool list missing %s: %#v", required, names)
 		}

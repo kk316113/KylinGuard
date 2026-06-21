@@ -282,3 +282,17 @@ func TestCommandAllowlistContainsExpectedCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestExecPolicyAllowsOnlyBoundedRPMVerify(t *testing.T) {
+	policy := NewExecPolicy()
+	if decision := policy.Evaluate("rpm", []string{"--verify", "openssh-server"}, ProfileSensitiveRead); !decision.Allowed {
+		t.Fatalf("expected RPM verification to be allowed: %s", decision.Reason)
+	}
+	for _, args := range [][]string{
+		{"-Va"}, {"--verify", "--all"}, {"--erase", "openssh-server"}, {"--verify", "pkg;id"},
+	} {
+		if decision := policy.Evaluate("rpm", args, ProfileSensitiveRead); decision.Allowed {
+			t.Fatalf("expected RPM args %#v to be denied", args)
+		}
+	}
+}

@@ -80,8 +80,21 @@ func SemanticForTool(toolName string, input map[string]any) ToolSemantic {
 		return openFileInspectorSemantic(input)
 	case "disk_io_checker":
 		return diskIOCheckerSemantic()
+	case "configuration_drift_detector":
+		return configurationDriftSemantic(input)
 	default:
 		return unknownSemantic(toolName)
+	}
+}
+
+func configurationDriftSemantic(input map[string]any) ToolSemantic {
+	packages := packageNamesFromInput(input)
+	return ToolSemantic{
+		OperationType: "verify", ResourceType: "package_configuration",
+		ResourcePath: "rpm:" + strings.Join(packages, ","), PermissionScope: "configuration_drift_read",
+		BoundaryLevel: "sensitive_system_resource", ToolSemantic: "rpm_configuration_drift_verification",
+		RequiresPrivilege: false, AllowedByPolicy: true,
+		PolicyReason: "Read-only RPM verification compares metadata and hashes without returning file contents",
 	}
 }
 

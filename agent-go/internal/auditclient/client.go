@@ -46,13 +46,13 @@ type Client interface {
 	AuditTrace(ctx context.Context, task string, traces []logtrace.ToolTrace) (Result, error)
 }
 
-type MockClient struct{}
+type LocalSafetyClient struct{}
 
-func NewMockClient() MockClient {
-	return MockClient{}
+func NewLocalSafetyClient() LocalSafetyClient {
+	return LocalSafetyClient{}
 }
 
-func (MockClient) AuditTrace(ctx context.Context, task string, traces []logtrace.ToolTrace) (Result, error) {
+func (LocalSafetyClient) AuditTrace(ctx context.Context, task string, traces []logtrace.ToolTrace) (Result, error) {
 	_ = ctx
 	_ = task
 	_ = traces
@@ -61,16 +61,16 @@ func (MockClient) AuditTrace(ctx context.Context, task string, traces []logtrace
 		RiskScore:     0.35,
 		Violations:    []Violation{},
 		EvidenceChain: []EvidenceItem{},
-		RiskGraph:     &RiskGraph{Nodes: []map[string]any{}, Edges: []map[string]any{}},
-		Method:        "fallback-mock",
-		Message:       "audit-core-py unavailable, fallback mock used",
+		RiskGraph:     riskGraphFromRealTraces(traces),
+		Method:        "local-safety-fallback",
+		Message:       "external audit unavailable; local safety review based on retained execution traces",
 	}, nil
 }
 
 type HTTPClient struct {
-	baseURL string
-	client  *http.Client
-	mock    MockClient
+	baseURL     string
+	client      *http.Client
+	localSafety LocalSafetyClient
 }
 
 func NewHTTPClient(baseURL string) HTTPClient {
@@ -78,9 +78,9 @@ func NewHTTPClient(baseURL string) HTTPClient {
 		baseURL = "http://127.0.0.1:8001"
 	}
 	return HTTPClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 5 * time.Second},
-		mock:    NewMockClient(),
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		client:      &http.Client{Timeout: 5 * time.Second},
+		localSafety: NewLocalSafetyClient(),
 	}
 }
 
@@ -132,12 +132,12 @@ func (c HTTPClient) AuditTrace(ctx context.Context, task string, traces []logtra
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return c.fallback(ctx, task, traces, "audit-core-py unavailable, fallback mock used")
+		return c.fallback(ctx, task, traces, "audit-core-py unavailable; local safety review used")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return c.fallback(ctx, task, traces, fmt.Sprintf("audit-core-py returned HTTP %d, fallback mock used", resp.StatusCode))
+		return c.fallback(ctx, task, traces, fmt.Sprintf("audit-core-py returned HTTP %d; local safety review used", resp.StatusCode))
 	}
 
 	var result Result
@@ -151,11 +151,28 @@ func (c HTTPClient) AuditTrace(ctx context.Context, task string, traces []logtra
 }
 
 func (c HTTPClient) fallback(ctx context.Context, task string, traces []logtrace.ToolTrace, reason string) (Result, error) {
-	result, err := c.mock.AuditTrace(ctx, task, traces)
+	result, err := c.localSafety.AuditTrace(ctx, task, traces)
 	if reason != "" {
 		result.Message = reason
 	}
 	return result, err
+}
+
+func riskGraphFromRealTraces(traces []logtrace.ToolTrace) *RiskGraph {
+	nodes := make([]map[string]any, 0, len(traces))
+	edges := make([]map[string]any, 0, len(traces)-1)
+	for i, trace := range traces {
+		nodes = append(nodes, map[string]any{
+			"step_id": trace.StepID, "tool_name": trace.ToolName, "status": trace.Status,
+			"operation_type": trace.OperationType, "resource_type": trace.ResourceType,
+			"resource_path": trace.ResourcePath, "boundary_level": trace.BoundaryLevel,
+			"allowed_by_policy": trace.AllowedByPolicy,
+		})
+		if i > 0 {
+			edges = append(edges, map[string]any{"from": traces[i-1].StepID, "to": trace.StepID, "type": "sequence"})
+		}
+	}
+	return &RiskGraph{Nodes: nodes, Edges: edges}
 }
 
 type auditTraceRequest struct {

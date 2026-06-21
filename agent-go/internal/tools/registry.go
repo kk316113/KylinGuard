@@ -46,6 +46,7 @@ func NewDefaultRegistry() *Registry {
 	registry.RegisterWithMetadata("disk_memory_checker", DiskMemoryChecker, metadata["disk_memory_checker"])
 	registry.RegisterWithMetadata("open_file_inspector", OpenFileInspector, metadata["open_file_inspector"])
 	registry.RegisterWithMetadata("disk_io_checker", DiskIOChecker, metadata["disk_io_checker"])
+	registry.RegisterWithMetadata("configuration_drift_detector", ConfigurationDriftDetector, metadata["configuration_drift_detector"])
 	return registry
 }
 
@@ -252,6 +253,14 @@ func extractExecutionContext(output any) *logtrace.ExecutionContext {
 			return typed.ExecutionContext
 		}
 	case *DiskIOCheckerResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case ConfigurationDriftResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *ConfigurationDriftResult:
 		if typed != nil && typed.ExecutionContext != nil {
 			return typed.ExecutionContext
 		}

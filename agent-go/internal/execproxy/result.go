@@ -1,6 +1,9 @@
 package execproxy
 
-import "time"
+import (
+	"os/user"
+	"time"
+)
 
 // ExecutionProfile classifies the privilege level of a tool execution.
 type ExecutionProfile string
@@ -57,9 +60,21 @@ func NativeExecutionContext(profile ExecutionProfile, method string, reason stri
 		SudoUsed:            false,
 		AllowedByExecPolicy: true,
 		PolicyReason:        reason,
+		EffectiveUser:       effectiveUser(),
 		Platform:            platform(),
 		OutputTruncated:     false,
 	}
+}
+
+func effectiveUser() string {
+	current, err := user.Current()
+	if err != nil || current == nil {
+		return "unknown"
+	}
+	if current.Uid != "" {
+		return current.Username + " (uid=" + current.Uid + ")"
+	}
+	return current.Username
 }
 
 // DeniedContext produces an execution context for exec-policy-denied requests.

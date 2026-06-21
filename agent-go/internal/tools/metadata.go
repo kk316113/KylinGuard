@@ -372,6 +372,18 @@ func DefaultToolMetadata() map[string]ToolMetadata {
 			Enabled:           true,
 			DirectCallAllowed: true,
 		},
+		"configuration_drift_detector": {
+			Name:        "configuration_drift_detector",
+			Description: "Compare installed RPM package files with the trusted RPM database baseline without reading file contents.",
+			Category:    "configuration", Version: ToolProtocolVersion,
+			InputSchema: objectSchema(map[string]any{
+				"packages": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}},
+			}, "packages"),
+			OutputSchema: objectSchema(map[string]any{}), RiskLevel: "medium",
+			PermissionScope: "configuration_drift_read", OperationType: "verify",
+			ResourceType: "package_configuration", BoundaryLevel: "sensitive_system_resource",
+			RequiresPrivilege: false, AllowedByPolicy: true, Dangerous: false, Enabled: true, DirectCallAllowed: true,
+		},
 	}
 }
 

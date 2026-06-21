@@ -41,7 +41,7 @@ func NewServer(deps Dependencies) *mcp.Server {
 		deps.TraceStore = logtrace.NewStore()
 	}
 	if deps.Auditor == nil {
-		deps.Auditor = auditclient.NewMockClient()
+		deps.Auditor = auditclient.NewLocalSafetyClient()
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{

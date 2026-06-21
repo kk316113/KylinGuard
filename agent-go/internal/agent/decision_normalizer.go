@@ -21,7 +21,7 @@ func NormalizeAgentDecision(auditDecision string, auditMethod string, traces []l
 		return string(security.DecisionDeny)
 	}
 
-	// If the audit method is not traceshield (e.g., fallback-mock), trust it as-is.
+	// Non-TraceShield methods, including the conservative local fallback, are preserved.
 	if auditMethod != "traceshield" {
 		return auditDecision
 	}

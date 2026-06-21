@@ -33,7 +33,7 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 		registry = tools.NewDefaultRegistry()
 	}
 	if auditor == nil {
-		auditor = auditclient.NewMockClient()
+		auditor = auditclient.NewLocalSafetyClient()
 	}
 	if traceStore == nil {
 		traceStore = logtrace.NewStore()
@@ -77,6 +77,7 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	if task == "" {
 		return agent.AgentRunResponse{}, errors.New("task is required")
 	}
+	ctx, fallbackOutcome := withFallbackOutcome(ctx)
 
 	// Initialize reasoning trace.
 	rtb := reasoningtrace.NewTraceBuilder("eino", task)
@@ -142,7 +143,7 @@ func (r *Runtime) Run(ctx context.Context, req agent.AgentRunRequest) (agent.Age
 	// Stage 16A+: run-eino uses the Agent Loop for concrete operations tasks.
 	// When a remote LLM is configured it drives the loop; otherwise the
 	// deterministic adapter acts as the fallback generator.
-	return r.runAgentLoop(ctx, task, rtb, requestSpan, intent, route)
+	return r.runAgentLoop(ctx, task, rtb, requestSpan, intent, route, fallbackOutcome)
 }
 
 func (r *Runtime) Name() string {
@@ -626,7 +627,7 @@ func attachRuntimeMetadata(securityReport *report.SecurityReport, metadata Runti
 }
 
 // runAgentLoop executes the Stage 16A Agent Loop for remote LLM.
-func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult, route agent.InteractionRoute) (agent.AgentRunResponse, error) {
+func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningtrace.TraceBuilder, requestSpan *reasoningtrace.ReasoningSpan, intent security.IntentResult, route agent.InteractionRoute, fallbackOutcome *FallbackOutcome) (agent.AgentRunResponse, error) {
 	// Choose the agent-loop generator. A configured remote LLM drives the loop;
 	// otherwise the deterministic adapter acts as the fallback generator so run-eino
 	// always runs an Agent Loop (req 1).
@@ -641,7 +642,7 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 		if llmAdapter == nil {
 			return agent.AgentRunResponse{}, errors.New("remote LLM adapter not available for agent loop")
 		}
-		gen = NewRemoteLLMAgentAdapter(llmAdapter)
+		gen = NewFallbackNextActionGenerator(NewRemoteLLMAgentAdapter(llmAdapter), NewDeterministicAgentAdapter(NewDeterministicChatModelStub(r.registry)), fallbackOutcome)
 	} else {
 		var stub *DeterministicChatModelStub
 		if fb, ok := r.chatModel.(*FallbackChatModelAdapter); ok {
@@ -742,7 +743,7 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 	}
 	securityReport := report.BuildSecurityReport(buildInput)
 	attachRuntimeMetadata(securityReport, metadata, r.registry)
-	r.attachLLMMetadata(securityReport)
+	r.attachLLMMetadata(securityReport, fallbackOutcome)
 
 	resp := agent.AgentRunResponse{
 		Task:               task,
@@ -828,17 +829,17 @@ func aggregateAuditFromSteps(steps []agentloop.AgentStep, intent security.Intent
 }
 
 // attachLLMMetadata injects remote LLM execution metadata into the security report.
-func (r *Runtime) attachLLMMetadata(securityReport *report.SecurityReport) {
+func (r *Runtime) attachLLMMetadata(securityReport *report.SecurityReport, outcome *FallbackOutcome) {
 	if securityReport == nil || securityReport.AuditMetadata == nil {
 		return
 	}
-	fb, ok := r.chatModel.(*FallbackChatModelAdapter)
+	_, ok := r.chatModel.(*FallbackChatModelAdapter)
 	if !ok {
 		securityReport.AuditMetadata["remote_llm_used"] = false
 		securityReport.AuditMetadata["fallback_used"] = false
 		return
 	}
-	used, reason := fb.FallbackInfo()
+	used, reason := outcome.Info()
 	isRemote := r.config.LLMEnabled && r.config.LLMProvider != "deterministic"
 	securityReport.AuditMetadata["remote_llm_used"] = isRemote && !used
 	if !isRemote {

@@ -101,6 +101,7 @@ func (e *Executor) Execute(ctx context.Context, spec CommandSpec) (ExecutionResu
 		SudoUsed:            false,
 		AllowedByExecPolicy: true,
 		PolicyReason:        decision.Reason,
+		EffectiveUser:       effectiveUser(),
 		Platform:            platform(),
 		OutputTruncated:     false,
 	}

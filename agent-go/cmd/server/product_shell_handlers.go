@@ -179,6 +179,9 @@ func buildCapabilities(registry *tools.Registry) capabilitiesResponse {
 	toolMetadata := registry.ListTools()
 	available := make([]capabilityTool, 0, len(toolMetadata))
 	for _, meta := range toolMetadata {
+		if !registry.IsToolEnabledForDirectCall(meta.Name) {
+			continue
+		}
 		available = append(available, capabilityTool{
 			ToolName:          meta.Name,
 			DisplayName:       meta.Name,
@@ -187,7 +190,7 @@ func buildCapabilities(registry *tools.Registry) capabilitiesResponse {
 			ResourceType:      meta.ResourceType,
 			BoundaryLevel:     meta.BoundaryLevel,
 			RequiresPrivilege: meta.RequiresPrivilege,
-			ReadOnly:          meta.OperationType == "read" || meta.OperationType == "inspect" || meta.OperationType == "analyze",
+			ReadOnly:          meta.OperationType == "read" || meta.OperationType == "inspect" || meta.OperationType == "analyze" || meta.OperationType == "verify",
 			PolicyControlled:  true,
 			TraceShieldMapped: meta.OperationType != "" && meta.ResourceType != "" && meta.BoundaryLevel != "",
 			Enabled:           meta.Enabled,

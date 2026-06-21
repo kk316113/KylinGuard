@@ -125,6 +125,26 @@ type DeterministicAgentAdapter struct {
 	stub *DeterministicChatModelStub
 }
 
+type FallbackNextActionGenerator struct {
+	primary  agentloop.NextActionGenerator
+	fallback agentloop.NextActionGenerator
+	outcome  *FallbackOutcome
+}
+
+func NewFallbackNextActionGenerator(primary, fallback agentloop.NextActionGenerator, outcome *FallbackOutcome) *FallbackNextActionGenerator {
+	return &FallbackNextActionGenerator{primary: primary, fallback: fallback, outcome: outcome}
+}
+
+func (g *FallbackNextActionGenerator) GenerateNextAction(ctx context.Context, req agentloop.NextActionRequest) (*agentloop.NextAction, error) {
+	action, err := g.primary.GenerateNextAction(ctx, req)
+	if err == nil {
+		g.outcome.record(false, "")
+		return action, nil
+	}
+	g.outcome.record(true, fmt.Sprintf("primary agent generator failed: %v; falling back to deterministic stub", err))
+	return g.fallback.GenerateNextAction(ctx, req)
+}
+
 func NewDeterministicAgentAdapter(stub *DeterministicChatModelStub) *DeterministicAgentAdapter {
 	return &DeterministicAgentAdapter{stub: stub}
 }

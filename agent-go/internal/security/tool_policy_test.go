@@ -137,6 +137,25 @@ func TestToolPolicyValidatesProcessStateAndDiskIOSample(t *testing.T) {
 	assertToolPolicyDeny(t, NewToolPolicy().Evaluate("disk_io_checker", diskMetadata, true, map[string]any{"sample_ms": "slow"}))
 }
 
+func TestToolPolicyValidatesConfigurationDriftPackages(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	metadata, ok := registry.GetTool("configuration_drift_detector")
+	if !ok {
+		t.Fatal("missing configuration_drift_detector metadata")
+	}
+	allowed := NewToolPolicy().Evaluate("configuration_drift_detector", metadata, true, map[string]any{
+		"packages": []any{"openssh-server", "systemd"},
+	})
+	if allowed.Decision != "allow" {
+		t.Fatalf("expected safe packages to be allowed: %#v", allowed)
+	}
+	for _, packages := range []any{
+		[]any{}, []any{"--all"}, []any{"pkg*"}, []any{"a", "b", "c", "d", "e", "f"}, []any{"ok", 1},
+	} {
+		assertToolPolicyDeny(t, NewToolPolicy().Evaluate("configuration_drift_detector", metadata, true, map[string]any{"packages": packages}))
+	}
+}
+
 func assertToolPolicyDeny(t *testing.T, decision ToolPolicyDecision) {
 	t.Helper()
 	if decision.Decision != "deny" {
