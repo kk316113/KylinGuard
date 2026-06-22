@@ -56,6 +56,18 @@ func TestLoadWithoutAPIKeyKeepsDeterministicMode(t *testing.T) {
 	}
 }
 
+func TestLoadTrimsRemoteLLMEnvironmentValues(t *testing.T) {
+	clearLLMEnvironment(t)
+	t.Setenv("OPENAI_COMPATIBLE_API_KEY", "  test-key\r\n")
+	t.Setenv("OPENAI_COMPATIBLE_BASE_URL", " https://api.deepseek.com/ \n")
+	t.Setenv("OPENAI_COMPATIBLE_MODEL", " deepseek-v4-flash ")
+
+	cfg := Load()
+	if cfg.EinoLLMAPIKey != "test-key" || cfg.EinoLLMEndpoint != "https://api.deepseek.com/" || cfg.EinoLLMModel != "deepseek-v4-flash" {
+		t.Fatalf("expected trimmed LLM configuration, got key length=%d endpoint=%q model=%q", len(cfg.EinoLLMAPIKey), cfg.EinoLLMEndpoint, cfg.EinoLLMModel)
+	}
+}
+
 func clearLLMEnvironment(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{

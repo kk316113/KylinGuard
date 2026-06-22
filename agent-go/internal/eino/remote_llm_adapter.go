@@ -42,6 +42,10 @@ type LLMResponse struct {
 // It validates the config: if LLM is enabled but API key or endpoint is missing,
 // the adapter will still be created but GenerateToolCalls will return a clear error.
 func NewRemoteLLMAdapter(config ChatModelAdapterConfig, registry *tools.Registry) *RemoteLLMAdapter {
+	config.Provider = strings.TrimSpace(config.Provider)
+	config.Endpoint = strings.TrimSpace(config.Endpoint)
+	config.Model = strings.TrimSpace(config.Model)
+	config.APIKey = strings.TrimSpace(config.APIKey)
 	timeout := config.Timeout
 	if timeout <= 0 {
 		timeout = int(defaultLLMTimeout.Seconds())
@@ -62,6 +66,9 @@ func ValidateLLMConfig(provider string, endpoint string, apiKey string) string {
 	if apiKey == "" {
 		return "EINO_LLM_API_KEY is not set"
 	}
+	if !validBearerCredential(apiKey) {
+		return "LLM API key contains characters that are invalid in an Authorization header"
+	}
 	if provider == "deepseek" && endpoint == "" {
 		return "EINO_LLM_ENDPOINT is required for deepseek provider"
 	}
@@ -69,6 +76,15 @@ func ValidateLLMConfig(provider string, endpoint string, apiKey string) string {
 		return "EINO_LLM_ENDPOINT is required for openai_compatible provider"
 	}
 	return ""
+}
+
+func validBearerCredential(value string) bool {
+	for _, char := range value {
+		if char < 0x21 || char > 0x7e {
+			return false
+		}
+	}
+	return value != ""
 }
 
 // Name returns the adapter identifier.

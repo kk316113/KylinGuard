@@ -566,6 +566,14 @@ func TestValidateLLMConfigValid(t *testing.T) {
 	}
 }
 
+func TestValidateLLMConfigRejectsInvalidAuthorizationCharacters(t *testing.T) {
+	for _, key := range []string{"sk-test\nvalue", "sk-test value", "密钥"} {
+		if reason := ValidateLLMConfig("openai_compatible", "https://api.openai.com/v1", key); reason == "" {
+			t.Fatalf("expected invalid key characters to be rejected")
+		}
+	}
+}
+
 // --- Stage 13B: GenerateToolCalls fails gracefully with missing config ---
 
 func TestRemoteLLMAdapterFailsGracefullyOnMissingConfig(t *testing.T) {
