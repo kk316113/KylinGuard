@@ -29,7 +29,8 @@ ProtectControlGroups=yes
 ProtectClock=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
+# CloudWeGo Eino uses Sonic's runtime code loader on amd64. W^X cannot be
+# enforced for this process without crashing during initialization.
 RestrictRealtime=yes
 RestrictNamespaces=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
