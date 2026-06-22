@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"kylin-guard-agent/agent-go/internal/agent"
+	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
@@ -41,6 +42,10 @@ type LLMResponse struct {
 // It validates the config: if LLM is enabled but API key or endpoint is missing,
 // the adapter will still be created but GenerateToolCalls will return a clear error.
 func NewRemoteLLMAdapter(config ChatModelAdapterConfig, registry *tools.Registry) *RemoteLLMAdapter {
+	config.Provider = strings.TrimSpace(config.Provider)
+	config.Endpoint = strings.TrimSpace(config.Endpoint)
+	config.Model = strings.TrimSpace(config.Model)
+	config.APIKey = strings.TrimSpace(config.APIKey)
 	timeout := config.Timeout
 	if timeout <= 0 {
 		timeout = int(defaultLLMTimeout.Seconds())
@@ -61,6 +66,9 @@ func ValidateLLMConfig(provider string, endpoint string, apiKey string) string {
 	if apiKey == "" {
 		return "EINO_LLM_API_KEY is not set"
 	}
+	if !validBearerCredential(apiKey) {
+		return "LLM API key contains characters that are invalid in an Authorization header"
+	}
 	if provider == "deepseek" && endpoint == "" {
 		return "EINO_LLM_ENDPOINT is required for deepseek provider"
 	}
@@ -68,6 +76,15 @@ func ValidateLLMConfig(provider string, endpoint string, apiKey string) string {
 		return "EINO_LLM_ENDPOINT is required for openai_compatible provider"
 	}
 	return ""
+}
+
+func validBearerCredential(value string) bool {
+	for _, char := range value {
+		if char < 0x21 || char > 0x7e {
+			return false
+		}
+	}
+	return value != ""
 }
 
 // Name returns the adapter identifier.
@@ -85,6 +102,9 @@ func (a *RemoteLLMAdapter) Provider() string {
 
 // GenerateToolCalls calls the remote LLM API and returns structured tool calls.
 func (a *RemoteLLMAdapter) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
+	if intent := security.NewIntentGuard().Evaluate(task); intent.Decision == security.DecisionDeny {
+		return nil, agent.Plan{}, fmt.Errorf("remote LLM request denied by intent guard: %s", intent.Reason)
+	}
 	// Validate config before making any request.
 	if reason := ValidateLLMConfig(a.config.Provider, a.config.Endpoint, a.config.APIKey); reason != "" {
 		return nil, agent.Plan{}, fmt.Errorf("remote LLM config invalid: %s", reason)
@@ -111,26 +131,9 @@ func (a *RemoteLLMAdapter) GenerateToolCalls(ctx context.Context, task string, t
 		return nil, agent.Plan{}, fmt.Errorf("failed to marshal LLM request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	respBody, err := a.doHTTPRequestWithRetry(ctx, endpoint, payload, 2)
 	if err != nil {
-		return nil, agent.Plan{}, fmt.Errorf("failed to create LLM request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+a.config.APIKey)
-
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return nil, agent.Plan{}, fmt.Errorf("LLM API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, agent.Plan{}, fmt.Errorf("failed to read LLM response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, agent.Plan{}, fmt.Errorf("LLM API returned HTTP %d: %s", resp.StatusCode, truncateLLMString(string(respBody), 200))
+		return nil, agent.Plan{}, err
 	}
 
 	return a.parseLLMResponse(respBody, task)
@@ -251,23 +254,9 @@ func (a *RemoteLLMAdapter) callChatCompletions(ctx context.Context, messages []m
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal LLM request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	respBody, err := a.doHTTPRequestWithRetry(ctx, endpoint, payload, 2)
 	if err != nil {
-		return "", fmt.Errorf("failed to create LLM request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+a.config.APIKey)
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("LLM API call failed: %w", err)
-	}
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read LLM response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("LLM API returned HTTP %d: %s", resp.StatusCode, truncateLLMString(string(respBody), 200))
+		return "", err
 	}
 	var openAIResp struct {
 		Choices []struct {
@@ -283,6 +272,76 @@ func (a *RemoteLLMAdapter) callChatCompletions(ctx context.Context, messages []m
 		return "", fmt.Errorf("LLM returned zero choices")
 	}
 	return strings.TrimSpace(openAIResp.Choices[0].Message.Content), nil
+}
+
+// doHTTPRequestWithRetry sends an HTTP POST request with retry logic for transient failures.
+// maxRetries is the maximum number of additional attempts (so total attempts = maxRetries + 1).
+// Retries on: network errors, HTTP 429 (rate limit), HTTP 502/503/504 (server errors).
+// Does NOT retry on: 4xx client errors (except 429), context cancellation.
+func (a *RemoteLLMAdapter) doHTTPRequestWithRetry(ctx context.Context, endpoint string, payload []byte, maxRetries int) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 1s, 2s, 4s, ...
+			delay := time.Duration(1<<uint(attempt-1)) * time.Second
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled during retry backoff: %w", ctx.Err())
+			case <-time.After(delay):
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create LLM request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+a.config.APIKey)
+
+		resp, err := a.client.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("LLM API call cancelled: %w", ctx.Err())
+			}
+			lastErr = fmt.Errorf("LLM API call failed: %w", err)
+			continue
+		}
+
+		respBody, err := readLimitedLLMBody(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		if isRetryableLLMStatus(resp.StatusCode) {
+			lastErr = fmt.Errorf("LLM API returned HTTP %d (attempt %d/%d): %s", resp.StatusCode, attempt+1, maxRetries+1, truncateLLMString(string(respBody), 200))
+			continue
+		}
+
+		// Non-retryable HTTP error (4xx except 429).
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("LLM API returned HTTP %d: %s", resp.StatusCode, truncateLLMString(string(respBody), 200))
+		}
+
+		return respBody, nil
+	}
+	return nil, fmt.Errorf("LLM API call failed after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+func isRetryableLLMStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
+}
+
+func readLimitedLLMBody(body io.Reader) ([]byte, error) {
+	const maxBody = 1 << 20
+	data, err := io.ReadAll(io.LimitReader(body, maxBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read LLM response: %w", err)
+	}
+	if len(data) > maxBody {
+		return nil, fmt.Errorf("LLM response exceeds %d bytes", maxBody)
+	}
+	return data, nil
 }
 
 func (a *RemoteLLMAdapter) resolveEndpoint() string {
@@ -309,8 +368,9 @@ func (a *RemoteLLMAdapter) resolveEndpoint() string {
 }
 
 func truncateLLMString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return string(runes[:maxLen]) + "..."
 }

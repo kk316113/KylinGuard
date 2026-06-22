@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type Config struct {
 	Addr               string
@@ -57,8 +60,8 @@ func Load() Config {
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
-		if value != "" {
-			return value
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
 		}
 	}
 	return ""

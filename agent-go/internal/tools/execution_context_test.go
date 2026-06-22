@@ -32,6 +32,9 @@ func assertExecutionContext(t *testing.T, trace logtrace.ToolTrace, expectProfil
 	if ec.PolicyReason == "" {
 		t.Fatalf("%s: expected policy_reason to be non-empty", trace.ToolName)
 	}
+	if ec.EffectiveUser == "" {
+		t.Fatalf("%s: expected effective_user to be recorded", trace.ToolName)
+	}
 	if ec.AllowedByExecPolicy != true {
 		t.Fatalf("%s: expected allowed_by_exec_policy=true, got %v", trace.ToolName, ec.AllowedByExecPolicy)
 	}

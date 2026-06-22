@@ -16,6 +16,9 @@ KylinGuard has completed:
 - Stage 17A-1: Product Shell Implementation - IN PROGRESS
 - Stage 17A-2: User-Facing Agent Experience Fix - IN PROGRESS
 - Stage 17A-3: Semantic Interaction Router - IN PROGRESS
+- Stage 18A: Competition A2 Standard MCP Server - IN PROGRESS
+- Stage 18B: Prompt Injection and Unauthorized Mutation Guardrails - IN PROGRESS
+- Stage 18C: A2 Deep OS Sensing Tools - IN PROGRESS
 - Real DeepSeek Smoke Test - PASS
 - Real DeepSeek natural-language acceptance on Kylin VM - PASS
 
@@ -410,13 +413,160 @@ configured model identifier=deepseek-v4-flash
 No real API key stored or printed
 ```
 
+## Stage 18A Competition A2 Standard MCP Server
+
+The official 2026 China Software Cup A2 requirements have been mapped in:
+
+```text
+docs/product/COMPETITION_A2_DELIVERY_PLAN.md
+```
+
+Local implementation now provides an official MCP Go SDK Streamable HTTP endpoint at `/mcp`:
+
+```text
+MCP initialize / tools/list / tools/call
+-> registered direct-call tools only
+-> JSON Schema validation
+-> Tool Policy
+-> existing Tool Registry / Exec Proxy
+-> tool trace
+-> TraceShield audit client
+```
+
+`safe_shell` and other non-direct-call tools are not advertised. Policy-denied MCP calls produce a denied trace and do not invoke the tool handler.
+
+Verification completed on the Windows development host:
+
+```text
+go test ./... - PASS
+official MCP in-memory client list/call tests - PASS
+official MCP Streamable HTTP negotiation/list test - PASS
+prompt-injected process_inspector call denied before handler execution - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+```
+
+Pending before Stage 18A PASS:
+
+```text
+Run the loong64 binary on the provided Kylin Advanced Server OS V11 VM
+Verify MCP initialize / tools/list / tools/call on that VM
+Verify real OS observations and audit-core integration on that VM
+```
+
+Kylin Advanced Server V11 x86_64 runtime verification completed on 2026-06-21:
+
+```text
+OS: Kylin Linux Advanced Server V11 (Swan25)
+architecture: x86_64
+runtime account: lihuan (uid=1000, no sudo used)
+MCP initialize: PASS, protocolVersion=2025-06-18
+MCP tools/list: PASS, 12 tools, safe_shell absent
+MCP allowed disk_io_checker call through Exec Proxy: PASS
+MCP sensitive-path denial: PASS, isError=true, decision=deny, method=tool_policy
+```
+
+The runtime check exposed and fixed an MCP audit precedence defect: a Tool Policy denial could retain the fallback auditor's `review` decision. Policy denial is now authoritative and includes tool-policy violation/evidence fields. Full Go tests and Kylin runtime retest pass.
+
+The first least-privilege deployment scaffold is also present:
+
+```text
+deploy/kylin/install_agent_service.sh
+deploy/kylin/systemd/kylin-guard-agent.service
+```
+
+It installs the backend under a dedicated `kylinguard` system account, binds to loopback by default, removes Linux capabilities, forbids privilege escalation, and enables systemd filesystem/device/kernel hardening. Git Bash `bash -n` passes locally; the unit still requires `systemd-analyze verify` and runtime tool checks on Kylin V11 before it can be marked PASS.
+
+## Stage 18B Prompt Injection and Mutation Guardrails
+
+The first competition-focused anti-injection hardening pass is implemented:
+
+```text
+direct prompt injection -> Intent Guard deny with threat_type=prompt_injection
+prior chat / tool-observation injection -> neutralized in model-facing context
+original observation -> retained in audit trace
+unknown tool arguments -> Tool Policy deny
+nested shell metacharacters -> Tool Policy deny
+safe_shell -> absent from LLM and MCP tool definitions
+systemctl -> explicit read-only actions only
+cat -> /etc/os-release and selected /proc facts only
+```
+
+Verification completed locally:
+
+```text
+go test ./... - PASS
+direct prompt injection produces decision=deny, run_status=blocked, tool_trace=0 - PASS
+indirect observation/history injection neutralization tests - PASS
+systemctl mutation and sensitive cat path denial tests - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+bash -n scripts/linux/test_security_guardrails.sh - PASS
+local HTTP guardrail acceptance (4 attack classes) - PASS
+```
+
+Kylin V11 x86_64 runtime execution is now PASS for all four guardrail attack classes. LoongArch repetition remains required before final competition acceptance.
+
+## Stage 18C A2 Deep OS Sensing Tools
+
+Three general-purpose read-only sensing capabilities have been added to the shared Tool Registry, so they are available to both the LLM Agent Loop and the standard MCP server without fixed scenario routing:
+
+```text
+open_file_inspector
+  -> bounded lsof field output
+  -> approved operational path or numeric PID only
+  -> file contents are never read
+
+process_inspector
+  -> ALL / RUNNING / SLEEPING / ZOMBIE / STOPPED filters
+  -> complete zombie count even when displayed records are limited
+  -> low / medium / high zombie accumulation risk
+
+disk_io_checker
+  -> bounded two-sample /proc/diskstats reader
+  -> IOPS, bytes/sec, utilization, in-progress I/O, weighted I/O time
+  -> physical whole-disk filtering for sd/vd/xvd/hd/nvme/mmcblk names
+```
+
+Security constraints:
+
+```text
+lsof command arguments are independently enforced by Exec Proxy
+/etc, /root, /home, /proc and relative path inspection are denied
+sample interval is bounded to 100-2000 ms
+safe_shell remains absent from Agent and MCP tool definitions
+```
+
+Verification completed locally:
+
+```text
+go test ./... - PASS
+MCP default tool discovery for all three sensing tools - PASS
+lsof parser, path policy and Exec Proxy argument tests - PASS
+ps zombie parser/filter/risk tests - PASS
+diskstats parser/delta/risk tests - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+bash -n scripts/linux/test_os_sensing_tools.sh - PASS
+```
+
+The Windows host has no Docker or Linux runtime, so runtime verification was executed over SSH on the provided Kylin V11 VM with `scripts/linux/test_os_sensing_tools.sh`.
+
+Kylin V11 x86_64 runtime execution is now PASS:
+
+```text
+real lsof holder PID detection - PASS
+zombie process sensing - PASS
+live /proc/diskstats sampling (sda) - PASS
+sensitive lsof path denial - PASS
+process identity - uid=1000 lihuan, no shell/sudo execution in tool traces
+temporary validation service stopped - PASS
+```
+
+The deterministic no-key Agent Loop also completed a natural-language performance task with `agent_mode=agent_loop`, one real `os_info` trace, per-step aggregate audit, and a non-empty final answer. This is fallback-path evidence only; it does not replace the existing or future real DeepSeek multi-step acceptance.
+
 ## Current Next Suggested Work
 
 Priority order:
 
-1. Start backend and frontend locally for browser integration
-2. Manually review the native CopilotSidebar and dashboard synchronization
-3. Rerun frontend smoke on Kylin VM with real DeepSeek
-4. Stage 17B: task history / report export planning
-5. Stage 17: report / PPT / recording / defense script
-6. Stage 18: packaging and final stability
+1. Run MCP, guardrail, OS sensing, and non-root systemd smoke on LoongArch + Kylin V11
+2. Add configuration-drift baselines and read-only drift detection
+3. Add repeatable API/Agent performance benchmarks and report generation
+4. Complete the nine competition submission artifacts and seven-minute demo

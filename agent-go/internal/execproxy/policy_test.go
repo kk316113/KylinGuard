@@ -52,14 +52,66 @@ func TestExecPolicyAllowsSystemctlReadOnlyActions(t *testing.T) {
 		}
 	}
 
-	// systemctl --version and --no-pager are safe args.
+	// systemctl --version is a safe standalone action.
 	decision := policy.Evaluate("systemctl", []string{"--version"}, ProfileLowRead)
 	if !decision.Allowed {
 		t.Fatalf("expected systemctl --version to be allowed")
 	}
-	decision = policy.Evaluate("systemctl", []string{"status", "sshd", "--no-pager"}, ProfileLowRead)
+	decision = policy.Evaluate("systemctl", []string{"status", "sshd", "--no-pager", "-n", "20"}, ProfileLowRead)
 	if !decision.Allowed {
-		t.Fatalf("expected systemctl status sshd --no-pager to be allowed")
+		t.Fatalf("expected read-only systemctl status arguments to be allowed: %s", decision.Reason)
+	}
+}
+
+func TestExecPolicyDeniesSystemctlMutations(t *testing.T) {
+	policy := NewExecPolicy()
+	for _, action := range []string{"start", "stop", "restart", "enable", "disable", "mask", "daemon-reload", "kill"} {
+		decision := policy.Evaluate("systemctl", []string{action, "sshd"}, ProfileLowRead)
+		if decision.Allowed {
+			t.Fatalf("expected systemctl %s to be denied", action)
+		}
+		if !strings.Contains(decision.Reason, "not read-only") {
+			t.Fatalf("unexpected denial for systemctl %s: %s", action, decision.Reason)
+		}
+	}
+}
+
+func TestExecPolicyRestrictsCatToApprovedSystemFacts(t *testing.T) {
+	policy := NewExecPolicy()
+	for _, path := range []string{"/etc/os-release", "/proc/loadavg", "/proc/meminfo", "/proc/uptime"} {
+		if decision := policy.Evaluate("cat", []string{path}, ProfilePublicRead); !decision.Allowed {
+			t.Fatalf("expected approved cat path %s: %s", path, decision.Reason)
+		}
+	}
+	for _, path := range []string{"/etc/shadow", "/root/.ssh/id_rsa", "/etc/ssh/sshd_config", "/dev/zero"} {
+		if decision := policy.Evaluate("cat", []string{path}, ProfileSensitiveRead); decision.Allowed {
+			t.Fatalf("expected sensitive cat path %s to be denied", path)
+		}
+	}
+}
+
+func TestExecPolicyRestrictsLsofArguments(t *testing.T) {
+	policy := NewExecPolicy()
+	allowed := [][]string{
+		{"-nP", "-F", "pcuftn", "--", "/var/log/messages"},
+		{"-nP", "-F", "pcuftn", "--", "/tmp/demo.log"},
+		{"-nP", "-F", "pcuftn", "-p", "123"},
+	}
+	for _, args := range allowed {
+		if decision := policy.Evaluate("lsof", args, ProfileSensitiveRead); !decision.Allowed {
+			t.Fatalf("expected lsof args %v to be allowed: %s", args, decision.Reason)
+		}
+	}
+	denied := [][]string{
+		{"/etc/shadow"},
+		{"-nP", "-F", "pcuftn", "--", "/etc/shadow"},
+		{"-nP", "-F", "pcuftn", "-p", "0"},
+		{"-nP", "-F", "pcuftn", "-p", "1;id"},
+	}
+	for _, args := range denied {
+		if decision := policy.Evaluate("lsof", args, ProfileSensitiveRead); decision.Allowed {
+			t.Fatalf("expected lsof args %v to be denied", args)
+		}
 	}
 }
 
@@ -180,12 +232,16 @@ func TestExecPolicyDeniesShellInjectionArgs(t *testing.T) {
 func TestExecPolicyNormalizesMixedCaseCommand(t *testing.T) {
 	policy := NewExecPolicy()
 
-	cases := []string{"PS", "Ps", "pS", "Systemctl", "JOURNALCTL", "NetStat"}
+	cases := []string{"PS", "Ps", "pS", "JOURNALCTL", "NetStat"}
 	for _, cmd := range cases {
 		decision := policy.Evaluate(cmd, []string{}, ProfileLowRead)
 		if !decision.Allowed {
 			t.Fatalf("expected mixed-case %q to be allowed after normalization", cmd)
 		}
+	}
+	decision := policy.Evaluate("Systemctl", []string{"status", "sshd"}, ProfileLowRead)
+	if !decision.Allowed {
+		t.Fatalf("expected mixed-case Systemctl with read-only action to be allowed: %s", decision.Reason)
 	}
 }
 
@@ -219,10 +275,24 @@ func TestIsSafeSystemctlArg(t *testing.T) {
 
 func TestCommandAllowlistContainsExpectedCommands(t *testing.T) {
 	allowlist := commandAllowlist()
-	expected := []string{"ps", "ss", "netstat", "journalctl", "df", "uname", "systemctl"}
+	expected := []string{"ps", "ss", "netstat", "journalctl", "df", "uname", "systemctl", "lsof"}
 	for _, cmd := range expected {
 		if !allowlist[cmd] {
 			t.Fatalf("expected %q in command allowlist", cmd)
+		}
+	}
+}
+
+func TestExecPolicyAllowsOnlyBoundedRPMVerify(t *testing.T) {
+	policy := NewExecPolicy()
+	if decision := policy.Evaluate("rpm", []string{"--verify", "openssh-server"}, ProfileSensitiveRead); !decision.Allowed {
+		t.Fatalf("expected RPM verification to be allowed: %s", decision.Reason)
+	}
+	for _, args := range [][]string{
+		{"-Va"}, {"--verify", "--all"}, {"--erase", "openssh-server"}, {"--verify", "pkg;id"},
+	} {
+		if decision := policy.Evaluate("rpm", args, ProfileSensitiveRead); decision.Allowed {
+			t.Fatalf("expected RPM args %#v to be denied", args)
 		}
 	}
 }

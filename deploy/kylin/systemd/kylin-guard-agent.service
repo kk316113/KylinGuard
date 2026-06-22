@@ -1,0 +1,49 @@
+[Unit]
+Description=KylinGuard Security-Aware Operations Agent
+After=network-online.target kylin-guard-audit.service
+Wants=network-online.target kylin-guard-audit.service
+
+[Service]
+Type=simple
+User=kylinguard
+Group=kylinguard
+WorkingDirectory=/opt/kylin-guard
+ExecStart=/opt/kylin-guard/bin/kylin-guard-agent
+EnvironmentFile=-/etc/kylin-guard/agent.env
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=15s
+
+# The Agent runs without root, sudo, ambient capabilities, or writable system paths.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# CloudWeGo Eino uses Sonic's runtime code loader on amd64. W^X cannot be
+# enforced for this process without crashing during initialization.
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+UMask=0077
+
+RuntimeDirectory=kylinguard
+RuntimeDirectoryMode=0700
+StateDirectory=kylinguard
+StateDirectoryMode=0700
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

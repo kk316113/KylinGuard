@@ -84,7 +84,7 @@ func NewRuntime(registry *tools.Registry, auditor auditclient.Client, traceStore
 		registry = tools.NewDefaultRegistry()
 	}
 	if auditor == nil {
-		auditor = auditclient.NewMockClient()
+		auditor = auditclient.NewLocalSafetyClient()
 	}
 	if traceStore == nil {
 		traceStore = logtrace.NewStore()
@@ -114,7 +114,16 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 	intentGuardSpan := rtb.StartSpan(requestSpan.SpanID, reasoningtrace.SpanIntentGuard, "intent_guard evaluate")
 	rtb.SetAttr(intentGuardSpan.SpanID, "decision", string(intent.Decision))
 	if intent.Decision == security.DecisionDeny {
-		rtb.SetAttr(intentGuardSpan.SpanID, "blocked_reason", "dangerous task denied before tool execution")
+		threatType := intent.ThreatType
+		if threatType == "" {
+			threatType = security.ThreatTypeDangerousIntent
+		}
+		denialMessage := "dangerous task denied before tool execution"
+		if threatType == security.ThreatTypePromptInjection {
+			denialMessage = "prompt injection attempt denied before tool execution"
+		}
+		rtb.SetAttr(intentGuardSpan.SpanID, "blocked_reason", denialMessage)
+		rtb.SetAttr(intentGuardSpan.SpanID, "threat_type", threatType)
 		rtb.EndSpan(intentGuardSpan.SpanID, "deny")
 		rtb.EndSpan(requestSpan.SpanID, "deny")
 		rtb.Finish()
@@ -124,16 +133,16 @@ func (r *Runtime) Run(ctx context.Context, req RunRequest) (RunResponse, error) 
 			RiskScore: 1.0,
 			Violations: []auditclient.Violation{
 				{
-					Type:     "dangerous_intent",
+					Type:     threatType,
 					Severity: "high",
-					Message:  "dangerous task denied before tool execution",
+					Message:  denialMessage,
 					StepID:   "",
 				},
 			},
 			EvidenceChain: []auditclient.EvidenceItem{},
 			RiskGraph:     nil,
 			Method:        "intent_guard",
-			Message:       "dangerous task denied before tool execution",
+			Message:       denialMessage,
 		}
 		securityReport := report.BuildSecurityReport(report.BuildInput{
 			Task:        task,

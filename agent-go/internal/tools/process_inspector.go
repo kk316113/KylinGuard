@@ -16,6 +16,8 @@ import (
 type ProcessInspectorResult struct {
 	Processes        []ProcessInfo              `json:"processes"`
 	Count            int                        `json:"count"`
+	ZombieCount      int                        `json:"zombie_count"`
+	RiskLevel        string                     `json:"risk_level"`
 	Source           string                     `json:"source"`
 	Message          string                     `json:"message"`
 	Timestamp        time.Time                  `json:"timestamp"`
@@ -42,6 +44,7 @@ func SafeProcessName(name string) bool {
 // ProcessInspector inspects running processes, optionally filtered by name.
 func ProcessInspector(ctx context.Context, input map[string]any) (any, string, string, error) {
 	name := strings.TrimSpace(stringValue(input, "name", ""))
+	state := strings.ToUpper(strings.TrimSpace(stringValue(input, "state", "ALL")))
 	limit := intValue(input, "limit", 20)
 	if limit < 1 {
 		limit = 1
@@ -65,7 +68,7 @@ func ProcessInspector(ctx context.Context, input map[string]any) (any, string, s
 
 	switch runtime.GOOS {
 	case "linux":
-		return processInspectorLinux(ctx, name, limit, now)
+		return processInspectorLinux(ctx, name, state, limit, now)
 	case "windows":
 		return processInspectorWindows(ctx, name, limit, now)
 	default:
@@ -82,7 +85,7 @@ func ProcessInspector(ctx context.Context, input map[string]any) (any, string, s
 	}
 }
 
-func processInspectorLinux(ctx context.Context, name string, limit int, now time.Time) (any, string, string, error) {
+func processInspectorLinux(ctx context.Context, name string, state string, limit int, now time.Time) (any, string, string, error) {
 	exec := execproxy.NewExecutor()
 	result, execErr := exec.Execute(ctx, execproxy.CommandSpec{
 		ToolName: "process_inspector",
@@ -105,13 +108,39 @@ func processInspectorLinux(ctx context.Context, name string, limit int, now time
 		return r, "process_inspector: ps aux failed", "review", execErr
 	}
 
-	lines := strings.Split(result.Stdout, "\n")
+	processes, zombieCount := parsePSAux(result.Stdout, name, state, limit)
+	riskLevel := processRiskLevel(zombieCount)
+
+	summary := fmt.Sprintf("process_inspector found %d processes; zombies=%d risk=%s", len(processes), zombieCount, riskLevel)
+	if name != "" {
+		summary = fmt.Sprintf("process_inspector found %d processes matching %q; zombies=%d risk=%s", len(processes), name, zombieCount, riskLevel)
+	}
+	if state != "" && state != "ALL" {
+		summary = fmt.Sprintf("process_inspector found %d processes in state %s; zombies=%d risk=%s", len(processes), state, zombieCount, riskLevel)
+	}
+
+	r := ProcessInspectorResult{
+		Processes:        processes,
+		Count:            len(processes),
+		ZombieCount:      zombieCount,
+		RiskLevel:        riskLevel,
+		Source:           "ps",
+		Message:          "process inspection completed",
+		Timestamp:        now,
+		ExecutionContext: ecPtr(result.Context),
+	}
+	return r, summary, riskLevel, nil
+}
+
+func parsePSAux(output string, name string, stateFilter string, limit int) ([]ProcessInfo, int) {
+	lines := strings.Split(output, "\n")
 	startIdx := 0
 	if len(lines) > 0 && strings.HasPrefix(strings.ToLower(lines[0]), "user") {
 		startIdx = 1
 	}
 
 	processes := make([]ProcessInfo, 0, limit)
+	zombieCount := 0
 	for _, line := range lines[startIdx:] {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -142,31 +171,52 @@ func processInspectorLinux(ctx context.Context, name string, limit int, now time
 		if len(fields) > 7 {
 			state = fields[7]
 		}
+		if strings.HasPrefix(strings.ToUpper(state), "Z") {
+			zombieCount++
+		}
+		if !matchesProcessState(state, stateFilter) {
+			continue
+		}
 		cmd := procName
 		if len(fields) > 10 {
 			cmd = strings.Join(fields[10:], " ")
 		}
 
-		processes = append(processes, ProcessInfo{PID: pid, Name: procName, User: user, State: state, Cmd: cmd})
-		if len(processes) >= limit {
-			break
+		if len(processes) < limit {
+			processes = append(processes, ProcessInfo{PID: pid, Name: procName, User: user, State: state, Cmd: cmd})
 		}
 	}
 
-	summary := fmt.Sprintf("process_inspector found %d processes", len(processes))
-	if name != "" {
-		summary = fmt.Sprintf("process_inspector found %d processes matching %q", len(processes), name)
-	}
+	return processes, zombieCount
+}
 
-	r := ProcessInspectorResult{
-		Processes:        processes,
-		Count:            len(processes),
-		Source:           "ps",
-		Message:          "process inspection completed",
-		Timestamp:        now,
-		ExecutionContext: ecPtr(result.Context),
+func matchesProcessState(state string, filter string) bool {
+	if filter == "" || filter == "ALL" {
+		return true
 	}
-	return r, summary, "low", nil
+	state = strings.ToUpper(state)
+	switch filter {
+	case "RUNNING":
+		return strings.HasPrefix(state, "R")
+	case "SLEEPING":
+		return strings.HasPrefix(state, "S") || strings.HasPrefix(state, "I")
+	case "ZOMBIE":
+		return strings.HasPrefix(state, "Z")
+	case "STOPPED":
+		return strings.HasPrefix(state, "T")
+	default:
+		return false
+	}
+}
+
+func processRiskLevel(zombieCount int) string {
+	if zombieCount >= 5 {
+		return "high"
+	}
+	if zombieCount > 0 {
+		return "medium"
+	}
+	return "low"
 }
 
 func processInspectorWindows(ctx context.Context, name string, limit int, now time.Time) (any, string, string, error) {
@@ -229,6 +279,8 @@ func processInspectorWindows(ctx context.Context, name string, limit int, now ti
 	r := ProcessInspectorResult{
 		Processes:        processes,
 		Count:            len(processes),
+		ZombieCount:      0,
+		RiskLevel:        "unknown",
 		Source:           "tasklist",
 		Message:          "process inspection completed",
 		Timestamp:        now,

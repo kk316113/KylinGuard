@@ -137,8 +137,8 @@ func BuildToolDefsForPrompt(registry *tools.Registry) []map[string]any {
 	allTools := registry.ListTools()
 	defs := make([]map[string]any, 0, len(allTools))
 	for _, t := range allTools {
-		// Only include enabled tools.
-		if !t.Enabled {
+		// Only expose tools that are safe for structured direct invocation.
+		if !registry.IsToolEnabledForDirectCall(t.Name) {
 			continue
 		}
 		def := map[string]any{

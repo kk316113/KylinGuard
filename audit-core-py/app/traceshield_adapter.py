@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from .audit_stub import audit_trace as fallback_audit_trace
+from .local_fallback import audit_trace as fallback_audit_trace
 from .config import AuditCoreConfig, load_config
 from .schemas import (
     AuditTraceRequest,
@@ -33,6 +33,9 @@ TOOL_NAME_ALIASES = {
     "journalctl_reader": "read_file",
     "resource_usage_checker": "read_user_data",
     "disk_memory_checker": "read_user_data",
+    "open_file_inspector": "list_files",
+    "disk_io_checker": "read_user_data",
+    "configuration_drift_detector": "read_file",
 }
 
 

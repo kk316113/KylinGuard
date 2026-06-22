@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	DefaultMaxSteps = 6
-	ActionToolCall  = "tool_call"
+	DefaultMaxSteps   = 6
+	ActionToolCall    = "tool_call"
 	ActionFinalAnswer = "final_answer"
 )
 
@@ -34,12 +34,12 @@ type StepExecutor interface {
 
 // Engine runs the agent loop: plan → act → observe → repeat.
 type Engine struct {
-	generator      NextActionGenerator
-	executor       StepExecutor
-	auditor        StepAuditor
-	guard          security.IntentGuard
-	registry       *tools.Registry
-	MaxSteps       int
+	generator NextActionGenerator
+	executor  StepExecutor
+	auditor   StepAuditor
+	guard     security.IntentGuard
+	registry  *tools.Registry
+	MaxSteps  int
 }
 
 func NewEngine(generator NextActionGenerator, executor StepExecutor, registry *tools.Registry) *Engine {
@@ -72,11 +72,11 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 	// Check intent guard first.
 	if intent := e.guard.Evaluate(task); intent.Decision == security.DecisionDeny {
 		return &AgentResponse{
-			AgentMode:  ModeAgentLoop,
-			AgentSteps: []AgentStep{},
+			AgentMode:   ModeAgentLoop,
+			AgentSteps:  []AgentStep{},
 			FinalAnswer: "该请求包含危险意图，已在安全检查阶段阻断，未执行任何系统工具。请确认操作目的后再试。",
-			Confidence: "high",
-			StepCount:  0,
+			Confidence:  "high",
+			StepCount:   0,
 		}, nil
 	}
 
@@ -118,7 +118,7 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 
 		if action.ActionType == ActionFinalAnswer {
 			return &AgentResponse{
-				AgentMode:       ModeAgentLoop,
+				AgentMode: ModeAgentLoop,
 				TaskUnderstanding: &TaskUnderstanding{
 					UserGoal:   task,
 					IntentType: classifyIntent(task),
@@ -134,7 +134,15 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 		}
 
 		if action.ActionType != ActionToolCall {
-			continue
+			return &AgentResponse{
+				AgentMode:      ModeAgentLoop,
+				AgentSteps:     steps,
+				FinalAnswer:    "模型返回了无法识别的操作，安全起见未执行任何新增工具。请稍后重试。",
+				Confidence:     "low",
+				FallbackReason: fmt.Sprintf("invalid action_type %q", action.ActionType),
+				StepCount:      len(steps),
+				RiskGraph:      buildRiskGraph(steps),
+			}, nil
 		}
 
 		// Execute tool call through security pipeline.
@@ -151,12 +159,12 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 
 	// Max steps reached without final answer.
 	return &AgentResponse{
-		AgentMode:  ModeAgentLoop,
-		AgentSteps: steps,
+		AgentMode:   ModeAgentLoop,
+		AgentSteps:  steps,
 		FinalAnswer: "已达到最大推理步数限制。建议重新描述问题或拆分后分别查询。",
-		Confidence: "low",
-		StepCount:  len(steps),
-		RiskGraph:  buildRiskGraph(steps),
+		Confidence:  "low",
+		StepCount:   len(steps),
+		RiskGraph:   buildRiskGraph(steps),
 	}, nil
 }
 
@@ -247,7 +255,11 @@ func (e *Engine) executeStep(ctx context.Context, task string, index int, action
 		rtb.SetAttr(es.SpanID, "resource_type", step.ResourceType)
 		rtb.SetAttr(es.SpanID, "boundary_level", step.BoundaryLevel)
 		rtb.SetAttr(es.SpanID, "status", step.Observation["status"])
-		rtb.EndSpan(es.SpanID, "ok")
+		execStatus := "ok"
+		if step.Observation["status"] == "error" || step.Observation["status"] == "denied" {
+			execStatus = "error"
+		}
+		rtb.EndSpan(es.SpanID, execStatus)
 	}
 	return step
 }
@@ -261,13 +273,15 @@ func (e *Engine) auditStepSafe(ctx context.Context, task string, stepIndex int, 
 	rep, err := e.auditor.AuditStep(ctx, task, stepIndex, trace)
 	if err != nil || rep.Decision == "" {
 		return AuditReport{
-			StepID:    trace.StepID,
-			StepIndex: stepIndex,
-			ToolName:  trace.ToolName,
-			Decision:  "review",
-			RiskScore: 0.35,
-			Method:    "fallback-mock",
-			Message:   "audit step failed, fallback used",
+			StepID:     trace.StepID,
+			StepIndex:  stepIndex,
+			ToolName:   trace.ToolName,
+			Decision:   "review",
+			RiskScore:  0.35,
+			Method:     "local-safety-fallback",
+			Message:    "audit service unavailable; local safety review required",
+			Violations: []string{"external audit result unavailable"},
+			Evidence:   []string{"tool execution trace retained for later audit"},
 		}
 	}
 	rep.StepID = trace.StepID
@@ -323,7 +337,7 @@ func buildToolDefs(registry *tools.Registry) []ToolDef {
 	all := registry.ListTools()
 	defs := make([]ToolDef, 0, len(all))
 	for _, t := range all {
-		if !t.Enabled {
+		if !registry.IsToolEnabledForDirectCall(t.Name) {
 			continue
 		}
 		keys := make([]string, 0)

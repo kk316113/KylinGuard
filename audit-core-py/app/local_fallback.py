@@ -2,6 +2,11 @@ from .schemas import AuditTraceRequest, AuditTraceResponse, RiskGraph
 
 
 def audit_trace(payload: AuditTraceRequest, reason: str = "TraceShield adapter unavailable") -> AuditTraceResponse:
+    """Build a conservative review from real trace fields only.
+
+    This fallback does not claim a TraceShield decision and does not invent
+    violations or evidence.
+    """
     return AuditTraceResponse(
         decision="review",
         risk_score=0.35,
@@ -23,14 +28,10 @@ def audit_trace(payload: AuditTraceRequest, reason: str = "TraceShield adapter u
                 for step in payload.steps
             ],
             edges=[
-                {
-                    "from": previous.step_id,
-                    "to": current.step_id,
-                    "type": "sequence",
-                }
+                {"from": previous.step_id, "to": current.step_id, "type": "sequence"}
                 for previous, current in zip(payload.steps, payload.steps[1:])
             ],
         ),
-        method="fallback-mock",
-        message=f"fallback mock used: {reason}",
+        method="local-safety-fallback",
+        message=f"external TraceShield audit unavailable; trace-backed local review used: {reason}",
     )

@@ -10,7 +10,7 @@ import (
 
 // auditClientStepAuditor implements agentloop.StepAuditor by calling auditclient
 // once per executed tool-call step. When audit-core-py is unreachable, auditclient's
-// HTTPClient falls back to MockClient automatically (per-step), so the loop is never
+// HTTPClient falls back to a trace-backed local safety review, so the loop is never
 // blocked by an audit outage.
 type auditClientStepAuditor struct {
 	client auditclient.Client
@@ -19,7 +19,7 @@ type auditClientStepAuditor struct {
 // NewAuditClientStepAuditor wraps an auditclient.Client as a per-step StepAuditor.
 func NewAuditClientStepAuditor(c auditclient.Client) agentloop.StepAuditor {
 	if c == nil {
-		c = auditclient.NewMockClient()
+		c = auditclient.NewLocalSafetyClient()
 	}
 	return &auditClientStepAuditor{client: c}
 }

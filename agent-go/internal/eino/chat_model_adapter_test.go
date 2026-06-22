@@ -3,13 +3,29 @@ package eino
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"kylin-guard-agent/agent-go/internal/agent"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
+
+type selectiveFailureChatModel struct{ fallback ChatModelAdapter }
+
+func (m selectiveFailureChatModel) GenerateToolCalls(ctx context.Context, task string, defs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
+	if task == "fail" {
+		return nil, agent.Plan{}, errors.New("intentional primary failure")
+	}
+	return m.fallback.GenerateToolCalls(ctx, task, defs)
+}
+func (selectiveFailureChatModel) Name() string     { return "selective-primary" }
+func (selectiveFailureChatModel) Provider() string { return "test" }
 
 func TestDeterministicChatModelStubImplementsChatModelAdapter(t *testing.T) {
 	stub := NewDeterministicChatModelStub(tools.NewDefaultRegistry())
@@ -362,7 +378,7 @@ func TestFallbackChatModelAdapter(t *testing.T) {
 	primary := NewDeterministicChatModelStub(registry)
 	wrapper := NewFallbackChatModelAdapter(primary, registry)
 
-	ctx := context.Background()
+	ctx, outcome := withFallbackOutcome(context.Background())
 	calls, plan, err := wrapper.GenerateToolCalls(ctx, "检查当前系统 SSH 登录异常", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -374,9 +390,36 @@ func TestFallbackChatModelAdapter(t *testing.T) {
 		t.Fatalf("expected ssh_anomaly_check, got %q", plan.Scenario)
 	}
 
-	used, reason := wrapper.FallbackInfo()
+	used, reason := outcome.Info()
 	if used {
 		t.Fatalf("expected no fallback for working primary, reason: %s", reason)
+	}
+}
+
+func TestFallbackOutcomeIsRequestScoped(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	deterministic := NewDeterministicChatModelStub(registry)
+	wrapper := NewFallbackChatModelAdapter(selectiveFailureChatModel{fallback: deterministic}, registry)
+	failCtx, failOutcome := withFallbackOutcome(context.Background())
+	okCtx, okOutcome := withFallbackOutcome(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _, _ = wrapper.GenerateToolCalls(failCtx, "fail", nil)
+	}()
+	go func() {
+		defer wg.Done()
+		_, _, _ = wrapper.GenerateToolCalls(okCtx, "check system resource usage", nil)
+	}()
+	wg.Wait()
+
+	if used, reason := failOutcome.Info(); !used || reason == "" {
+		t.Fatalf("failed request must retain its fallback outcome: used=%v reason=%q", used, reason)
+	}
+	if used, reason := okOutcome.Info(); used || reason != "" {
+		t.Fatalf("successful request must not inherit fallback state: used=%v reason=%q", used, reason)
 	}
 }
 
@@ -523,6 +566,14 @@ func TestValidateLLMConfigValid(t *testing.T) {
 	}
 }
 
+func TestValidateLLMConfigRejectsInvalidAuthorizationCharacters(t *testing.T) {
+	for _, key := range []string{"sk-test\nvalue", "sk-test value", "密钥"} {
+		if reason := ValidateLLMConfig("openai_compatible", "https://api.openai.com/v1", key); reason == "" {
+			t.Fatalf("expected invalid key characters to be rejected")
+		}
+	}
+}
+
 // --- Stage 13B: GenerateToolCalls fails gracefully with missing config ---
 
 func TestRemoteLLMAdapterFailsGracefullyOnMissingConfig(t *testing.T) {
@@ -580,7 +631,7 @@ func TestRemoteLLMAdapterFallsBackOnHTTPError(t *testing.T) {
 	adapter := NewRemoteLLMAdapter(config, tools.NewDefaultRegistry())
 	fallback := NewFallbackChatModelAdapter(adapter, tools.NewDefaultRegistry())
 
-	ctx := context.Background()
+	ctx, outcome := withFallbackOutcome(context.Background())
 	calls, plan, err := fallback.GenerateToolCalls(ctx, "check system resource usage", nil)
 	if err != nil {
 		t.Fatalf("fallback adapter should not propagate error: %v", err)
@@ -592,7 +643,7 @@ func TestRemoteLLMAdapterFallsBackOnHTTPError(t *testing.T) {
 		t.Fatal("expected fallback adapter to produce plan")
 	}
 
-	used, reason := fallback.FallbackInfo()
+	used, reason := outcome.Info()
 	if !used {
 		t.Fatal("expected fallback to be used")
 	}
@@ -601,6 +652,38 @@ func TestRemoteLLMAdapterFallsBackOnHTTPError(t *testing.T) {
 	}
 	if strings.Contains(reason, "test-key") || strings.Contains(reason, "Bearer") {
 		t.Fatal("fallback reason should not contain API key")
+	}
+}
+
+func TestRemoteLLMRetryPolicy(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[]}`))
+	}))
+	defer server.Close()
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{Provider: "openai_compatible", Endpoint: server.URL, APIKey: "test-key"}, tools.NewDefaultRegistry())
+	if _, err := adapter.doHTTPRequestWithRetry(context.Background(), adapter.resolveEndpoint(), []byte(`{}`), 2); err != nil {
+		t.Fatalf("expected transient retries to recover: %v", err)
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("expected 3 attempts, got %d", attempts.Load())
+	}
+}
+
+func TestRemoteLLMRetryHonorsContextCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{Provider: "openai_compatible", Endpoint: server.URL, APIKey: "test-key"}, tools.NewDefaultRegistry())
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := adapter.doHTTPRequestWithRetry(ctx, adapter.resolveEndpoint(), []byte(`{}`), 2); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context deadline error, got %v", err)
 	}
 }
 

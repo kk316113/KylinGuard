@@ -32,6 +32,31 @@ export EINO_ENABLED=false
 - `GET /api/tools`
 - `GET /api/tools/{name}`
 - `POST /api/tools/call`
+- `POST/GET/DELETE /mcp`（标准 MCP Streamable HTTP）
+
+## 标准 MCP 接口
+
+`/mcp` 使用官方 `github.com/modelcontextprotocol/go-sdk`。MCP 客户端可通过
+`initialize`、`tools/list` 和 `tools/call` 使用 KylinGuard 的运维工具。
+
+- 仅发布启用、非危险且允许直调的已注册工具；`safe_shell` 不会发布。
+- Tool 输入复用 Registry 的 JSON Schema。
+- 调用先经过 Tool Policy，再进入原有 Tool/Exec Proxy 执行链。
+- 允许和拒绝调用都写入 tool trace，并调用 TraceShield audit client。
+- MCP 不提供让模型执行任意 shell 的接口。
+
+## A2 深度 OS 感知工具
+
+- `open_file_inspector`：通过受限 `lsof` 查询批准路径或 PID 的打开文件元数据，不读取文件内容。
+- `process_inspector`：支持进程状态筛选，并汇总僵尸进程数量和风险等级。
+- `disk_io_checker`：对 `/proc/diskstats` 做有界双采样，返回 IOPS、吞吐、利用率和队列指标。
+
+麒麟/LoongArch 实机验收：
+
+```bash
+bash scripts/linux/test_os_sensing_tools.sh
+bash scripts/linux/test_mcp_protocol.sh
+```
 
 `/api/agent/run` 是稳定主链路：
 

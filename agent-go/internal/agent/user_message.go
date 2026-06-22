@@ -188,7 +188,7 @@ func isTechnicalSummary(summary string) bool {
 		value == "agent run completed" ||
 		value == "request denied by intent guard" ||
 		strings.Contains(value, "graph runtime executed") ||
-		strings.Contains(value, "fallback-mock")
+		strings.Contains(value, "local-safety-fallback")
 }
 
 func truncateUserText(text string, max int) string {

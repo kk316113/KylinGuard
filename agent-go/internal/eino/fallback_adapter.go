@@ -3,59 +3,74 @@ package eino
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"kylin-guard-agent/agent-go/internal/agent"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
-// FallbackChatModelAdapter wraps a primary adapter and falls back to a deterministic stub on failure.
-// It records the fallback reason so the runtime can inject it into the reasoning trace.
+type fallbackOutcomeKey struct{}
+
+// FallbackOutcome is request-scoped so concurrent runs cannot overwrite each
+// other's model metadata.
+type FallbackOutcome struct {
+	mu     sync.RWMutex
+	used   bool
+	reason string
+}
+
+func withFallbackOutcome(ctx context.Context) (context.Context, *FallbackOutcome) {
+	outcome := &FallbackOutcome{}
+	return context.WithValue(ctx, fallbackOutcomeKey{}, outcome), outcome
+}
+
+func fallbackOutcomeFromContext(ctx context.Context) *FallbackOutcome {
+	outcome, _ := ctx.Value(fallbackOutcomeKey{}).(*FallbackOutcome)
+	return outcome
+}
+
+func (o *FallbackOutcome) record(used bool, reason string) {
+	if o == nil {
+		return
+	}
+	if !used {
+		return
+	}
+	o.mu.Lock()
+	o.used, o.reason = true, reason
+	o.mu.Unlock()
+}
+
+func (o *FallbackOutcome) Info() (bool, string) {
+	if o == nil {
+		return false, ""
+	}
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.used, o.reason
+}
+
+// FallbackChatModelAdapter is stateless; fallback metadata is stored in the
+// request context rather than on this shared adapter.
 type FallbackChatModelAdapter struct {
-	primary        ChatModelAdapter
-	fallback       ChatModelAdapter
-	usedFallback   bool
-	fallbackReason string
+	primary  ChatModelAdapter
+	fallback ChatModelAdapter
 }
 
 func NewFallbackChatModelAdapter(primary ChatModelAdapter, registry *tools.Registry) *FallbackChatModelAdapter {
-	return &FallbackChatModelAdapter{
-		primary:  primary,
-		fallback: NewDeterministicChatModelStub(registry),
-	}
+	return &FallbackChatModelAdapter{primary: primary, fallback: NewDeterministicChatModelStub(registry)}
 }
 
 func (f *FallbackChatModelAdapter) GenerateToolCalls(ctx context.Context, task string, toolDefs []tools.ToolMetadata) ([]ToolCall, agent.Plan, error) {
-	f.usedFallback = false
-	f.fallbackReason = ""
-
-	// Try the primary adapter first.
 	calls, plan, err := f.primary.GenerateToolCalls(ctx, task, toolDefs)
 	if err == nil {
+		fallbackOutcomeFromContext(ctx).record(false, "")
 		return calls, plan, nil
 	}
-
-	// Primary failed — fall back to deterministic stub.
-	f.usedFallback = true
-	f.fallbackReason = fmt.Sprintf("primary adapter failed: %v; falling back to deterministic stub", err)
-
+	reason := fmt.Sprintf("primary adapter failed: %v; falling back to deterministic stub", err)
+	fallbackOutcomeFromContext(ctx).record(true, reason)
 	return f.fallback.GenerateToolCalls(ctx, task, toolDefs)
 }
 
-func (f *FallbackChatModelAdapter) Name() string {
-	if f.usedFallback {
-		return f.fallback.Name()
-	}
-	return f.primary.Name()
-}
-
-func (f *FallbackChatModelAdapter) Provider() string {
-	if f.usedFallback {
-		return f.fallback.Provider()
-	}
-	return f.primary.Provider()
-}
-
-// FallbackInfo returns whether the fallback was used and why.
-func (f *FallbackChatModelAdapter) FallbackInfo() (bool, string) {
-	return f.usedFallback, f.fallbackReason
-}
+func (f *FallbackChatModelAdapter) Name() string     { return f.primary.Name() }
+func (f *FallbackChatModelAdapter) Provider() string { return f.primary.Provider() }

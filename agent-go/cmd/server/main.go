@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -12,12 +14,14 @@ import (
 	"kylin-guard-agent/agent-go/internal/config"
 	einoruntime "kylin-guard-agent/agent-go/internal/eino"
 	"kylin-guard-agent/agent-go/internal/logtrace"
+	"kylin-guard-agent/agent-go/internal/mcpserver"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
 const serviceVersion = "0.1.0"
 const maxAgentRequestBytes = 1 << 20
+const agentRequestTimeout = 90 * time.Second
 
 func main() {
 	cfg := config.Load()
@@ -52,11 +56,21 @@ func main() {
 	mux.HandleFunc("/api/tools", toolsListHandler(registry))
 	mux.HandleFunc("/api/tools/call", toolCallHandler(registry, auditor, traceStore, toolPolicy))
 	mux.HandleFunc("/api/tools/", toolDetailHandler(registry))
+	mux.Handle("/mcp", mcpserver.NewHTTPHandler(mcpserver.Dependencies{
+		Registry:   registry,
+		Policy:     toolPolicy,
+		TraceStore: traceStore,
+		Auditor:    auditor,
+	}))
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      100 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	log.Printf("kylin-guard-agent listening on %s", cfg.Addr)
@@ -102,26 +116,35 @@ func agentRunHandler(agentAdapter agent.AgentAdapter, store *agentRunStore) http
 			return
 		}
 
+		ctx, cancel := context.WithTimeout(r.Context(), agentRequestTimeout)
+		defer cancel()
+		r = r.WithContext(ctx)
 		r.Body = http.MaxBytesReader(w, r.Body, maxAgentRequestBytes)
 		var req agent.RunRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid JSON body", nil)
 			return
 		}
 		req.Task = strings.TrimSpace(req.Task)
 		if req.Task == "" {
-			writeError(w, http.StatusBadRequest, "task is required")
+			writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "task is required", nil)
 			return
 		}
 
 		if !agentAdapter.Enabled() {
-			writeError(w, http.StatusServiceUnavailable, agentAdapter.Name()+" is disabled")
+			writeAPIError(w, http.StatusServiceUnavailable, "AGENT_UNAVAILABLE", agentAdapter.Name()+" is disabled", nil)
 			return
 		}
 
 		resp, err := agentAdapter.Run(r.Context(), req)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			code := "AGENT_RUN_FAILED"
+			status := http.StatusInternalServerError
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				code = "AGENT_TIMEOUT"
+				status = http.StatusGatewayTimeout
+			}
+			writeAPIError(w, status, code, err.Error(), nil)
 			return
 		}
 		resp = store.Save(resp)
@@ -152,5 +175,27 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+	writeAPIError(w, status, defaultErrorCode(status), message, nil)
+}
+
+func writeAPIError(w http.ResponseWriter, status int, code, message string, details map[string]any) {
+	if details == nil {
+		details = map[string]any{}
+	}
+	writeJSON(w, status, map[string]any{"error": map[string]any{
+		"code": code, "message": message, "details": details,
+	}})
+}
+
+func defaultErrorCode(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "INVALID_REQUEST"
+	case http.StatusNotFound:
+		return "RUN_NOT_FOUND"
+	case http.StatusMethodNotAllowed:
+		return "METHOD_NOT_ALLOWED"
+	default:
+		return "INTERNAL_ERROR"
+	}
 }
