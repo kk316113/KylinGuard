@@ -3,6 +3,7 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CopilotChatToggleButton,
+  CopilotChatMessageView,
   CopilotSidebar,
   useCopilotChatConfiguration,
   useFrontendTool,
@@ -155,6 +156,7 @@ export function AppShell() {
           position={preferences.chatPosition}
           width={preferences.chatWidth}
           toggleButton={SidebarToggleButton}
+          messageView={{ cursor: ThinkingCursor }}
           labels={{
             modalHeaderTitle: "麒盾",
             chatInputPlaceholder: "输入消息...",
@@ -163,6 +165,15 @@ export function AppShell() {
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function ThinkingCursor({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={["thinking-cursor", className].filter(Boolean).join(" ")} role="status" aria-live="polite" {...props}>
+      <CopilotChatMessageView.Cursor />
+      <span>正在思考…</span>
     </div>
   );
 }

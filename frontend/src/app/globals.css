@@ -32,6 +32,22 @@ html.dark body {
   color: var(--foreground);
 }
 
+.thinking-cursor {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin-left: 4px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.thinking-cursor [data-testid="copilot-loading-cursor"] {
+  flex: 0 0 auto;
+  margin-left: 0;
+}
+
 .app-shell button,
 .app-shell textarea {
   font: inherit;
