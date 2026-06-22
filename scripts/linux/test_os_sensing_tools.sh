@@ -2,13 +2,18 @@
 set -euo pipefail
 
 AGENT_BASE_URL="${AGENT_BASE_URL:-http://127.0.0.1:8080}"
-TEMP_FILE="/tmp/kylinguard-lsof-acceptance.$$"
+TEMP_FILE="/var/tmp/kylinguard-lsof-acceptance.$$"
 HOLDER_PID=""
+RUNNER_PID=""
 
 cleanup() {
   if [[ -n "$HOLDER_PID" ]]; then
     kill "$HOLDER_PID" >/dev/null 2>&1 || true
     wait "$HOLDER_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$RUNNER_PID" && "$RUNNER_PID" != "$HOLDER_PID" ]]; then
+    kill "$RUNNER_PID" >/dev/null 2>&1 || true
+    wait "$RUNNER_PID" 2>/dev/null || true
   fi
   rm -f -- "$TEMP_FILE"
 }
@@ -19,10 +24,31 @@ if ! command -v lsof >/dev/null 2>&1; then
   exit 1
 fi
 
-printf 'KylinGuard lsof acceptance fixture\n' >"$TEMP_FILE"
-tail -f "$TEMP_FILE" >/dev/null 2>&1 &
-HOLDER_PID=$!
-sleep 0.2
+if systemctl is-active --quiet kylin-guard-agent.service 2>/dev/null && id kylinguard >/dev/null 2>&1; then
+  if [[ "$EUID" -ne 0 ]]; then
+    printf 'systemd acceptance must run with sudo so the fixture can use the kylinguard service account\n' >&2
+    exit 2
+  fi
+  install -o kylinguard -g kylinguard -m 0600 /dev/null "$TEMP_FILE"
+  printf 'KylinGuard lsof acceptance fixture\n' >"$TEMP_FILE"
+  runuser -u kylinguard -- tail -f "$TEMP_FILE" >/dev/null 2>&1 &
+  RUNNER_PID=$!
+  for _ in $(seq 1 20); do
+    if [[ "$(ps -o comm= -p "$RUNNER_PID" 2>/dev/null | xargs)" == "tail" ]]; then
+      HOLDER_PID="$RUNNER_PID"
+      break
+    fi
+    HOLDER_PID="$(pgrep -P "$RUNNER_PID" 2>/dev/null | head -n 1 || true)"
+    [[ -n "$HOLDER_PID" ]] && break
+    sleep 0.1
+  done
+  [[ -n "$HOLDER_PID" ]] || { printf 'failed to start kylinguard lsof fixture\n' >&2; exit 1; }
+else
+  printf 'KylinGuard lsof acceptance fixture\n' >"$TEMP_FILE"
+  tail -f "$TEMP_FILE" >/dev/null 2>&1 &
+  HOLDER_PID=$!
+fi
+sleep 0.3
 
 python3 - "$AGENT_BASE_URL" "$TEMP_FILE" "$HOLDER_PID" <<'PY'
 import json
@@ -57,7 +83,7 @@ def require(condition, message):
 
 open_files = post({
     "tool_name": "open_file_inspector",
-    "input": {"path": fixture_path, "limit": 20},
+    "input": {"pid": holder_pid, "limit": 20},
     "reason": "A2 lsof real process/file ownership acceptance",
 })
 require(open_files.get("status") == "ok", f"lsof tool failed: {open_files.get('message')}")
