@@ -7,9 +7,11 @@ The MVP uses KylinGuard's existing Go Agent APIs:
 - `GET /api/agent/runtime-status`
 - `GET /api/agent/capabilities`
 - `GET /api/agent/acceptance-summary`
-- `POST /api/agent/run-eino`
+- `POST /api/agent/run`
 
-CopilotKit is used as the Agent UX foundation. The current MVP still calls the non-streaming Go Agent endpoint directly; AG-UI event streaming can be added when the backend endpoint is ready.
+CopilotKit is used as the Agent UX foundation. The current MVP calls the
+non-streaming Go Agent endpoint directly; AG-UI event streaming can be added
+later if the backend exposes a streaming endpoint.
 
 ## Run
 
@@ -26,6 +28,11 @@ http://127.0.0.1:5173
 
 By default, Next.js rewrites `/api/agent/*` to `http://127.0.0.1:8080/api/agent/*`.
 Override the Go Agent target with `KYLIN_GUARD_AGENT_API_URL`.
+
+The frontend is only the browser UI. For useful data, start the Go Agent on
+`127.0.0.1:8080` first. The audit-core service on `127.0.0.1:8001` is
+recommended; if it is unavailable, the Agent returns a clearly marked local
+safety fallback rather than a fabricated TraceShield result.
 
 ## Safety
 

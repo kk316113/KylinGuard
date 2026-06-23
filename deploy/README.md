@@ -10,7 +10,7 @@
 - `install_agent_go.sh`：执行 `go mod tidy`、`go test ./...`，并构建 Go Agent 二进制。
 - `run_agent_go.sh`：启动 Go Agent，启动前检查 audit-core-py 是否可访问；不可访问时给出警告但允许启动。
 - `install_agent_service.sh`：将已构建二进制安装为专用 `kylinguard` 非 root 账户运行的 systemd 服务。
-- `install_audit_core_py.sh`：创建 `.venv` 并安装 Python audit-core 依赖；不安装 torch、transformers、faiss 等重依赖。
+- `install_audit_core_py.sh`：创建 `.venv` 并安装 Python audit-core 依赖。
 - `run_audit_core_py.sh`：检查 `.venv` 和 `TRACESHIELD_CORE_PATH` 后启动 FastAPI 服务。
 
 ## 环境变量
@@ -25,7 +25,9 @@
 - `EINO_GRAPH_ENABLED`：默认 `true`
 - `EINO_LLM_ENABLED`：默认 `false`
 
-Stage 9B 中，`/api/agent/run-eino` 默认进入 CloudWeGo Eino graph runtime，但仍不接真实 LLM、不接模型厂商 SDK、不读取 API key。
+当前生产路径中，`/api/agent/run` 是 Agent Loop 主接口，`/api/agent/run-eino`
+仅作为兼容接口保留。真实模型密钥不由部署脚本写入；需要真实 DeepSeek
+时，应由部署环境通过 `/etc/kylin-guard/agent.env` 或进程环境变量注入。
 
 脚本不包含 Windows 路径。后续仍需要结合银河麒麟高级服务器版 V11 和 LoongArch 环境继续验证。
 
