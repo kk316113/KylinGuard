@@ -88,12 +88,10 @@ func (a *RemoteLLMAgentAdapter) buildAgentContext(req agentloop.NextActionReques
 }
 
 func (a *RemoteLLMAgentAdapter) parseNextAction(raw string) (*agentloop.NextAction, error) {
-	// Clean the response.
-	cleaned := strings.TrimSpace(raw)
-	cleaned = strings.TrimPrefix(cleaned, "```json")
-	cleaned = strings.TrimPrefix(cleaned, "```")
-	cleaned = strings.TrimSuffix(cleaned, "```")
-	cleaned = strings.TrimSpace(cleaned)
+	cleaned, err := extractNextActionJSON(raw)
+	if err != nil {
+		return nil, err
+	}
 
 	var action agentloop.NextAction
 	if err := json.Unmarshal([]byte(cleaned), &action); err != nil {
@@ -118,6 +116,67 @@ func (a *RemoteLLMAgentAdapter) parseNextAction(raw string) (*agentloop.NextActi
 		action.ToolArgs = map[string]any{}
 	}
 	return &action, nil
+}
+
+func extractNextActionJSON(raw string) (string, error) {
+	cleaned := strings.TrimSpace(raw)
+	cleaned = strings.TrimPrefix(cleaned, "```json")
+	cleaned = strings.TrimPrefix(cleaned, "```")
+	cleaned = strings.TrimSuffix(cleaned, "```")
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return "", fmt.Errorf("empty next_action response")
+	}
+	if json.Valid([]byte(cleaned)) {
+		return cleaned, nil
+	}
+
+	start := -1
+	depth := 0
+	inString := false
+	escaped := false
+	for i := 0; i < len(cleaned); i++ {
+		ch := cleaned[i]
+		if start < 0 {
+			if ch == '{' {
+				start = i
+				depth = 1
+			}
+			continue
+		}
+
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				candidate := strings.TrimSpace(cleaned[start : i+1])
+				if json.Valid([]byte(candidate)) {
+					return candidate, nil
+				}
+				return "", fmt.Errorf("failed to parse next_action JSON: extracted object is invalid")
+			}
+		}
+	}
+	return "", fmt.Errorf("failed to parse next_action JSON: no complete JSON object found")
 }
 
 // DeterministicAgentAdapter implements agentloop.NextActionGenerator using the deterministic stub.
