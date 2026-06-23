@@ -44,6 +44,7 @@ These are examples only, not fixed workflows:
 - API keys must come from environment variables only.
 - `run/demo.env` must not store real keys.
 - Logs may show `[REDACTED]`, never the real key.
+- If a real key is exposed in chat, screenshots, terminal scrollback, or logs, tell the user to rotate it; do not preserve the key in docs, commits, memory, or reports.
 - Do not include raw sensitive logs in memory docs.
 - Do not commit `/tmp` responses or raw run artifacts.
 
