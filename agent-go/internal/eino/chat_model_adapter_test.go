@@ -76,6 +76,50 @@ func TestRemoteLLMAdapterRequiresAPIKey(t *testing.T) {
 	}
 }
 
+func TestRemoteLLMAdapterDefaultTimeoutAllowsSlowRealProvider(t *testing.T) {
+	adapter := NewRemoteLLMAdapter(ChatModelAdapterConfig{
+		Provider: "openai_compatible",
+		Endpoint: "https://api.deepseek.com",
+		Model:    "deepseek-v4-flash",
+		APIKey:   "test-key",
+	}, tools.NewDefaultRegistry())
+
+	if adapter.client.Timeout != 45*time.Second {
+		t.Fatalf("expected default remote LLM timeout to be 45s, got %s", adapter.client.Timeout)
+	}
+}
+
+func TestRemoteLLMAgentAdapterParsesNextActionWithModelPreamble(t *testing.T) {
+	adapter := &RemoteLLMAgentAdapter{}
+	action, err := adapter.parseNextAction(`我会先检查系统资源。
+{"action_type":"tool_call","tool_name":"process_inspector","tool_args":{"limit":5},"reason":"检查高占用进程","user_visible_summary":"正在检查进程"}
+请参考以上结果。`)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if action.ActionType != "tool_call" || action.ToolName != "process_inspector" {
+		t.Fatalf("unexpected action parsed: %#v", action)
+	}
+}
+
+func TestRemoteLLMAgentAdapterParsesNextActionFromCodeFence(t *testing.T) {
+	adapter := &RemoteLLMAgentAdapter{}
+	action, err := adapter.parseNextAction("```json\n{\"action_type\":\"final_answer\",\"final_answer\":\"检查完成。\",\"confidence\":\"medium\"}\n```")
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if action.ActionType != "final_answer" || action.FinalAnswer == "" {
+		t.Fatalf("unexpected action parsed: %#v", action)
+	}
+}
+
+func TestRemoteLLMAgentAdapterRejectsNextActionWithoutJSON(t *testing.T) {
+	adapter := &RemoteLLMAgentAdapter{}
+	if _, err := adapter.parseNextAction("我需要先检查系统资源。"); err == nil {
+		t.Fatal("expected parse error for response without JSON")
+	}
+}
+
 func TestRemoteLLMAdapterParsesValidToolPlan(t *testing.T) {
 	// Create a mock HTTP server that returns a valid tool plan.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

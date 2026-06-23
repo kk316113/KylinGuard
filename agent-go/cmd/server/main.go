@@ -21,7 +21,7 @@ import (
 
 const serviceVersion = "0.1.0"
 const maxAgentRequestBytes = 1 << 20
-const agentRequestTimeout = 90 * time.Second
+const agentRequestTimeout = 180 * time.Second
 
 func main() {
 	cfg := config.Load()
