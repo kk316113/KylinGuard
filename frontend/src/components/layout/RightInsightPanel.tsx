@@ -21,6 +21,7 @@ import {
   toolNameLabel,
   traceSummary,
 } from "@/lib/formatters";
+import { agentReportMarkdownURL, agentRiskGraphArtifactURL } from "@/lib/api";
 import type { AgentRun, AgentStep, ToolTrace } from "@/types/agent";
 import type { CapabilitiesResponse } from "@/types/runtime";
 
@@ -238,6 +239,7 @@ function ReportTab({ run }: { run?: AgentRun | null }) {
   if (!run) {
     return <EmptyPanel title="暂无报告摘要" description="任务完成后，这里会展示会话信息和最终审计摘要。" />;
   }
+  const runId = run.run_id || run.task_id || "";
 
   return (
     <div className="insight-stack">
@@ -246,6 +248,16 @@ function ReportTab({ run }: { run?: AgentRun | null }) {
           <FileText size={17} />
           <h3>会话信息</h3>
         </div>
+        {runId ? (
+          <div className="export-actions">
+            <a className="secondary-action" href={agentReportMarkdownURL(runId)} download>
+              导出 Markdown 报告
+            </a>
+            <a className="secondary-action" href={agentRiskGraphArtifactURL(runId)} download>
+              下载 Risk Graph JSON
+            </a>
+          </div>
+        ) : null}
         <div className="detail-grid">
           <Detail label="运行编号" value={run.run_id || run.task_id} />
           <Detail label="任务类型" value={sceneTypeLabel(run.scene_type)} />

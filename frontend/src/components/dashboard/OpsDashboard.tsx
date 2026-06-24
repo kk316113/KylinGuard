@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   FileText,
@@ -29,6 +32,7 @@ import {
   toolNameLabel,
   traceSummary,
 } from "@/lib/formatters";
+import { getAgentRun, getAgentRuns, type AgentRunSummary } from "@/lib/api";
 import type { AgentRun } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse, RuntimeStatus } from "@/types/runtime";
 
@@ -40,6 +44,7 @@ type Props = {
   capabilities?: CapabilitiesResponse;
   acceptance?: AcceptanceSummary;
   currentRun?: AgentRun | null;
+  onSelectRun: (run: AgentRun) => void;
   selectedStepIndex: number | null;
   onSelectStep: (index: number) => void;
   preferences: ConsolePreferences;
@@ -53,6 +58,7 @@ export function OpsDashboard({
   capabilities,
   acceptance,
   currentRun,
+  onSelectRun,
   selectedStepIndex,
   onSelectStep,
   preferences,
@@ -73,7 +79,7 @@ export function OpsDashboard({
         <AuditBoard currentRun={currentRun} selectedStepIndex={selectedStepIndex} onSelectStep={onSelectStep} />
       ) : null}
       {activeView === "tools" ? <ToolsBoard capabilities={capabilities} /> : null}
-      {activeView === "runs" ? <RunsBoard currentRun={currentRun} /> : null}
+      {activeView === "runs" ? <RunsBoard currentRun={currentRun} onSelectRun={onSelectRun} /> : null}
       {activeView === "settings" ? (
         <SettingsBoard
           preferences={preferences}
@@ -210,49 +216,131 @@ function ToolsBoard({ capabilities }: { capabilities?: CapabilitiesResponse }) {
   );
 }
 
-function RunsBoard({ currentRun }: { currentRun?: AgentRun | null }) {
-  if (!currentRun) {
-    return (
-      <div className="board-stack">
-        <section className="empty-board-state">
-          <FileText size={28} />
-          <h2>暂无最近会话</h2>
-          <p>当前阶段只展示最近一次响应，不做本地历史持久化。</p>
-        </section>
-      </div>
-    );
-  }
+function RunsBoard({ currentRun, onSelectRun }: { currentRun?: AgentRun | null; onSelectRun: (run: AgentRun) => void }) {
+  const [runs, setRuns] = useState<AgentRunSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadRuns = useCallback(async (cursor?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await getAgentRuns(50, cursor);
+      setRuns((previous) => (cursor ? [...previous, ...response.runs] : response.runs));
+      setNextCursor(response.next_cursor);
+    } catch (err) {
+      setError(err instanceof Error ? friendlyAPIError(err.message) : "历史会话加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRuns();
+  }, [loadRuns]);
+
+  const openRun = useCallback(
+    async (runId: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        onSelectRun(await getAgentRun(runId));
+      } catch (err) {
+        setError(err instanceof Error ? friendlyAPIError(err.message) : "会话详情加载失败");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [onSelectRun],
+  );
 
   return (
     <div className="board-stack">
       <section className="board-section">
-        <SectionHeading icon={<FileText size={18} />} title="最近会话" />
-        <div className="detail-grid">
-          <Detail label="运行编号" value={currentRun.run_id || currentRun.task_id} />
-          <Detail label="用户输入" value={currentRun.task} />
-          <Detail label="任务类型" value={sceneTypeLabel(currentRun.scene_type)} />
-          <Detail label="运行状态" value={runStatusLabel(currentRun.run_status)} />
-          <Detail label="创建时间" value={compactDate(currentRun.created_at)} />
-          <Detail label="安全结论" value={decisionLabel(currentRun.decision || currentRun.audit_result?.decision)} />
+        <div className="section-heading-row">
+          <SectionHeading icon={<FileText size={18} />} title="历史会话" />
+          <button className="secondary-action" type="button" onClick={() => void loadRuns()} disabled={loading}>
+            {loading ? "刷新中..." : "刷新"}
+          </button>
         </div>
-      </section>
-      <section className="board-section">
-        <SectionHeading icon={<ListChecks size={18} />} title="工具证据摘要" />
-        <div className="evidence-list">
-          {(currentRun.tool_trace || []).length ? (
-            (currentRun.tool_trace || []).map((trace, index) => (
-              <div className="evidence-row" key={trace.step_id || `${trace.tool_name}-${index}`}>
-                <strong>{trace.tool_name ? toolNameLabel(trace.tool_name) : `工具 ${index + 1}`}</strong>
-                <span>{traceSummary(trace)}</span>
-              </div>
-            ))
+        <p className="section-copy">历史会话来自后端持久化存储，服务重启后仍可继续查看执行证据。</p>
+        {error ? <div className="inline-error">{error}</div> : null}
+        <div className="run-history-list">
+          {runs.length ? (
+            runs.map((run) => {
+              const selected = currentRun?.run_id === run.run_id;
+              return (
+                <button
+                  className={selected ? "run-history-row selected" : "run-history-row"}
+                  key={run.run_id}
+                  type="button"
+                  onClick={() => void openRun(run.run_id)}
+                >
+                  <span>{compactDate(run.created_at)}</span>
+                  <strong>{run.task || "未命名任务"}</strong>
+                  <small>
+                    {decisionLabel(run.decision)} · {runStatusLabel(run.run_status)} · {run.agent_step_count} 步 / {run.tool_trace_count} 条证据
+                  </small>
+                  <em>{run.chat_model || run.agent_mode || "未知模型"}</em>
+                </button>
+              );
+            })
           ) : (
-            <EmptyInline>本次响应没有工具证据。</EmptyInline>
+            <EmptyInline>{loading ? "正在读取历史会话..." : "暂无持久化历史。完成一次对话后会自动写入。"} </EmptyInline>
           )}
         </div>
+        {nextCursor ? (
+          <button className="secondary-action" type="button" onClick={() => void loadRuns(nextCursor)} disabled={loading}>
+            加载更多
+          </button>
+        ) : null}
       </section>
+      {currentRun ? (
+        <>
+          <section className="board-section">
+            <SectionHeading icon={<FileText size={18} />} title="当前选中会话" />
+            <div className="detail-grid">
+              <Detail label="运行编号" value={currentRun.run_id || currentRun.task_id} />
+              <Detail label="用户输入" value={currentRun.task} />
+              <Detail label="任务类型" value={sceneTypeLabel(currentRun.scene_type)} />
+              <Detail label="运行状态" value={runStatusLabel(currentRun.run_status)} />
+              <Detail label="创建时间" value={compactDate(currentRun.created_at)} />
+              <Detail label="安全结论" value={decisionLabel(currentRun.decision || currentRun.audit_result?.decision)} />
+            </div>
+          </section>
+          <section className="board-section">
+            <SectionHeading icon={<ListChecks size={18} />} title="工具证据摘要" />
+            <div className="evidence-list">
+              {(currentRun.tool_trace || []).length ? (
+                (currentRun.tool_trace || []).map((trace, index) => (
+                  <div className="evidence-row" key={trace.step_id || `${trace.tool_name}-${index}`}>
+                    <strong>{trace.tool_name ? toolNameLabel(trace.tool_name) : `工具 ${index + 1}`}</strong>
+                    <span>{traceSummary(trace)}</span>
+                  </div>
+                ))
+              ) : (
+                <EmptyInline>本次响应没有工具证据。</EmptyInline>
+              )}
+            </div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
+}
+
+function friendlyAPIError(message: string) {
+  if (message.includes("AGENT_TIMEOUT") || message.includes("504")) {
+    return "智能体请求超时：DeepSeek 或后端工具调用耗时过长，请稍后重试。";
+  }
+  if (message.includes("AGENT_UNAVAILABLE") || message.includes("fetch failed")) {
+    return "Agent 服务不可达：请检查 kylin-guard-agent 是否正在运行。";
+  }
+  if (message.includes("ECONNRESET") || message.includes("socket hang up")) {
+    return "前端代理连接被重置：请刷新状态或重启 Web 服务后重试。";
+  }
+  return message;
 }
 
 function SettingsBoard({

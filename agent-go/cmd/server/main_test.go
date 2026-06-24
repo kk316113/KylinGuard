@@ -126,6 +126,23 @@ func TestAgentRunQueryEndpoints(t *testing.T) {
 	}
 }
 
+func TestAgentRunListExactAndSlashEndpoints(t *testing.T) {
+	store := newAgentRunStore()
+	store.Save(sampleStoredRun("kg-list", "检查历史", "review"))
+
+	var exact agentRunListResponse
+	getJSON(t, agentRunListHandler(store), "/api/agent/runs?limit=10", http.StatusOK, &exact)
+	if exact.Count != 1 || exact.Runs[0].RunID != "kg-list" {
+		t.Fatalf("expected exact list response, got %#v", exact)
+	}
+
+	var slash agentRunListResponse
+	getJSON(t, agentRunsHandler(store), "/api/agent/runs/?limit=10", http.StatusOK, &slash)
+	if slash.Count != 1 || slash.Runs[0].RunID != "kg-list" {
+		t.Fatalf("expected slash list response, got %#v", slash)
+	}
+}
+
 func TestAgentRunQueryEndpointNotFound(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/agent/runs/kg-missing", nil)
 	recorder := httptest.NewRecorder()

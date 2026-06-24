@@ -41,7 +41,7 @@ func main() {
 		LLMModel:       cfg.EinoLLMModel,
 		LLMAPIKey:      cfg.EinoLLMAPIKey,
 	}))
-	runStore := newAgentRunStore()
+	runStore := newAgentRunStoreFromConfig(cfg.RunStoreDir, cfg.RunStoreLimit)
 	toolPolicy := security.NewToolPolicy()
 
 	mux := http.NewServeMux()
@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("/api/os/info", osInfoHandler(registry, traceStore))
 	mux.HandleFunc("/api/agent/run", agentRunHandler(einoAdapter, runStore))
 	mux.HandleFunc("/api/agent/run-eino", agentRunEinoHandler(einoAdapter, runStore))
+	mux.HandleFunc("/api/agent/runs", agentRunListHandler(runStore))
 	mux.HandleFunc("/api/agent/runs/", agentRunsHandler(runStore))
 	mux.HandleFunc("/api/agent/runtime-status", runtimeStatusHandler(cfg))
 	mux.HandleFunc("/api/agent/capabilities", capabilitiesHandler(registry))

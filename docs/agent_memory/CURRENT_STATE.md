@@ -23,6 +23,57 @@ LoongArch note: the project has a successful `GOOS=linux GOARCH=loong64`
 static build. No LoongArch VMware/runtime execution is claimed without a real
 LoongArch Kylin V11 environment.
 
+## Stage 18D Persistent History and Export Enhancements
+
+Implementation is in progress and locally verified.
+
+Added production-code capabilities:
+
+```text
+JSON-file persistent Agent run history
+GET /api/agent/runs?limit=&cursor= history list
+GET /api/agent/runs/{run_id}/report.md Markdown export
+GET /api/agent/runs/{run_id}/risk-graph/artifact JSON export
+Recursive redaction before persistence and export
+Frontend persistent history list with selectable runs
+Frontend Markdown report and Risk Graph JSON download actions
+More actionable Chinese runtime/error copy
+```
+
+Defaults:
+
+```text
+KYLIN_GUARD_RUN_STORE_DIR=/var/lib/kylinguard/runs
+KYLIN_GUARD_RUN_STORE_LIMIT=200
+No SQLite, PDF renderer, login system, or heavy ML dependency introduced.
+```
+
+Local verification:
+
+```text
+go test ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/server - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+Local HTTP smoke for run/list/report.md/risk-graph artifact/persisted files - PASS
+```
+
+Kylin V11 VM verification:
+
+```text
+Kylin V11 x86_64 VMware install/update smoke - PASS
+GET /api/agent/runs?limit=10 - PASS
+GET /api/agent/runs/?limit=10 - PASS
+Agent Loop run creation - PASS
+Persistent history list shows new run - PASS
+Markdown report export - PASS
+Risk Graph Artifact export - PASS
+Frontend 5173 API proxy for history list - PASS
+Agent restart persistence check - PASS
+Persisted report and artifact available after restart - PASS
+```
+
 ## Latest Important Commits
 
 - Stage 16B-1 frontend mapping: `d927a84`

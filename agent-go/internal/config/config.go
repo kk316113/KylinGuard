@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +16,8 @@ type Config struct {
 	EinoLLMEndpoint    string
 	EinoLLMModel       string
 	EinoLLMAPIKey      string
+	RunStoreDir        string
+	RunStoreLimit      int
 }
 
 func Load() Config {
@@ -55,6 +58,8 @@ func Load() Config {
 		EinoLLMEndpoint:    endpoint,
 		EinoLLMModel:       model,
 		EinoLLMAPIKey:      apiKey,
+		RunStoreDir:        getenv("KYLIN_GUARD_RUN_STORE_DIR", "/var/lib/kylinguard/runs"),
+		RunStoreLimit:      getenvInt("KYLIN_GUARD_RUN_STORE_LIMIT", 200),
 	}
 }
 
@@ -86,4 +91,16 @@ func getenvBool(key string, fallback bool) bool {
 	default:
 		return false
 	}
+}
+
+func getenvInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

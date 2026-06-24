@@ -47,6 +47,10 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
+export function apiURL(path: string) {
+  return endpoint(path);
+}
+
 export function getRuntimeStatus() {
   return requestJSON<RuntimeStatus>("/api/agent/runtime-status", { method: "GET" });
 }
@@ -70,6 +74,35 @@ export function getAgentRun(runId: string) {
   return requestJSON<AgentRun>(`/api/agent/runs/${encodeURIComponent(runId)}`, { method: "GET" });
 }
 
+export type AgentRunSummary = {
+  run_id: string;
+  task_id?: string;
+  task: string;
+  scene_type?: string;
+  run_status?: string;
+  created_at?: string;
+  decision?: string;
+  agent_mode?: string;
+  chat_model?: string;
+  tool_trace_count: number;
+  agent_step_count: number;
+};
+
+export type AgentRunListResponse = {
+  runs: AgentRunSummary[];
+  count: number;
+  limit: number;
+  next_cursor?: string;
+};
+
+export function getAgentRuns(limit = 50, cursor?: string) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  return requestJSON<AgentRunListResponse>(`/api/agent/runs?${params.toString()}`, { method: "GET" });
+}
+
 export function getAgentAuditReports(runId: string) {
   return requestJSON(`/api/agent/runs/${encodeURIComponent(runId)}/audit-reports`, { method: "GET" });
 }
@@ -78,6 +111,18 @@ export function getAgentRiskGraph(runId: string) {
   return requestJSON(`/api/agent/runs/${encodeURIComponent(runId)}/risk-graph`, { method: "GET" });
 }
 
+export function getAgentRiskGraphArtifact(runId: string) {
+  return requestJSON(`/api/agent/runs/${encodeURIComponent(runId)}/risk-graph/artifact`, { method: "GET" });
+}
+
 export function getAgentReport(runId: string) {
   return requestJSON(`/api/agent/runs/${encodeURIComponent(runId)}/report`, { method: "GET" });
+}
+
+export function agentReportMarkdownURL(runId: string) {
+  return apiURL(`/api/agent/runs/${encodeURIComponent(runId)}/report.md`);
+}
+
+export function agentRiskGraphArtifactURL(runId: string) {
+  return apiURL(`/api/agent/runs/${encodeURIComponent(runId)}/risk-graph/artifact`);
 }

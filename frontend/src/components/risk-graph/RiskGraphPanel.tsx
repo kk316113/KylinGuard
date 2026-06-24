@@ -21,6 +21,21 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
 
   return (
     <div className="risk-graph-view">
+      <section className="risk-graph-summary">
+        <div className="graph-node">
+          <strong>{graph.nodes?.length || 0}</strong>
+          <span>风险节点</span>
+        </div>
+        <div className="graph-edge">
+          <strong>{graph.edges?.length || 0}</strong>
+          <span>关联路径</span>
+        </div>
+        <div className="graph-node">
+          <strong>{graph.risk_hotspots?.length || 0}</strong>
+          <span>风险热点</span>
+        </div>
+      </section>
+
       <section>
         <div className="mini-heading">
           <GitBranch size={16} />
@@ -43,9 +58,9 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
         </div>
         <div className="graph-list">
           {(graph.edges || []).map((edge, index) => (
-            <div className="graph-edge" key={`${edge.source || "s"}-${edge.target || "t"}-${index}`}>
+            <div className="graph-edge" key={`${edge.source || edge.from || "s"}-${edge.target || edge.to || "t"}-${index}`}>
               <strong>节点关联 {index + 1}</strong>
-              <span>{edge.label || "审计关联"}</span>
+              <span>{edge.label || `${edge.source || edge.from || "起点"} → ${edge.target || edge.to || "终点"}`}</span>
             </div>
           ))}
         </div>
