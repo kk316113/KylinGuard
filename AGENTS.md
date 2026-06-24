@@ -34,23 +34,27 @@ Development priority:
 
 ## Current Baseline
 
-- Stage 15A: One-click Demo Runtime & Acceptance Hardening - PASS
-- Stage 16A: LLM-driven Agent Loop Runtime - PASS
-- Stage 16B-1: Frontend Agent Loop Message Mapping - PASS
-- Stage 16C-lite: Observability & Acceptance Hardening - PASS
-- Real DeepSeek Smoke Test - PASS
+- KylinGuard production Agent closure on Kylin V11 x86 VMware - PASS
+- LLM-driven Agent Loop with safe tool execution - PASS
+- Standard MCP endpoint with 13 advertised read-only tools - PASS
+- Prompt injection / mutation guardrails - PASS
+- Deep OS sensing tools - PASS
+- RPM-backed configuration drift detector - PASS
+- B/S frontend, Go Agent, and audit-core systemd stack - PASS
+- Real DeepSeek multi-task Agent Loop acceptance - PASS
+- LoongArch target status: linux/loong64 static build PASS; no VMware LoongArch runtime claim
 
 Verified real DeepSeek summary:
 
 ```text
-DEMO_MOCK_LLM=false
-EINO_LLM_ENDPOINT=https://api.deepseek.com
-EINO_LLM_MODEL=deepseek-v4-flash
+OPENAI_COMPATIBLE_BASE_URL=https://api.deepseek.com
+OPENAI_COMPATIBLE_MODEL=deepseek-v4-flash
 chat_model=remote-llm-deepseek-openai_compatible
 chat_model contains mock: NO - PASS
 agent_mode=agent_loop
-agent_steps=3
-tool_trace=3
+natural-language acceptance tasks=4
+passed=4
+failed=0
 final_answer=OK
 fallback_reason=none
 audit_result=OK

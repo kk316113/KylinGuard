@@ -1,5 +1,9 @@
 # Product Shell Backend API Plan
 
+> Current status: this Stage 17A planning document has been superseded by the
+> implemented production shell. `/api/agent/run` is now the primary Agent Loop
+> task API, and `/api/agent/run-eino` remains a compatibility path.
+
 ## 1. Purpose
 
 Stage 17A-BE-0 does not implement new backend features. It defines the minimum backend API shape required by the Stage 17 product shell so the frontend can become an Agent Console instead of a raw JSON viewer or a security-audit dashboard.
@@ -24,9 +28,11 @@ Current backend capabilities:
 
 - `GET /health` returns Go Agent health.
 - `GET /api/os/info` invokes the `os_info` tool.
-- `POST /api/agent/run` keeps the stable runtime path.
-- `POST /api/agent/run-eino` runs the Eino runtime path and Agent Loop when remote LLM mode is enabled.
+- `POST /api/agent/run` runs the Agent Loop and is the primary task API.
+- `POST /api/agent/run-eino` calls the same Agent Loop runtime as a compatibility endpoint.
+- `GET /api/agent/runs/{run_id}`, `/audit-reports`, `/risk-graph`, and `/report` expose the latest in-memory run artifacts.
 - `GET /api/tools`, `GET /api/tools/{name}`, and `POST /api/tools/call` expose the MCP-like tool protocol and guarded tool execution path.
+- `POST /mcp` exposes the standard MCP Streamable HTTP tool endpoint.
 
 Current Agent Loop safety path:
 
@@ -66,8 +72,8 @@ The product shell should display an operations task session, not a raw audit rep
 |---|---|---|
 | Top Status Bar | Agent health, audit-core URL reachability, runtime mode, model display, policy status | `GET /api/agent/runtime-status` |
 | Left Sidebar | Available operations capabilities and safe prompt categories | `GET /api/agent/capabilities` |
-| Center Agent Workspace | Natural-language task run, final answer, execution steps | `POST /api/agent/run-eino` |
-| Right Insight Panel | tool evidence, security report, audit result, reasoning spans | `POST /api/agent/run-eino` response |
+| Center Agent Workspace | Natural-language task run, final answer, execution steps | `POST /api/agent/run` |
+| Right Insight Panel | tool evidence, security report, audit result, reasoning spans | `POST /api/agent/run` response and run artifact APIs |
 | Demo Acceptance Panel | verified stages and safe commands to rerun | `GET /api/agent/acceptance-summary` |
 
 The API layer should avoid forcing the frontend to infer runtime mode by digging through several nested fields. It should also avoid requiring the frontend to know whether a result came from mock mode, deterministic baseline, or real DeepSeek by parsing logs or shell environment files.
@@ -248,9 +254,11 @@ Example response:
 }
 ```
 
-### 4.4 `POST /api/agent/run-eino` Response Contract
+### 4.4 Agent Run Response Contract
 
-Purpose: keep the current Agent Loop endpoint as the only execution endpoint for Stage 17A.
+Purpose: preserve the Agent Loop response shape for both the primary
+`POST /api/agent/run` endpoint and the compatible `POST /api/agent/run-eino`
+endpoint.
 
 Existing fields to preserve:
 

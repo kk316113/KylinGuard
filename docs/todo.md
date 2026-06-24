@@ -1,5 +1,27 @@
 # TODO
 
+> Current status: this file is a historical TODO record from earlier stages.
+> Many entries below have been completed or superseded. Use `AGENTS.md` and
+> `docs/agent_memory/CURRENT_STATE.md` for the current acceptance state.
+
+## Current Open Work
+
+- Rotate any real DeepSeek key that was exposed outside the VM.
+- If a real LoongArch Kylin V11 host is available, repeat install, MCP, guardrail, configuration drift, Agent Loop, and B/S acceptance on that host.
+- Prepare competition report, PPT, demo recording, and defense script as delivery artifacts.
+- Optional: add repeatable latency/throughput benchmarks and release packaging metadata.
+
+## Completed Since This Historical TODO
+
+- `/api/agent/run` now uses the Agent Loop adapter as the primary task API.
+- `/api/agent/run-eino` remains as a compatibility path.
+- Real DeepSeek / OpenAI-compatible LLM mode is implemented and verified.
+- Standard MCP Streamable HTTP endpoint is implemented.
+- `configuration_drift_detector` is implemented through strict RPM verification.
+- Deep OS sensing tools are implemented and verified on Kylin V11 x86_64.
+- Kylin systemd stack for Agent, audit-core, and web frontend is implemented and verified.
+- linux/loong64 static build passes.
+
 ## Agent
 
 - Stage 8 已实现 MCP-like Tool Registry、ToolMetadata、Tool Policy 和 `/api/tools*` 接口。

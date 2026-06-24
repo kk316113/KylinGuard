@@ -30,7 +30,8 @@ if [[ "${SKIP_BUILD:-false}" != "true" ]]; then
   (cd "$REPO_ROOT/frontend" && npm ci && NEXT_TELEMETRY_DISABLED=1 COPILOTKIT_TELEMETRY_DISABLED=true KYLIN_GUARD_AGENT_API_URL=http://127.0.0.1:8080 npm run build)
 fi
 
-[[ -x "$REPO_ROOT/agent-go/bin/kylin-guard-agent" ]] || { printf 'agent binary is missing\n' >&2; exit 1; }
+[[ -f "$REPO_ROOT/agent-go/bin/kylin-guard-agent" ]] || { printf 'agent binary is missing\n' >&2; exit 1; }
+chmod 0755 "$REPO_ROOT/agent-go/bin/kylin-guard-agent"
 [[ -f "$REPO_ROOT/frontend/.next/standalone/server.js" ]] || { printf 'standalone web build is missing\n' >&2; exit 1; }
 
 create_service_user kylinguard
@@ -66,7 +67,8 @@ if [[ ! -e "$CONFIG_ROOT/agent.env" ]]; then
     'AUDIT_CORE_URL=http://127.0.0.1:8001' \
     'EINO_RUNTIME_ENABLED=true' \
     'EINO_GRAPH_ENABLED=true' \
-    'EINO_LLM_ENABLED=false' >"$CONFIG_ROOT/agent.env"
+    'EINO_LLM_ENABLED=false' \
+    'EINO_AGENT_MAX_STEPS=8' >"$CONFIG_ROOT/agent.env"
 fi
 if [[ ! -e "$CONFIG_ROOT/audit.env" ]]; then
   install -o root -g kylinguard-audit -m 0640 /dev/null "$CONFIG_ROOT/audit.env"
@@ -83,5 +85,6 @@ if command -v systemd-analyze >/dev/null 2>&1; then
     /etc/systemd/system/kylin-guard-web.service
 fi
 systemctl daemon-reload
-systemctl enable --now kylin-guard-audit.service kylin-guard-agent.service kylin-guard-web.service
+systemctl enable kylin-guard-audit.service kylin-guard-agent.service kylin-guard-web.service
+systemctl restart kylin-guard-audit.service kylin-guard-agent.service kylin-guard-web.service
 bash "$SCRIPT_DIR/check_stack.sh"

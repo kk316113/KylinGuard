@@ -168,6 +168,7 @@ Recommended screen recording flow:
 
 ## 11. Known Notes
 
-- Task 1 and Task 2 may currently return audit `decision=deny`. This is a conservative safety-audit decision and does not mean the Agent Loop failed.
-- Stage 16D full Risk Graph Artifact is not implemented in this lite closure stage.
-- Stage 17 report, PPT, screen recording, and defense script remain future work.
+- This file records the historical Stage 16D-lite demo closure. The current production acceptance state is maintained in `AGENTS.md` and `docs/agent_memory/CURRENT_STATE.md`.
+- Task-level audit decisions may be `review` or `deny` depending on the safety evidence. A conservative safety decision does not by itself mean the Agent Loop failed.
+- The backend now exposes run-level `risk_graph` through the Agent response and `/api/agent/runs/{run_id}/risk-graph`. A separate persisted/exportable "Risk Graph Artifact" package is still out of scope unless a later delivery stage requires it.
+- Report, PPT, screen recording, and defense script remain competition delivery artifacts, not production Agent runtime features.

@@ -2,25 +2,97 @@
 
 ## Current Status
 
-KylinGuard has completed:
+KylinGuard production Agent closure is complete for the current competition
+product boundary:
 
-- Stage 15A: One-click Demo Runtime & Acceptance Hardening - PASS
-- Stage 16A: LLM-driven Agent Loop Runtime - PASS
-- Stage 16B-1: Frontend Agent Loop Message Mapping - PASS
-- Stage 16C-lite: Observability & Acceptance Hardening - PASS
-- Stage 16D-lite: Demo Closure & Acceptance Assets - PASS
-- Stage 16E-lite: Natural-language Agent Loop Acceptance Script - PASS
-- Stage 16F-lite: Frontend Demo Polish - PASS
-- Stage 17A-UI-0: Frontend Framework / Template Reference Audit - PASS
-- Stage 17A-BE-0: Product Shell Backend API Plan - PASS
-- Stage 17A-1: Product Shell Implementation - IN PROGRESS
-- Stage 17A-2: User-Facing Agent Experience Fix - IN PROGRESS
-- Stage 17A-3: Semantic Interaction Router - IN PROGRESS
-- Stage 18A: Competition A2 Standard MCP Server - IN PROGRESS
-- Stage 18B: Prompt Injection and Unauthorized Mutation Guardrails - IN PROGRESS
-- Stage 18C: A2 Deep OS Sensing Tools - IN PROGRESS
-- Real DeepSeek Smoke Test - PASS
-- Real DeepSeek natural-language acceptance on Kylin VM - PASS
+- Main API path `/api/agent/run` and compatibility path `/api/agent/run-eino` - PASS
+- LLM-driven Agent Loop with structured `next_action` and safe tool execution - PASS
+- Tool Policy and Exec Proxy enforcement on every tool call - PASS
+- Prompt injection, unauthorized mutation, unknown action, and sensitive path guardrails - PASS
+- TraceShield audit integration with trace-backed local safety fallback - PASS
+- Standard MCP Streamable HTTP endpoint - PASS
+- 13 MCP/Agent read-only tools, including `configuration_drift_detector` - PASS
+- RPM-backed configuration drift detection through strict `rpm --verify <package>` arguments - PASS
+- Deep OS sensing tools for lsof/process/disk I/O - PASS
+- Next.js B/S frontend and Go Agent / audit-core / web systemd stack - PASS
+- Kylin V11 x86_64 VMware full-stack runtime acceptance - PASS
+- Real DeepSeek natural-language multi-task Agent Loop acceptance - PASS
+- linux/loong64 static build - PASS
+
+LoongArch note: the project has a successful `GOOS=linux GOARCH=loong64`
+static build. No LoongArch VMware/runtime execution is claimed without a real
+LoongArch Kylin V11 environment.
+
+## Stage 18D Persistent History and Export Enhancements
+
+Implementation is in progress and locally verified.
+
+Added production-code capabilities:
+
+```text
+JSON-file persistent Agent run history
+GET /api/agent/runs?limit=&cursor= history list
+GET /api/agent/runs/{run_id}/report.md Markdown export
+GET /api/agent/runs/{run_id}/risk-graph/artifact JSON export
+Recursive redaction before persistence and export
+Frontend persistent history list with selectable runs
+Frontend Markdown report and Risk Graph JSON download actions
+More actionable Chinese runtime/error copy
+```
+
+Defaults:
+
+```text
+KYLIN_GUARD_RUN_STORE_DIR=/var/lib/kylinguard/runs
+KYLIN_GUARD_RUN_STORE_LIMIT=200
+No SQLite, PDF renderer, login system, or heavy ML dependency introduced.
+```
+
+Local verification:
+
+```text
+go test ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/server - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+Local HTTP smoke for run/list/report.md/risk-graph artifact/persisted files - PASS
+```
+
+Kylin V11 VM verification:
+
+```text
+Kylin V11 x86_64 VMware install/update smoke - PASS
+GET /api/agent/runs?limit=10 - PASS
+GET /api/agent/runs/?limit=10 - PASS
+Agent Loop run creation - PASS
+Persistent history list shows new run - PASS
+Markdown report export - PASS
+Risk Graph Artifact export - PASS
+Frontend 5173 API proxy for history list - PASS
+Agent restart persistence check - PASS
+Persisted report and artifact available after restart - PASS
+```
+
+Follow-up UX/runtime fix:
+
+```text
+Right Insight Panel tools tab now receives capabilities and displays the registered tool list.
+Agent Loop default max steps increased from 6 to 8.
+EINO_AGENT_MAX_STEPS config added with bounded range 2-12.
+When max steps are reached, Agent now returns an evidence-based Chinese interim diagnosis instead of asking the user to retry/split the task.
+Remote LLM prompt now forces final_answer when remaining_steps <= 1.
+```
+
+Verification:
+
+```text
+go test ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/server - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+```
 
 ## Latest Important Commits
 
@@ -30,6 +102,69 @@ KylinGuard has completed:
   - dev-gsh: `52beac7`
   - master: `4976ed3`
 - Stage 16E-lite acceptance script tightening: dev-gsh `79db46e`
+- Production B/S and Kylin systemd deployment closure: `d3dc6ff`
+- Eino/Sonic runtime compatibility under systemd sandbox: `c83b94f`
+- Kylin lsof acceptance under service isolation: `5771893`
+- Remote LLM environment sanitization: `8cffe06`
+- Remote LLM timeout and robust Agent Loop JSON extraction: `5f030d2`
+
+## Final Kylin V11 VMware Acceptance
+
+Verified on Kylin Linux Advanced Server V11 x86_64 running in VMware.
+
+Installed services:
+
+```text
+kylin-guard-agent.service - active
+kylin-guard-audit.service - active
+kylin-guard-web.service - active
+```
+
+Runtime checks:
+
+```text
+Agent health: PASS
+Audit health: PASS
+Web health: PASS
+Non-root service accounts: PASS
+Systemd stack install/check scripts: PASS
+B/S browser flow: PASS
+MCP initialize / tools/list / tools/call: PASS
+MCP tools/list count: 13
+safe_shell not advertised: PASS
+configuration_drift_detector acceptance: PASS
+security guardrail attacks: PASS
+deep OS sensing tools: PASS
+```
+
+Real DeepSeek Agent Loop acceptance:
+
+```text
+OPENAI_COMPATIBLE_BASE_URL=https://api.deepseek.com
+OPENAI_COMPATIBLE_MODEL=deepseek-v4-flash
+chat_model=remote-llm-deepseek-openai_compatible
+
+Task 1 SSH diagnosis: PASS
+Task 2 performance diagnosis: PASS
+Task 3 service/port diagnosis: PASS
+Task 4 dangerous audit-log clearing request: PASS
+
+Summary: passed=4, failed=0
+Agent Loop natural-language task acceptance: PASS
+fallback_reason=none for diagnostic real-LLM tasks
+```
+
+Important implementation notes:
+
+```text
+Remote LLM fallback state is request-scoped.
+Remote LLM HTTP responses are size-limited.
+Remote LLM calls use bounded timeout/retry and honor context cancellation.
+Agent Loop parser accepts a single extracted JSON object from otherwise noisy model output, then still schema-validates it.
+Unknown action_type returns a controlled diagnostic observation and does not execute tools.
+Audit service outage uses trace-backed local safety fallback, not fabricated TraceShield results.
+No real API keys are stored in repository files or memory docs.
+```
 
 ## Real DeepSeek Verification
 
@@ -566,7 +701,7 @@ The deterministic no-key Agent Loop also completed a natural-language performanc
 
 Priority order:
 
-1. Run MCP, guardrail, OS sensing, and non-root systemd smoke on LoongArch + Kylin V11
-2. Add configuration-drift baselines and read-only drift detection
-3. Add repeatable API/Agent performance benchmarks and report generation
-4. Complete the nine competition submission artifacts and seven-minute demo
+1. Rotate any real DeepSeek API key that was exposed outside the VM environment.
+2. If a real LoongArch Kylin V11 machine becomes available, repeat install, MCP, guardrail, configuration drift, Agent Loop, and B/S acceptance there.
+3. Prepare final competition submission artifacts and the demo script from the verified production runtime.
+4. Optional hardening: add repeatable API/Agent latency benchmarks and release packaging metadata.

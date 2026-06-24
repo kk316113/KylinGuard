@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	defaultLLMTimeout   = 15 * time.Second
+	defaultLLMTimeout   = 45 * time.Second
 	chatCompletionsPath = "/v1/chat/completions"
 )
 

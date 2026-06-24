@@ -14,7 +14,7 @@ const agentBackendBase = (
   "http://127.0.0.1:8080"
 ).replace(/\/$/, "");
 
-const backendTimeoutMs = 120_000;
+const backendTimeoutMs = 180_000;
 
 class KylinGuardAgent extends AbstractAgent {
   constructor(private readonly apiBase: string) {

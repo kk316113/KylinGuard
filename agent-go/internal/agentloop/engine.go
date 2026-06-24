@@ -2,6 +2,7 @@ package agentloop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -14,7 +15,9 @@ import (
 )
 
 const (
-	DefaultMaxSteps   = 6
+	DefaultMaxSteps   = 8
+	MinMaxSteps       = 2
+	MaxMaxSteps       = 12
 	ActionToolCall    = "tool_call"
 	ActionFinalAnswer = "final_answer"
 )
@@ -159,12 +162,18 @@ func (e *Engine) Run(ctx context.Context, task string, rtb *reasoningtrace.Trace
 
 	// Max steps reached without final answer.
 	return &AgentResponse{
-		AgentMode:   ModeAgentLoop,
-		AgentSteps:  steps,
-		FinalAnswer: "已达到最大推理步数限制。建议重新描述问题或拆分后分别查询。",
-		Confidence:  "low",
-		StepCount:   len(steps),
-		RiskGraph:   buildRiskGraph(steps),
+		AgentMode: ModeAgentLoop,
+		TaskUnderstanding: &TaskUnderstanding{
+			UserGoal:   task,
+			IntentType: classifyIntent(task),
+			RiskLevel:  classifyRisk(task),
+		},
+		AgentSteps:      steps,
+		FinalAnswer:     buildMaxStepsFinalAnswer(task, steps),
+		Confidence:      "medium",
+		NextSuggestions: buildMaxStepsSuggestions(steps),
+		StepCount:       len(steps),
+		RiskGraph:       buildRiskGraph(steps),
 	}, nil
 }
 
@@ -331,6 +340,92 @@ func buildRiskGraph(steps []AgentStep) *auditclient.RiskGraph {
 		}
 	}
 	return &auditclient.RiskGraph{Nodes: nodes, Edges: edges}
+}
+
+func buildMaxStepsFinalAnswer(task string, steps []AgentStep) string {
+	if len(steps) == 0 {
+		return "我没有获得可用的工具观察结果，因此无法给出可靠诊断。请补充现象、目标主机或服务名称后再试。"
+	}
+	var b strings.Builder
+	b.WriteString("已完成多步受控检查，但模型在达到安全步数上限前没有主动结束。我已根据现有真实观察先给出阶段性结论：\n\n")
+	b.WriteString("检查目标：")
+	b.WriteString(strings.TrimSpace(task))
+	b.WriteString("\n\n已检查的证据：\n")
+	for _, step := range steps {
+		toolName := step.ToolName
+		if toolName == "" {
+			toolName = "unknown_tool"
+		}
+		status := fmt.Sprint(step.Observation["status"])
+		if status == "" || status == "<nil>" {
+			status = step.PolicyDecision
+		}
+		summary := summarizeObservation(step.Observation)
+		if summary == "" {
+			summary = firstNonEmpty(step.UserVisibleSummary, step.Reason, "该步骤没有返回额外摘要")
+		}
+		fmt.Fprintf(&b, "- 第 %d 步 `%s`：%s；结果：%s\n", step.StepIndex, toolName, firstNonEmpty(step.UserVisibleSummary, step.Reason, "执行受控检查"), truncateText(summary, 220))
+	}
+	b.WriteString("\n阶段性判断：以上工具调用均来自受控执行链，可作为当前排查依据；由于已达到单次请求的安全步数上限，结论应按“需复核”处理，而不是继续无限调用工具。\n")
+	b.WriteString("\n建议下一步：优先查看上面状态异常、被策略拒绝或风险较高的步骤；如果还需要继续排查，请基于这些证据提出更具体的后续问题。")
+	return b.String()
+}
+
+func buildMaxStepsSuggestions(steps []AgentStep) []string {
+	suggestions := []string{"基于当前证据继续追问一个更具体的问题"}
+	for _, step := range steps {
+		if step.PolicyDecision == "deny" {
+			suggestions = append(suggestions, "先处理被安全策略拒绝的工具请求或缩小检查范围")
+			break
+		}
+	}
+	for _, step := range steps {
+		if status := fmt.Sprint(step.Observation["status"]); status == "error" || status == "denied" {
+			suggestions = append(suggestions, "优先复核执行失败或被拒绝的检查项")
+			break
+		}
+	}
+	if len(suggestions) == 1 {
+		suggestions = append(suggestions, "如需更深入排查，可指定服务名、端口、进程或软件包")
+	}
+	return suggestions
+}
+
+func summarizeObservation(observation map[string]any) string {
+	if len(observation) == 0 {
+		return ""
+	}
+	for _, key := range []string{"summary", "result", "message", "deny_reason", "error"} {
+		if value := strings.TrimSpace(fmt.Sprint(observation[key])); value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	data, err := json.Marshal(observation)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func truncateText(value string, limit int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 func buildToolDefs(registry *tools.Registry) []ToolDef {

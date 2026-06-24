@@ -18,10 +18,6 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: "/api/agent/:path*",
-        destination: `${normalizedBackendTarget}/api/agent/:path*`,
-      },
-      {
         source: "/api/os/:path*",
         destination: `${normalizedBackendTarget}/api/os/:path*`,
       },

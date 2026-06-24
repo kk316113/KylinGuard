@@ -139,6 +139,11 @@ export function AppShell() {
             capabilities={capabilities}
             acceptance={acceptance}
             currentRun={currentRun}
+            onSelectRun={(run) => {
+              setCurrentRun(run);
+              setSelectedStepIndex(run.agent_steps?.length ? 0 : null);
+              setActiveView("overview");
+            }}
             selectedStepIndex={selectedStepIndex}
             onSelectStep={setSelectedStepIndex}
             preferences={preferences}
@@ -159,9 +164,9 @@ export function AppShell() {
           messageView={{ cursor: ThinkingCursor }}
           labels={{
             modalHeaderTitle: "麒盾",
-            chatInputPlaceholder: "输入消息...",
-            welcomeMessageText: "你好，我是麒盾。",
-            chatDisclaimerText: "回答由智能体生成，请核对重要信息。",
+            chatInputPlaceholder: "描述你要排查的运维问题...",
+            welcomeMessageText: "你好，我是麒盾。你可以直接说“SSH 连不上了”或“机器很卡”，我会先做安全检查，再调用受控工具。",
+            chatDisclaimerText: "智能体只执行受控只读工具；重要结论请结合审计证据复核。",
           }}
         />
       ) : null}

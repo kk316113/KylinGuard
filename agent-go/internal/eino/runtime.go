@@ -658,6 +658,7 @@ func (r *Runtime) runAgentLoop(ctx context.Context, task string, rtb *reasoningt
 
 	exec := agentloop.NewToolStepExecutor(r.registry)
 	engine := agentloop.NewEngineWithAuditor(gen, exec, r.registry, NewAuditClientStepAuditor(r.auditor))
+	engine.MaxSteps = r.config.AgentMaxSteps
 
 	loopResp, err := engine.Run(ctx, task, rtb, requestSpan.SpanID)
 	if err != nil {

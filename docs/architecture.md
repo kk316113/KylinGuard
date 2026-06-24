@@ -1,51 +1,55 @@
 # Architecture
 
-KylinGuard 当前采用稳定主链路 + 实验 Eino 链路并行演进的架构。
+> Current status: this document was originally written during the Stage 9B
+> transition. The production architecture has since converged on the
+> LLM-driven Agent Loop as the main runtime. Historical notes below are kept for
+> context, but the authoritative current state is in `AGENTS.md` and
+> `docs/agent_memory/CURRENT_STATE.md`.
 
-稳定主链路：
+KylinGuard 当前采用 Agent Loop 主链路 + 兼容接口的架构。
+
+生产主链路：
 
 ```text
 User Task
--> Go Agent Runtime
+-> Go /api/agent/run
 -> Intent Guard
--> Rule-based Ops Planner
--> MCP-like Tool Registry
--> Kylin Ops Tools
--> SSH Diagnosis Tools
+-> LLM-driven Agent Loop
+-> structured next_action schema validation
+-> Tool Policy
+-> Exec Proxy / Tool Registry
+-> read-only Kylin Ops Tools
+-> observation
 -> Semantic Tool Trace
 -> Python Audit Core
 -> TraceShield Adapter/Core
--> Evidence Chain
--> Report Builder
--> Frontend Security Console
+-> Security Report / Risk Graph
+-> final_answer
+-> Next.js Agent Console
 ```
 
-Stage 9B 实验链路：
+兼容链路：
 
 ```text
 User Task
 -> Go /api/agent/run-eino
 -> Intent Guard
--> CloudWeGo Eino compose.Graph
--> Deterministic ChatModel Stub
--> MCP-like Tool Adapter
+-> same Agent Loop runtime as /api/agent/run
+-> structured next_action schema validation
 -> Tool Policy
--> MCP-like Tool Registry
--> Kylin Ops Tools
--> Semantic Tool Trace
--> Python Audit Core
--> TraceShield Adapter/Core
--> Evidence Chain
--> Report Builder
+-> Exec Proxy / Tool Registry
+-> observation / trace / audit / final_answer
 ```
 
 ## 当前状态
 
-- `/api/agent/run` 仍是稳定 Go runtime，不被 Stage 9B 改写。
-- `/api/agent/run-eino` 已进入 CloudWeGo Eino graph runtime，不再 fallback 到 stable runtime。
-- Eino graph 第一节点是 deterministic ChatModel Stub，负责把任务映射为确定性的 tool calls。
-- Eino graph 第二节点是 MCP-like Tool Adapter，负责通过 Tool Policy 和 Tool Registry 执行工具。
-- 当前没有真实 LLM、远程模型 API、API key、模型厂商 SDK 或 ReAct Agent。
+- `/api/agent/run` 是当前主接口，使用 Agent Loop adapter。
+- `/api/agent/run-eino` 保留为兼容路径，调用同一个 Agent Loop handler。
+- 真实 DeepSeek / OpenAI-compatible 远程 LLM 已接入；无 key 时使用 deterministic baseline 作为回归和安全降级。
+- Agent Loop 只接受结构化 `next_action`，系统侧执行 schema 校验、Intent Guard、Tool Policy 和 Exec Proxy。
+- MCP 已从早期 “MCP-like” 工具协议演进为标准 Streamable HTTP `/mcp` endpoint，同时保留 `/api/tools*` 管理接口。
+- `safe_shell` 不向 Agent/MCP 暴露；没有任意 shell 或任意文件读取。
+- `configuration_drift_detector` 已通过 RPM 数据库和严格 `rpm --verify <package>` 参数形态实现只读配置漂移检测。
 - `audit-core-py` 仍是唯一的 TraceShield 入口，Go Agent 不直接 import TraceShield-Core。
 - `security_report` 由 Go 侧 report builder 生成，只解释结果，不改变最终 decision。
 
@@ -60,31 +64,34 @@ Go Agent
 -> traceshield_experiment_core.TraceShieldEvaluator
 ```
 
-如果 TraceShield import 或运行失败，adapter 会返回 fallback mock，并在 `message` 中说明原因。
+如果 TraceShield import 或运行失败，adapter 使用明确标记的本地安全降级结果，不伪造 TraceShield 结论。
 
 ## MCP-like Tool Protocol
 
-Stage 8 工具协议提供：
+工具协议提供：
 
 - `GET /api/tools`：列出工具 metadata，不执行工具。
 - `GET /api/tools/{name}`：返回单个工具 schema 和权限边界。
 - `POST /api/tools/call`：受 Tool Policy 控制的单工具调用；允许后仍会生成 semantic trace 并进入 audit-core-py / TraceShield 审计。
+- `POST /mcp`：标准 MCP Streamable HTTP endpoint，支持 initialize、tools/list、tools/call。
 
-它不是绕过 Agent 的后门。`safe_shell` 默认禁止 direct call；`log_reader` 和 `ssh_login_analyzer` 只能访问白名单日志路径。
+它不是绕过 Agent 的后门。`safe_shell` 不对 Agent/MCP 暴露；日志、进程、端口、RPM 漂移等能力均受 Tool Policy 和 Exec Proxy 约束。
 
 ## Eino Metadata
 
-Stage 9B run-eino 响应会在 `security_report.audit_metadata` 中记录：
+Agent Loop 响应会在 `security_report.audit_metadata` 中记录：
 
 - `route=eino-runtime`
 - `runtime=eino`
 - `eino_graph_enabled=true`
-- `llm_enabled=false`
-- `chat_model=deterministic-stub`
-- `orchestration=eino-graph-tool-calling`
-- `tool_protocol=mcp-like`
+- `llm_enabled`
+- `remote_llm_used`
+- `chat_model`
+- `fallback_reason`
+- `orchestration`
+- `tool_protocol`
 - `tool_protocol_version=stage8-v1`
-- `eino_runtime_version=stage9b-v1`
+- `eino_runtime_version`
 - `registered_tool_count`
 - `tools_used`
 
