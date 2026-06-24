@@ -67,7 +67,8 @@ if [[ ! -e "$CONFIG_ROOT/agent.env" ]]; then
     'AUDIT_CORE_URL=http://127.0.0.1:8001' \
     'EINO_RUNTIME_ENABLED=true' \
     'EINO_GRAPH_ENABLED=true' \
-    'EINO_LLM_ENABLED=false' >"$CONFIG_ROOT/agent.env"
+    'EINO_LLM_ENABLED=false' \
+    'EINO_AGENT_MAX_STEPS=8' >"$CONFIG_ROOT/agent.env"
 fi
 if [[ ! -e "$CONFIG_ROOT/audit.env" ]]; then
   install -o root -g kylinguard-audit -m 0640 /dev/null "$CONFIG_ROOT/audit.env"

@@ -16,6 +16,7 @@ type Config struct {
 	EinoLLMEndpoint    string
 	EinoLLMModel       string
 	EinoLLMAPIKey      string
+	EinoAgentMaxSteps  int
 	RunStoreDir        string
 	RunStoreLimit      int
 }
@@ -58,6 +59,7 @@ func Load() Config {
 		EinoLLMEndpoint:    endpoint,
 		EinoLLMModel:       model,
 		EinoLLMAPIKey:      apiKey,
+		EinoAgentMaxSteps:  getenvInt("EINO_AGENT_MAX_STEPS", 8),
 		RunStoreDir:        getenv("KYLIN_GUARD_RUN_STORE_DIR", "/var/lib/kylinguard/runs"),
 		RunStoreLimit:      getenvInt("KYLIN_GUARD_RUN_STORE_LIMIT", 200),
 	}

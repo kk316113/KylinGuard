@@ -76,7 +76,12 @@ export function OpsDashboard({
         />
       ) : null}
       {activeView === "audit" ? (
-        <AuditBoard currentRun={currentRun} selectedStepIndex={selectedStepIndex} onSelectStep={onSelectStep} />
+        <AuditBoard
+          currentRun={currentRun}
+          selectedStepIndex={selectedStepIndex}
+          onSelectStep={onSelectStep}
+          capabilities={capabilities}
+        />
       ) : null}
       {activeView === "tools" ? <ToolsBoard capabilities={capabilities} /> : null}
       {activeView === "runs" ? <RunsBoard currentRun={currentRun} onSelectRun={onSelectRun} /> : null}
@@ -163,10 +168,12 @@ function AuditBoard({
   currentRun,
   selectedStepIndex,
   onSelectStep,
+  capabilities,
 }: {
   currentRun?: AgentRun | null;
   selectedStepIndex: number | null;
   onSelectStep: (index: number) => void;
+  capabilities?: CapabilitiesResponse;
 }) {
   if (!currentRun) {
     return (
@@ -184,7 +191,12 @@ function AuditBoard({
     <div className="board-stack">
       <FinalAnswerCard run={currentRun} />
       <AgentRunTimeline run={currentRun} selectedStepIndex={selectedStepIndex} onSelectStep={onSelectStep} />
-      <RightInsightPanel run={currentRun} selectedStepIndex={selectedStepIndex} onSelectStep={onSelectStep} />
+      <RightInsightPanel
+        run={currentRun}
+        selectedStepIndex={selectedStepIndex}
+        onSelectStep={onSelectStep}
+        capabilities={capabilities}
+      />
     </div>
   );
 }

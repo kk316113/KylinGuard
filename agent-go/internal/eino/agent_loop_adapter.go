@@ -57,6 +57,7 @@ Security boundary:
 - Do not output shell commands and do not attempt to modify system configuration.
 - Tool Policy and Exec Proxy make the final execution decision and cannot be bypassed.
 - Once you have enough evidence, output final_answer.
+- If the context says remaining_steps is 1 or less, you MUST output final_answer using the existing observations; do not request another tool.
 - final_answer must be in Chinese, explaining what was checked, findings, possible causes, and next steps.
 
 Respond with EXACTLY one of:
@@ -79,10 +80,15 @@ func (a *RemoteLLMAgentAdapter) buildAgentContext(req agentloop.NextActionReques
 		historyLines[i], _ = security.NeutralizeUntrustedText(string(historyJSON))
 	}
 
+	remainingSteps := req.MaxSteps - len(req.StepHistory)
+	if remainingSteps < 0 {
+		remainingSteps = 0
+	}
 	contextJSON, _ := json.Marshal(map[string]any{
-		"task":         task,
-		"step_history": historyLines,
-		"max_steps":    req.MaxSteps,
+		"task":            task,
+		"step_history":    historyLines,
+		"max_steps":       req.MaxSteps,
+		"remaining_steps": remainingSteps,
 	})
 	return string(contextJSON)
 }

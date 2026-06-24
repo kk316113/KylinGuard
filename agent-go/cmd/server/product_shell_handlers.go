@@ -108,12 +108,12 @@ func runtimeStatusHandler(cfg config.Config) http.HandlerFunc {
 	}
 }
 
-func capabilitiesHandler(registry *tools.Registry) http.HandlerFunc {
+func capabilitiesHandler(registry *tools.Registry, maxSteps int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !requireMethod(w, r, http.MethodGet) {
 			return
 		}
-		writeJSON(w, http.StatusOK, buildCapabilities(registry))
+		writeJSON(w, http.StatusOK, buildCapabilities(registry, maxSteps))
 	}
 }
 
@@ -139,6 +139,7 @@ func buildRuntimeStatus(ctx context.Context, cfg config.Config) runtimeStatusRes
 		LLMEndpoint:    cfg.EinoLLMEndpoint,
 		LLMModel:       cfg.EinoLLMModel,
 		LLMAPIKey:      cfg.EinoLLMAPIKey,
+		AgentMaxSteps:  cfg.EinoAgentMaxSteps,
 	}
 	chatModel := runtimeCfg.ChatModelName()
 	remoteUsed := cfg.EinoLLMEnabled && cfg.EinoLLMProvider != "deterministic" && cfg.EinoLLMAPIKey != ""
@@ -175,7 +176,7 @@ func buildRuntimeStatus(ctx context.Context, cfg config.Config) runtimeStatusRes
 	return resp
 }
 
-func buildCapabilities(registry *tools.Registry) capabilitiesResponse {
+func buildCapabilities(registry *tools.Registry, maxSteps int) capabilitiesResponse {
 	toolMetadata := registry.ListTools()
 	available := make([]capabilityTool, 0, len(toolMetadata))
 	for _, meta := range toolMetadata {
@@ -207,7 +208,7 @@ func buildCapabilities(registry *tools.Registry) capabilitiesResponse {
 		},
 		AgentLoop: capabilityAgentLoop{
 			NextActionSchema: []string{agentloop.ActionToolCall, agentloop.ActionFinalAnswer},
-			MaxSteps:         agentloop.DefaultMaxSteps,
+			MaxSteps:         einoruntime.NormalizeRuntimeConfig(einoruntime.RuntimeConfig{AgentMaxSteps: maxSteps}).AgentMaxSteps,
 		},
 	}
 }

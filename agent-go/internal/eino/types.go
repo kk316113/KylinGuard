@@ -3,6 +3,7 @@ package eino
 import (
 	"strings"
 
+	"kylin-guard-agent/agent-go/internal/agentloop"
 	"kylin-guard-agent/agent-go/internal/tools"
 )
 
@@ -31,6 +32,7 @@ type RuntimeConfig struct {
 	LLMEndpoint    string // LLM API endpoint URL
 	LLMModel       string // Model name
 	LLMAPIKey      string // API key (placeholder)
+	AgentMaxSteps  int    // Maximum Agent Loop tool-call iterations.
 }
 
 type RuntimeMetadata struct {
@@ -56,6 +58,7 @@ func DefaultRuntimeConfig() RuntimeConfig {
 		ToolProtocol:   tools.ToolProtocol,
 		Version:        RuntimeVersion,
 		LLMProvider:    "deterministic",
+		AgentMaxSteps:  agentloop.DefaultMaxSteps,
 	}
 }
 
@@ -78,6 +81,15 @@ func NormalizeRuntimeConfig(config RuntimeConfig) RuntimeConfig {
 	}
 	if config.LLMProvider == "" {
 		config.LLMProvider = defaults.LLMProvider
+	}
+	if config.AgentMaxSteps == 0 {
+		config.AgentMaxSteps = defaults.AgentMaxSteps
+	}
+	if config.AgentMaxSteps < agentloop.MinMaxSteps {
+		config.AgentMaxSteps = agentloop.MinMaxSteps
+	}
+	if config.AgentMaxSteps > agentloop.MaxMaxSteps {
+		config.AgentMaxSteps = agentloop.MaxMaxSteps
 	}
 	return config
 }

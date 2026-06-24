@@ -353,7 +353,7 @@ func TestCapabilitiesHandlerUsesRegisteredTools(t *testing.T) {
 	registry := tools.NewDefaultRegistry()
 	request := httptest.NewRequest(http.MethodGet, "/api/agent/capabilities", nil)
 	recorder := httptest.NewRecorder()
-	capabilitiesHandler(registry).ServeHTTP(recorder, request)
+	capabilitiesHandler(registry, 10).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
@@ -382,6 +382,9 @@ func TestCapabilitiesHandlerUsesRegisteredTools(t *testing.T) {
 	}
 	if !response.ToolPolicy.Enabled || !response.ToolPolicy.DangerousActionsBlocked {
 		t.Fatalf("expected enabled tool policy, got %#v", response.ToolPolicy)
+	}
+	if response.AgentLoop.MaxSteps != 10 {
+		t.Fatalf("expected configured max_steps=10, got %d", response.AgentLoop.MaxSteps)
 	}
 }
 

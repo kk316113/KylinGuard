@@ -74,6 +74,26 @@ Agent restart persistence check - PASS
 Persisted report and artifact available after restart - PASS
 ```
 
+Follow-up UX/runtime fix:
+
+```text
+Right Insight Panel tools tab now receives capabilities and displays the registered tool list.
+Agent Loop default max steps increased from 6 to 8.
+EINO_AGENT_MAX_STEPS config added with bounded range 2-12.
+When max steps are reached, Agent now returns an evidence-based Chinese interim diagnosis instead of asking the user to retry/split the task.
+Remote LLM prompt now forces final_answer when remaining_steps <= 1.
+```
+
+Verification:
+
+```text
+go test ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./cmd/server - PASS
+CGO_ENABLED=0 GOOS=linux GOARCH=loong64 go build ./cmd/server - PASS
+```
+
 ## Latest Important Commits
 
 - Stage 16B-1 frontend mapping: `d927a84`

@@ -2,6 +2,7 @@ package agentloop
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"kylin-guard-agent/agent-go/internal/logtrace"
@@ -171,6 +172,15 @@ func TestEngineMaxStepsReached(t *testing.T) {
 	}
 	if resp.FinalAnswer == "" {
 		t.Fatal("expected final_answer when max steps reached")
+	}
+	if strings.Contains(resp.FinalAnswer, "已达到最大推理步数限制") || strings.Contains(resp.FinalAnswer, "拆分后分别查询") {
+		t.Fatalf("max steps should produce evidence-based summary, got %q", resp.FinalAnswer)
+	}
+	if !strings.Contains(resp.FinalAnswer, "已检查的证据") || !strings.Contains(resp.FinalAnswer, "阶段性判断") {
+		t.Fatalf("expected evidence-based max-step summary, got %q", resp.FinalAnswer)
+	}
+	if resp.Confidence != "medium" {
+		t.Fatalf("expected medium confidence for bounded summary, got %q", resp.Confidence)
 	}
 }
 
