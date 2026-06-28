@@ -1803,46 +1803,48 @@ html:not(.dark) .app-drawer-tabs button.active {
   border-color: rgba(0, 112, 243, 0.20);
 }
 
-/* ── Explicit drawer text colors (bypass CSS variable conflicts) ── */
+/* ── Explicit drawer colors (!important to override CopilotKit) ── */
 
 html.dark .app-drawer-modal,
 html.dark .app-drawer-modal * {
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.92) !important;
 }
 
+html.dark .app-drawer-modal .app-drawer-tabs button:not(.active),
+html.dark .app-drawer-modal .app-drawer-close,
 html.dark .app-drawer-modal .app-drawer-settings-desc,
 html.dark .app-drawer-modal .setting-row > div:first-child > span,
-html.dark .app-drawer-modal .app-drawer-tabs button:not(.active),
-html.dark .app-drawer-modal .app-drawer-close {
-  color: rgba(255, 255, 255, 0.65);
+html.dark .app-drawer-modal .segmented-control button {
+  color: rgba(255, 255, 255, 0.75) !important;
 }
 
 html.dark .app-drawer-modal .app-drawer-settings-list {
-  border-top-color: rgba(255, 255, 255, 0.10);
+  border-top-color: rgba(255, 255, 255, 0.10) !important;
 }
 
 html.dark .app-drawer-modal .setting-row {
-  border-bottom-color: rgba(255, 255, 255, 0.10);
+  border-bottom-color: rgba(255, 255, 255, 0.10) !important;
 }
 
 html:not(.dark) .app-drawer-modal,
 html:not(.dark) .app-drawer-modal * {
-  color: rgba(0, 0, 0, 0.88);
+  color: rgba(0, 0, 0, 0.90) !important;
 }
 
+html:not(.dark) .app-drawer-modal .app-drawer-tabs button:not(.active),
+html:not(.dark) .app-drawer-modal .app-drawer-close,
 html:not(.dark) .app-drawer-modal .app-drawer-settings-desc,
 html:not(.dark) .app-drawer-modal .setting-row > div:first-child > span,
-html:not(.dark) .app-drawer-modal .app-drawer-tabs button:not(.active),
-html:not(.dark) .app-drawer-modal .app-drawer-close {
-  color: rgba(0, 0, 0, 0.55);
+html:not(.dark) .app-drawer-modal .segmented-control button {
+  color: rgba(0, 0, 0, 0.70) !important;
 }
 
 html:not(.dark) .app-drawer-modal .app-drawer-settings-list {
-  border-top-color: rgba(0, 0, 0, 0.08);
+  border-top-color: rgba(0, 0, 0, 0.08) !important;
 }
 
 html:not(.dark) .app-drawer-modal .setting-row {
-  border-bottom-color: rgba(0, 0, 0, 0.08);
+  border-bottom-color: rgba(0, 0, 0, 0.08) !important;
 }
 
 html.dark .app-drawer-overlay {
