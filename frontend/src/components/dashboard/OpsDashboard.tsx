@@ -16,7 +16,6 @@ import { AgentRunTimeline } from "@/components/agent/AgentRunTimeline";
 import { FinalAnswerCard } from "@/components/agent/FinalAnswerCard";
 import { RiskDecisionBadge } from "@/components/audit/RiskDecisionBadge";
 import { RiskGraphPanel } from "@/components/risk-graph/RiskGraphPanel";
-import type { ConsolePreferences } from "@/hooks/useConsolePreferences";
 import {
   auditMethodLabel,
   boundaryLevelLabel,
@@ -47,9 +46,6 @@ type Props = {
   onSelectRun: (run: AgentRun) => void;
   selectedStepIndex: number | null;
   onSelectStep: (index: number) => void;
-  preferences: ConsolePreferences;
-  onUpdatePreferences: (patch: Partial<ConsolePreferences>) => void;
-  onResetPreferences: () => void;
 };
 
 export function OpsDashboard({
@@ -61,9 +57,6 @@ export function OpsDashboard({
   onSelectRun,
   selectedStepIndex,
   onSelectStep,
-  preferences,
-  onUpdatePreferences,
-  onResetPreferences,
 }: Props) {
   return (
     <main className="dashboard-board">

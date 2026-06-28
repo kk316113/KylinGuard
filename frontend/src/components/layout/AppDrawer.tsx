@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CopilotChat, type AttachmentsConfig } from "@copilotkit/react-core/v2";
 import { MessageSquare, Plus, Settings, X } from "lucide-react";
-import type { ConsolePreferences } from "@/hooks/useConsolePreferences";
+import { useConsolePreferences, type ConsolePreferences } from "@/hooks/useConsolePreferences";
 
 // ── Attachment helpers ──────────────────────────────────────────
 
@@ -23,19 +23,12 @@ type AttachmentUploadError = {
   message: string;
 };
 
-// ── Types ───────────────────────────────────────────────────────
-
-type AppDrawerProps = {
-  preferences: ConsolePreferences;
-  onUpdatePreferences: (patch: Partial<ConsolePreferences>) => void;
-  onResetPreferences: () => void;
-};
+// ── Component ───────────────────────────────────────────────────
 
 type TabKey = "chat" | "settings";
 
-// ── Component ───────────────────────────────────────────────────
-
-export function AppDrawer({ preferences, onUpdatePreferences, onResetPreferences }: AppDrawerProps) {
+export function AppDrawer() {
+  const { preferences, updatePreferences, resetPreferences } = useConsolePreferences();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("chat");
   const panelRef = useRef<HTMLDivElement>(null);
@@ -155,8 +148,8 @@ export function AppDrawer({ preferences, onUpdatePreferences, onResetPreferences
           ) : (
             <SettingsPanel
               preferences={preferences}
-              onUpdatePreferences={onUpdatePreferences}
-              onResetPreferences={onResetPreferences}
+              updatePreferences={updatePreferences}
+              resetPreferences={resetPreferences}
             />
           )}
         </div>
@@ -169,12 +162,12 @@ export function AppDrawer({ preferences, onUpdatePreferences, onResetPreferences
 
 function SettingsPanel({
   preferences,
-  onUpdatePreferences,
-  onResetPreferences,
+  updatePreferences,
+  resetPreferences,
 }: {
   preferences: ConsolePreferences;
-  onUpdatePreferences: (patch: Partial<ConsolePreferences>) => void;
-  onResetPreferences: () => void;
+  updatePreferences: (patch: Partial<ConsolePreferences>) => void;
+  resetPreferences: () => void;
 }) {
   return (
     <div className="app-drawer-settings">
@@ -193,7 +186,7 @@ function SettingsPanel({
                 type="button"
                 aria-pressed={preferences.theme === theme}
                 className={preferences.theme === theme ? "active" : ""}
-                onClick={() => onUpdatePreferences({ theme })}
+                onClick={() => updatePreferences({ theme })}
               >
                 {theme === "system" ? "跟随系统" : theme === "light" ? "浅色" : "深色"}
               </button>
@@ -209,7 +202,7 @@ function SettingsPanel({
                 type="button"
                 aria-pressed={preferences.chatPosition === chatPosition}
                 className={preferences.chatPosition === chatPosition ? "active" : ""}
-                onClick={() => onUpdatePreferences({ chatPosition })}
+                onClick={() => updatePreferences({ chatPosition })}
               >
                 {chatPosition === "left" ? "左侧" : "右侧"}
               </button>
@@ -226,7 +219,7 @@ function SettingsPanel({
               max={640}
               step={20}
               value={preferences.chatWidth}
-              onChange={(event) => onUpdatePreferences({ chatWidth: Number(event.target.value) })}
+              onChange={(event) => updatePreferences({ chatWidth: Number(event.target.value) })}
               aria-label="面板宽度"
             />
             <span>640</span>
@@ -238,7 +231,7 @@ function SettingsPanel({
             <input
               type="checkbox"
               checked={preferences.chatDefaultOpen}
-              onChange={(event) => onUpdatePreferences({ chatDefaultOpen: event.target.checked })}
+              onChange={(event) => updatePreferences({ chatDefaultOpen: event.target.checked })}
             />
             <span aria-hidden="true" />
             <strong>{preferences.chatDefaultOpen ? "已开启" : "已关闭"}</strong>
@@ -247,7 +240,7 @@ function SettingsPanel({
       </div>
 
       <div className="app-drawer-settings-footer">
-        <button className="secondary-action" type="button" onClick={onResetPreferences}>
+        <button className="secondary-action" type="button" onClick={resetPreferences}>
           恢复默认设置
         </button>
       </div>
