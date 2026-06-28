@@ -55,16 +55,10 @@ func NewLocalSafetyClient() LocalSafetyClient {
 func (LocalSafetyClient) AuditTrace(ctx context.Context, task string, traces []logtrace.ToolTrace) (Result, error) {
 	_ = ctx
 	_ = task
-	_ = traces
-	return Result{
-		Decision:      "review",
-		RiskScore:     0.35,
-		Violations:    []Violation{},
-		EvidenceChain: []EvidenceItem{},
-		RiskGraph:     riskGraphFromRealTraces(traces),
-		Method:        "local-safety-fallback",
-		Message:       "external audit unavailable; local safety review based on retained execution traces",
-	}, nil
+	result := localSafetyResultFromTraces(traces)
+	result.Method = "local-safety-fallback"
+	result.Message = "external audit unavailable; local safety review based on retained execution traces"
+	return result, nil
 }
 
 type HTTPClient struct {
@@ -147,6 +141,7 @@ func (c HTTPClient) AuditTrace(ctx context.Context, task string, traces []logtra
 	if result.Decision == "" {
 		result.Decision = "review"
 	}
+	result = enrichResultWithTraceEvidence(result, traces)
 	return result, nil
 }
 
@@ -160,19 +155,197 @@ func (c HTTPClient) fallback(ctx context.Context, task string, traces []logtrace
 
 func riskGraphFromRealTraces(traces []logtrace.ToolTrace) *RiskGraph {
 	nodes := make([]map[string]any, 0, len(traces))
-	edges := make([]map[string]any, 0, len(traces)-1)
+	edgeCapacity := 0
+	if len(traces) > 1 {
+		edgeCapacity = len(traces) - 1
+	}
+	edges := make([]map[string]any, 0, edgeCapacity)
 	for i, trace := range traces {
 		nodes = append(nodes, map[string]any{
-			"step_id": trace.StepID, "tool_name": trace.ToolName, "status": trace.Status,
+			"id":             trace.StepID,
+			"step_id":        trace.StepID,
+			"type":           "tool_call",
+			"label":          trace.ToolName,
+			"tool_name":      trace.ToolName,
+			"status":         trace.Status,
 			"operation_type": trace.OperationType, "resource_type": trace.ResourceType,
 			"resource_path": trace.ResourcePath, "boundary_level": trace.BoundaryLevel,
-			"allowed_by_policy": trace.AllowedByPolicy,
+			"allowed_by_policy":  trace.AllowedByPolicy,
+			"policy_reason":      trace.PolicyReason,
+			"requires_privilege": trace.RequiresPrivilege,
+			"risk_hint":          trace.RiskHint,
+			"risk_level":         traceRiskLevel(trace),
 		})
 		if i > 0 {
-			edges = append(edges, map[string]any{"from": traces[i-1].StepID, "to": trace.StepID, "type": "sequence"})
+			edges = append(edges, map[string]any{
+				"from":   traces[i-1].StepID,
+				"to":     trace.StepID,
+				"source": traces[i-1].StepID,
+				"target": trace.StepID,
+				"type":   "sequence",
+				"label":  "sequence",
+			})
 		}
 	}
 	return &RiskGraph{Nodes: nodes, Edges: edges}
+}
+
+func localSafetyResultFromTraces(traces []logtrace.ToolTrace) Result {
+	decision := "review"
+	riskScore := 0.35
+	violations := make([]Violation, 0)
+
+	for _, trace := range traces {
+		switch {
+		case isDeniedTrace(trace):
+			decision = "deny"
+			riskScore = maxRisk(riskScore, 1.0)
+			violations = append(violations, Violation{
+				Type:     "tool_policy",
+				Severity: "high",
+				Message:  "tool call was denied or marked unsafe by local policy context",
+				StepID:   trace.StepID,
+			})
+		case isDangerousTrace(trace):
+			decision = "deny"
+			riskScore = maxRisk(riskScore, 0.95)
+			violations = append(violations, Violation{
+				Type:     "dangerous_boundary",
+				Severity: "high",
+				Message:  "tool trace reached a dangerous or privileged boundary",
+				StepID:   trace.StepID,
+			})
+		case isErrorTrace(trace):
+			riskScore = maxRisk(riskScore, 0.6)
+			violations = append(violations, Violation{
+				Type:     "tool_execution_error",
+				Severity: "medium",
+				Message:  "tool execution returned an error and needs review",
+				StepID:   trace.StepID,
+			})
+		case isSensitiveTrace(trace):
+			riskScore = maxRisk(riskScore, 0.55)
+		default:
+			riskScore = maxRisk(riskScore, 0.25)
+		}
+	}
+
+	result := Result{
+		Decision:      decision,
+		RiskScore:     riskScore,
+		Violations:    violations,
+		EvidenceChain: traceEvidence(traces),
+		RiskGraph:     riskGraphFromRealTraces(traces),
+	}
+	if result.Violations == nil {
+		result.Violations = []Violation{}
+	}
+	if result.EvidenceChain == nil {
+		result.EvidenceChain = []EvidenceItem{}
+	}
+	return result
+}
+
+func enrichResultWithTraceEvidence(result Result, traces []logtrace.ToolTrace) Result {
+	if result.Violations == nil {
+		result.Violations = []Violation{}
+	}
+	if len(result.EvidenceChain) == 0 {
+		result.EvidenceChain = traceEvidence(traces)
+	}
+	if result.RiskGraph == nil || len(result.RiskGraph.Nodes) == 0 {
+		result.RiskGraph = riskGraphFromRealTraces(traces)
+	}
+	if result.RiskScore == 0 {
+		result.RiskScore = riskScoreFromTraces(traces)
+	}
+	return result
+}
+
+func traceEvidence(traces []logtrace.ToolTrace) []EvidenceItem {
+	evidence := make([]EvidenceItem, 0, len(traces))
+	for _, trace := range traces {
+		reason := strings.TrimSpace(trace.OutputSummary)
+		if reason == "" {
+			reason = fmt.Sprintf("%s %s on %s", trace.OperationType, trace.ToolName, trace.ResourceType)
+		}
+		evidence = append(evidence, EvidenceItem{
+			StepID:   trace.StepID,
+			ToolName: trace.ToolName,
+			Resource: trace.ResourcePath,
+			Reason:   reason,
+		})
+	}
+	return evidence
+}
+
+func riskScoreFromTraces(traces []logtrace.ToolTrace) float64 {
+	score := 0.2
+	if len(traces) == 0 {
+		return 0.0
+	}
+	for _, trace := range traces {
+		switch {
+		case isDeniedTrace(trace):
+			score = maxRisk(score, 1.0)
+		case isDangerousTrace(trace):
+			score = maxRisk(score, 0.95)
+		case isErrorTrace(trace):
+			score = maxRisk(score, 0.6)
+		case isSensitiveTrace(trace):
+			score = maxRisk(score, 0.55)
+		default:
+			score = maxRisk(score, 0.25)
+		}
+	}
+	return score
+}
+
+func traceRiskLevel(trace logtrace.ToolTrace) string {
+	switch {
+	case isDeniedTrace(trace) || isDangerousTrace(trace):
+		return "high"
+	case isErrorTrace(trace) || isSensitiveTrace(trace):
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func isDeniedTrace(trace logtrace.ToolTrace) bool {
+	return trace.Status == "denied" || (!trace.AllowedByPolicy && strings.TrimSpace(trace.PolicyReason) != "")
+}
+
+func isDangerousTrace(trace logtrace.ToolTrace) bool {
+	switch trace.BoundaryLevel {
+	case "dangerous", "privileged", "high":
+		return true
+	default:
+		return false
+	}
+}
+
+func isErrorTrace(trace logtrace.ToolTrace) bool {
+	return trace.Status == "error"
+}
+
+func isSensitiveTrace(trace logtrace.ToolTrace) bool {
+	if trace.RequiresPrivilege {
+		return true
+	}
+	switch trace.BoundaryLevel {
+	case "sensitive_system_resource":
+		return true
+	default:
+		return false
+	}
+}
+
+func maxRisk(a, b float64) float64 {
+	if b > a {
+		return b
+	}
+	return a
 }
 
 type auditTraceRequest struct {
