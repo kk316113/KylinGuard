@@ -298,8 +298,8 @@ html.dark body {
 .hotspot-item {
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
   padding: 16px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
 }
 
 .board-hero {
@@ -336,7 +336,7 @@ html.dark body {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--card);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
 }
 
 .metric-card span {
@@ -459,7 +459,7 @@ html.dark body {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
 }
 
 .empty-inline {
@@ -496,9 +496,9 @@ html.dark body {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
   color: var(--text);
   text-align: left;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
 }
 
 .step-card.selected {
@@ -588,10 +588,10 @@ html.dark body {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--red) 7%, var(--surface));
   color: var(--red);
   font-size: 13px;
   line-height: 1.5;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
 }
 
 .audit-summary span:not(.decision-badge) {
@@ -668,7 +668,7 @@ html.dark body {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
 }
 
 .run-history-row {
@@ -744,6 +744,7 @@ html.dark body {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
   background:
     radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--brand) 12%, transparent), transparent 32%),
     var(--surface);
@@ -1227,8 +1228,8 @@ html.dark body {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
   text-align: left;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
 }
 
 .decision-path button.active {
