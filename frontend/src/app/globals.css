@@ -1584,7 +1584,7 @@ html:not(.dark) .copilot-product-root {
   background: transparent !important;
 }
 
-html.dark .app-shell {
+html.dark {
   --bg: transparent;
   --surface: rgba(20, 40, 80, 0.40);
   --surface-soft: rgba(20, 40, 80, 0.25);
@@ -1593,11 +1593,14 @@ html.dark .app-shell {
   --muted: rgba(255, 255, 255, 0.72);
   --line: rgba(255, 255, 255, 0.10);
   --brand: #00b8ff;
+}
+
+html.dark .app-shell {
   background: transparent;
   color: var(--text);
 }
 
-html:not(.dark) .app-shell {
+html:not(.dark) {
   --bg: transparent;
   --surface: rgba(255, 255, 255, 0.78);
   --surface-soft: rgba(255, 255, 255, 0.62);
@@ -1606,6 +1609,9 @@ html:not(.dark) .app-shell {
   --muted: rgba(0, 0, 0, 0.60);
   --line: rgba(0, 0, 0, 0.08);
   --brand: #0070f3;
+}
+
+html:not(.dark) .app-shell {
   background: transparent;
   color: var(--text);
 }
