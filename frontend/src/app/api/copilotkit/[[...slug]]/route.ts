@@ -180,10 +180,64 @@ function messageText(content: unknown): string {
       if (part && typeof part === "object" && "text" in part && typeof part.text === "string") {
         return part.text;
       }
+      if (part && typeof part === "object" && "source" in part) {
+        return attachmentPartText(part as Record<string, unknown>);
+      }
       return "";
     })
     .join("\n")
     .trim();
+}
+
+function attachmentPartText(part: Record<string, unknown>): string {
+  const metadata = objectValue(part.metadata);
+  const source = objectValue(part.source);
+  const filename = stringValue(metadata.filename) || "attachment";
+  const mimeType = stringValue(source.mimeType) || stringValue(metadata.mimeType) || stringValue(part.type) || "unknown";
+  const size = typeof metadata.size === "number" ? metadata.size : undefined;
+  const lines = [`[附件] ${filename}`, `类型: ${mimeType}`];
+  if (size !== undefined) {
+    lines.push(`大小: ${size} bytes`);
+  }
+
+  const preview = stringValue(metadata.text_preview) || textPreviewFromDataSource(source, mimeType);
+  if (preview) {
+    lines.push("内容预览:");
+    lines.push(preview.slice(0, 12000));
+    if (metadata.preview_truncated === true || preview.length >= 12000) {
+      lines.push("[内容已截断]");
+    }
+  } else {
+    lines.push("内容: 非文本附件，仅用于上下文参考。");
+  }
+  return lines.join("\n");
+}
+
+function textPreviewFromDataSource(source: Record<string, unknown>, mimeType: string): string {
+  if (source.type !== "data" || !isTextLikeMime(mimeType)) {
+    return "";
+  }
+  const value = stringValue(source.value);
+  if (!value) {
+    return "";
+  }
+  try {
+    return Buffer.from(value, "base64").toString("utf8").slice(0, 12000);
+  } catch {
+    return "";
+  }
+}
+
+function isTextLikeMime(mimeType: string) {
+  return mimeType.startsWith("text/") || mimeType === "application/json" || mimeType === "text/yaml";
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function finalAnswer(run: AgentRun): string {
