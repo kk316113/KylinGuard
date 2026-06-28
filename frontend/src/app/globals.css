@@ -1311,9 +1311,12 @@ html.dark body {
 
 /* ── AppDrawer ──────────────────────────────────────────────── */
 
+/* ── Drawer toggle (always bottom-right) ───────────────────── */
+
 .app-drawer-toggle {
   position: fixed;
   bottom: 24px;
+  right: 24px;
   z-index: 30;
   width: 48px;
   height: 48px;
@@ -1335,13 +1338,7 @@ html.dark body {
     0 6px 20px color-mix(in srgb, var(--primary) 50%, transparent);
 }
 
-.app-drawer-toggle.left {
-  left: 24px;
-}
-
-.app-drawer-toggle.right {
-  right: 24px;
-}
+/* ── Modal overlay ──────────────────────────────────────────── */
 
 .app-drawer-overlay {
   position: fixed;
@@ -1350,33 +1347,22 @@ html.dark body {
   background: color-mix(in srgb, #000 32%, transparent);
 }
 
-.app-drawer-panel {
+/* ── Centered modal ─────────────────────────────────────────── */
+
+.app-drawer-modal {
   position: fixed;
-  top: 0;
-  bottom: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 40;
   display: flex;
   flex-direction: column;
-  background: var(--background);
+  border-radius: 16px;
+  overflow: hidden;
   box-shadow:
-    0 0 32px color-mix(in srgb, #000 10%, transparent);
-  transition: transform 200ms ease;
-}
-
-.app-drawer-panel.left {
-  left: 0;
-  border-right: 1px solid var(--line);
-  transform: translateX(-100%);
-}
-
-.app-drawer-panel.right {
-  right: 0;
-  border-left: 1px solid var(--line);
-  transform: translateX(100%);
-}
-
-.app-drawer-panel.open {
-  transform: translateX(0);
+    0 8px 40px rgba(0, 0, 0, 0.25);
+  max-width: 90vw;
+  max-height: 85vh;
 }
 
 .app-drawer-tabs {
@@ -1385,7 +1371,7 @@ html.dark body {
   gap: 4px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: transparent;
   flex-shrink: 0;
 }
 
@@ -1404,11 +1390,11 @@ html.dark body {
 }
 
 .app-drawer-tabs button:not(.app-drawer-close):hover {
-  background: var(--surface-strong);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .app-drawer-tabs button.active {
-  background: var(--surface-strong);
+  background: rgba(255, 255, 255, 0.10);
   color: var(--text);
   border-color: var(--line);
   font-weight: 600;
@@ -1428,7 +1414,7 @@ html.dark body {
 }
 
 .app-drawer-close:hover {
-  background: var(--surface-strong);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .app-drawer-content {
@@ -1436,6 +1422,31 @@ html.dark body {
   min-height: 0;
   overflow: auto;
 }
+
+/* ── Resize handle ──────────────────────────────────────────── */
+
+.app-drawer-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  cursor: nwse-resize;
+  z-index: 1;
+}
+
+.app-drawer-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid color-mix(in srgb, var(--muted) 50%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+/* ── Settings panel inside modal ────────────────────────────── */
 
 .app-drawer-settings {
   display: grid;
@@ -1470,7 +1481,9 @@ html.dark body {
   padding-top: 8px;
 }
 
-/* ── Glassmorphism (dark mode only) ──────────────────────────── */
+/* ── Glassmorphism ──────────────────────────────────────────── */
+
+/* ── Body gradients ── */
 
 html.dark body {
   background:
@@ -1481,17 +1494,29 @@ html.dark body {
     #080812;
 }
 
+html:not(.dark) body {
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(200, 225, 255, 0.45) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 20%, rgba(230, 210, 255, 0.30) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(180, 235, 255, 0.25) 0%, transparent 50%),
+    #f0f2f6;
+}
+
 /* ── Transparent containers ── */
 
 html.dark .copilot-product-root {
   background: transparent !important;
 }
 
+html:not(.dark) .copilot-product-root {
+  background: transparent !important;
+}
+
 html.dark .app-shell {
   --bg: transparent;
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-soft: rgba(255, 255, 255, 0.02);
-  --surface-strong: rgba(255, 255, 255, 0.08);
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-soft: rgba(255, 255, 255, 0.03);
+  --surface-strong: rgba(255, 255, 255, 0.10);
   --text: rgba(255, 255, 255, 0.92);
   --muted: rgba(255, 255, 255, 0.50);
   --line: rgba(255, 255, 255, 0.08);
@@ -1500,20 +1525,42 @@ html.dark .app-shell {
   color: var(--text);
 }
 
-html.dark .dashboard-board {
+html:not(.dark) .app-shell {
+  --bg: transparent;
+  --surface: rgba(255, 255, 255, 0.65);
+  --surface-soft: rgba(255, 255, 255, 0.50);
+  --surface-strong: rgba(255, 255, 255, 0.80);
+  --text: rgba(0, 0, 0, 0.88);
+  --muted: rgba(0, 0, 0, 0.45);
+  --line: rgba(0, 0, 0, 0.07);
+  --brand: #0070f3;
+  background: transparent;
+  color: var(--text);
+}
+
+html.dark .dashboard-board,
+html:not(.dark) .dashboard-board {
   background: transparent !important;
 }
 
-/* ── Glass sidebar & status bar ── */
+/* ── Glass sidebar ── */
 
 html.dark .left-sidebar {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-right: 1px solid var(--line);
 }
 
-html.dark .sidebar-settings-btn {
+html:not(.dark) .left-sidebar {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid var(--line);
+}
+
+html.dark .sidebar-settings-btn,
+html:not(.dark) .sidebar-settings-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1529,18 +1576,27 @@ html.dark .sidebar-settings-btn {
   transition: background 200ms ease, color 200ms ease;
 }
 
-html.dark .sidebar-settings-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+html.dark .sidebar-settings-btn:hover,
+html:not(.dark) .sidebar-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.10);
   color: var(--text);
 }
 
+/* ── Glass status bar ── */
+
 html.dark .top-status-bar {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
 }
 
-/* ── Glass cards ── */
+html:not(.dark) .top-status-bar {
+  background: rgba(255, 255, 255, 0.60);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* ── Glass cards (no backdrop-filter — only outermost containers have it) ── */
 
 html.dark .board-hero,
 html.dark .board-section,
@@ -1561,78 +1617,126 @@ html.dark .tool-row,
 html.dark .graph-node,
 html.dark .graph-edge,
 html.dark .decision-path button,
-html.dark .run-history-row.selected,
 html.dark .empty-inline,
 html.dark .risk-graph-detail,
 html.dark .risk-map-card,
 html.dark .risk-map-scroll,
 html.dark .graph-stat,
-html.dark .step-card.selected,
 html.dark .inline-error,
 html.dark .detail-item.wide,
 html.dark .answer-list,
 html.dark .sidebar-note {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 4px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* ── Glass controls ── */
+html:not(.dark) .board-hero,
+html:not(.dark) .board-section,
+html:not(.dark) .metric-card,
+html:not(.dark) .step-card,
+html:not(.dark) .detail-item,
+html:not(.dark) .empty-board-state,
+html:not(.dark) .final-answer-card,
+html:not(.dark) .timeline-section,
+html:not(.dark) .insight-section,
+html:not(.dark) .hotspot-item,
+html:not(.dark) .risk-hotspot-card,
+html:not(.dark) .evidence-row,
+html:not(.dark) .acceptance-row,
+html:not(.dark) .run-history-row,
+html:not(.dark) .tool-catalog-row,
+html:not(.dark) .tool-row,
+html:not(.dark) .graph-node,
+html:not(.dark) .graph-edge,
+html:not(.dark) .decision-path button,
+html:not(.dark) .empty-inline,
+html:not(.dark) .risk-graph-detail,
+html:not(.dark) .risk-map-card,
+html:not(.dark) .risk-map-scroll,
+html:not(.dark) .graph-stat,
+html:not(.dark) .inline-error,
+html:not(.dark) .detail-item.wide,
+html:not(.dark) .answer-list,
+html:not(.dark) .sidebar-note {
+  background: rgba(255, 255, 255, 0.70);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+/* ── Glass controls (no backdrop-filter) ── */
 
 html.dark .secondary-action,
 html.dark .status-pill {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
-html.dark .secondary-action:hover {
-  background: rgba(255, 255, 255, 0.08);
+html:not(.dark) .secondary-action,
+html:not(.dark) .status-pill {
+  background: rgba(255, 255, 255, 0.70);
+  border: 1px solid var(--line);
+}
+
+html.dark .secondary-action:hover,
+html:not(.dark) .secondary-action:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 html.dark .segmented-control {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--line);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+}
+
+html:not(.dark) .segmented-control {
+  background: rgba(255, 255, 255, 0.60);
+  border: 1px solid var(--line);
 }
 
 html.dark .segmented-control button.active {
-  background: rgba(0, 184, 255, 0.12);
-  box-shadow: 0 0 12px rgba(0, 184, 255, 0.15);
+  background: rgba(0, 184, 255, 0.15);
+  box-shadow: 0 0 12px rgba(0, 184, 255, 0.12);
 }
 
-/* ── AppDrawer glass ── */
-
-html.dark .app-drawer-panel {
-  background: rgba(8, 8, 18, 0.88);
-  backdrop-filter: blur(32px);
-  -webkit-backdrop-filter: blur(32px);
-  border-left: 1px solid var(--line);
+html:not(.dark) .segmented-control button.active {
+  background: rgba(0, 112, 243, 0.12);
 }
 
-html.dark .app-drawer-panel.left {
-  border-right: 1px solid var(--line);
-  border-left: none;
+/* ── AppDrawer modal ── */
+
+html.dark .app-drawer-modal {
+  background: rgba(10, 10, 22, 0.90);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
-html.dark .app-drawer-tabs {
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid var(--line);
+html:not(.dark) .app-drawer-modal {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.90);
+  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.10);
 }
 
 html.dark .app-drawer-tabs button.active {
-  background: rgba(0, 184, 255, 0.10);
+  background: rgba(0, 184, 255, 0.12);
   border-color: rgba(0, 184, 255, 0.20);
 }
 
+html:not(.dark) .app-drawer-tabs button.active {
+  background: rgba(0, 112, 243, 0.10);
+  border-color: rgba(0, 112, 243, 0.20);
+}
+
 html.dark .app-drawer-overlay {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+html:not(.dark) .app-drawer-overlay {
+  background: rgba(0, 0, 0, 0.20);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -1642,8 +1746,15 @@ html.dark .app-drawer-overlay {
 html.dark .step-card.selected,
 html.dark .decision-path button.active,
 html.dark .run-history-row.selected {
-  background: rgba(0, 184, 255, 0.08);
+  background: rgba(0, 184, 255, 0.10);
   border-color: rgba(0, 184, 255, 0.25);
+}
+
+html:not(.dark) .step-card.selected,
+html:not(.dark) .decision-path button.active,
+html:not(.dark) .run-history-row.selected {
+  background: rgba(0, 112, 243, 0.08);
+  border-color: rgba(0, 112, 243, 0.20);
 }
 
 html.dark .sidebar-nav button.active {
@@ -1651,13 +1762,21 @@ html.dark .sidebar-nav button.active {
   border-color: rgba(0, 184, 255, 0.20);
 }
 
-html.dark .sidebar-nav button:hover {
-  background: rgba(255, 255, 255, 0.06);
+html:not(.dark) .sidebar-nav button.active {
+  background: rgba(0, 112, 243, 0.08);
+  border-color: rgba(0, 112, 243, 0.20);
+}
+
+html.dark .sidebar-nav button:hover,
+html:not(.dark) .sidebar-nav button:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 html.dark .step-card:hover,
-html.dark .run-history-row:hover {
-  background: rgba(255, 255, 255, 0.06);
+html.dark .run-history-row:hover,
+html:not(.dark) .step-card:hover,
+html:not(.dark) .run-history-row:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ── Neon decision badges ── */
@@ -1667,9 +1786,19 @@ html.dark .decision-badge.good {
   background: rgba(0, 230, 118, 0.12);
 }
 
+html:not(.dark) .decision-badge.good {
+  color: #00a854;
+  background: rgba(0, 168, 84, 0.10);
+}
+
 html.dark .decision-badge.warn {
   color: #ffab00;
   background: rgba(255, 171, 0, 0.12);
+}
+
+html:not(.dark) .decision-badge.warn {
+  color: #d48c00;
+  background: rgba(212, 140, 0, 0.10);
 }
 
 html.dark .decision-badge.danger {
@@ -1677,9 +1806,19 @@ html.dark .decision-badge.danger {
   background: rgba(255, 23, 68, 0.12);
 }
 
+html:not(.dark) .decision-badge.danger {
+  color: #d50000;
+  background: rgba(213, 0, 0, 0.10);
+}
+
 html.dark .decision-badge.neutral {
   color: rgba(255, 255, 255, 0.50);
   background: rgba(255, 255, 255, 0.06);
+}
+
+html:not(.dark) .decision-badge.neutral {
+  color: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 /* ── Risk hotspot neon tones ── */
@@ -1689,14 +1828,29 @@ html.dark .risk-hotspot-card.danger {
   background: rgba(255, 23, 68, 0.06);
 }
 
+html:not(.dark) .risk-hotspot-card.danger {
+  border-color: rgba(213, 0, 0, 0.20);
+  background: rgba(213, 0, 0, 0.04);
+}
+
 html.dark .risk-hotspot-card.warn {
   border-color: rgba(255, 171, 0, 0.25);
   background: rgba(255, 171, 0, 0.06);
 }
 
+html:not(.dark) .risk-hotspot-card.warn {
+  border-color: rgba(212, 140, 0, 0.20);
+  background: rgba(212, 140, 0, 0.04);
+}
+
 html.dark .risk-hotspot-card.good {
   border-color: rgba(0, 230, 118, 0.25);
   background: rgba(0, 230, 118, 0.06);
+}
+
+html:not(.dark) .risk-hotspot-card.good {
+  border-color: rgba(0, 168, 84, 0.20);
+  background: rgba(0, 168, 84, 0.04);
 }
 
 html.dark .risk-hotspot-badge {
@@ -1714,11 +1868,31 @@ html.dark .risk-hotspot-card.good .risk-hotspot-badge {
   background: rgba(0, 230, 118, 0.14);
 }
 
+html:not(.dark) .risk-hotspot-badge {
+  color: #d50000;
+  background: rgba(213, 0, 0, 0.10);
+}
+
+html:not(.dark) .risk-hotspot-card.warn .risk-hotspot-badge {
+  color: #d48c00;
+  background: rgba(212, 140, 0, 0.10);
+}
+
+html:not(.dark) .risk-hotspot-card.good .risk-hotspot-badge {
+  color: #00a854;
+  background: rgba(0, 168, 84, 0.10);
+}
+
 /* ── Icon token ── */
 
 html.dark .icon-token {
   background: rgba(0, 230, 118, 0.12);
   color: #00e676;
+}
+
+html:not(.dark) .icon-token {
+  background: rgba(0, 168, 84, 0.10);
+  color: #00a854;
 }
 
 /* ── Range & switch ── */
@@ -1727,9 +1901,18 @@ html.dark .range-control input {
   accent-color: #00b8ff;
 }
 
+html:not(.dark) .range-control input {
+  accent-color: #0070f3;
+}
+
 html.dark .switch-control input:checked + span {
   background: #00b8ff;
   box-shadow: 0 0 8px rgba(0, 184, 255, 0.3);
+}
+
+html:not(.dark) .switch-control input:checked + span {
+  background: #0070f3;
+  box-shadow: 0 0 8px rgba(0, 112, 243, 0.2);
 }
 
 /* ── Smooth transitions ── */
@@ -1741,28 +1924,41 @@ html.dark .run-history-row,
 html.dark .secondary-action,
 html.dark .sidebar-nav button,
 html.dark .risk-hotspot-card,
-html.dark .detail-item {
+html.dark .detail-item,
+html:not(.dark) .board-hero,
+html:not(.dark) .board-section,
+html:not(.dark) .step-card,
+html:not(.dark) .run-history-row,
+html:not(.dark) .secondary-action,
+html:not(.dark) .sidebar-nav button,
+html:not(.dark) .risk-hotspot-card,
+html:not(.dark) .detail-item {
   transition:
     background 200ms ease,
     box-shadow 200ms ease,
     transform 150ms ease;
 }
 
-html.dark .secondary-action:active {
+html.dark .secondary-action:active,
+html:not(.dark) .secondary-action:active {
   transform: scale(0.98);
 }
 
 /* ── Export link ── */
 
 html.dark .export-actions a {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
-html.dark .export-actions a:hover {
-  background: rgba(255, 255, 255, 0.08);
+html:not(.dark) .export-actions a {
+  background: rgba(255, 255, 255, 0.70);
+  border: 1px solid var(--line);
+}
+
+html.dark .export-actions a:hover,
+html:not(.dark) .export-actions a:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 @media (max-width: 1120px) {

@@ -13,6 +13,13 @@ export type AppDrawerHandle = {
   openToSettings: () => void;
 };
 
+const MIN_W = 520;
+const MIN_H = 420;
+const MAX_W_RATIO = 0.9;
+const MAX_H_RATIO = 0.85;
+const DEFAULT_W = 680;
+const DEFAULT_H = 560;
+
 const attachmentAccept =
   "text/plain,text/markdown,application/json,application/pdf,image/png,image/jpeg,.log,.conf,.ini,.yaml,.yml,.md,.txt,.json";
 const attachmentMaxSize = 5 * 1024 * 1024;
@@ -37,7 +44,9 @@ export const AppDrawer = forwardRef<AppDrawerHandle, AppDrawerProps>(function Ap
   const { preferences, updatePreferences, resetPreferences } = useConsolePreferences();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("chat");
-  const panelRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: DEFAULT_W, height: DEFAULT_H });
+  const modalRef = useRef<HTMLDivElement>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; startW: number; startH: number } | null>(null);
 
   useImperativeHandle(ref, () => ({
     openToSettings() {
@@ -67,12 +76,6 @@ export const AppDrawer = forwardRef<AppDrawerHandle, AppDrawerProps>(function Ap
     [],
   );
 
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      setIsOpen(false);
-    }
-  }, []);
-
   // Prevent body scroll when open
   useEffect(() => {
     if (isOpen) {
@@ -85,18 +88,53 @@ export const AppDrawer = forwardRef<AppDrawerHandle, AppDrawerProps>(function Ap
     };
   }, [isOpen]);
 
-  const isLeft = preferences.chatPosition === "left";
-  const drawerWidth = preferences.chatWidth;
+  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === "Escape") {
+      setIsOpen(false);
+    }
+  }, []);
 
   const toggle = useCallback(() => setIsOpen((v) => !v), []);
   const close = useCallback(() => setIsOpen(false), []);
 
+  // ── Resize logic ──
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const maxW = window.innerWidth * MAX_W_RATIO;
+      const maxH = window.innerHeight * MAX_H_RATIO;
+
+      resizeRef.current = { startX: e.clientX, startY: e.clientY, startW: size.width, startH: size.height };
+
+      const onMove = (ev: MouseEvent) => {
+        if (!resizeRef.current) return;
+        const dx = ev.clientX - resizeRef.current.startX;
+        const dy = ev.clientY - resizeRef.current.startY;
+        setSize({
+          width: Math.min(maxW, Math.max(MIN_W, resizeRef.current.startW + dx)),
+          height: Math.min(maxH, Math.max(MIN_H, resizeRef.current.startH + dy)),
+        });
+      };
+
+      const onUp = () => {
+        resizeRef.current = null;
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [size],
+  );
+
   return (
     <>
-      {/* Toggle button at bottom corner */}
+      {/* Toggle button — bottom-right */}
       <button
         type="button"
-        className={`app-drawer-toggle ${isLeft ? "left" : "right"}`}
+        className="app-drawer-toggle"
         onClick={toggle}
         aria-label={isOpen ? "关闭面板" : "打开面板"}
         title={isOpen ? "关闭面板" : "打开面板"}
@@ -104,69 +142,76 @@ export const AppDrawer = forwardRef<AppDrawerHandle, AppDrawerProps>(function Ap
         <MessageSquare size={22} />
       </button>
 
-      {/* Overlay */}
-      {isOpen && <div className="app-drawer-overlay" onClick={close} role="presentation" />}
+      {isOpen && (
+        <>
+          {/* Overlay */}
+          <div className="app-drawer-overlay" onClick={close} role="presentation" />
 
-      {/* Drawer panel */}
-      <div
-        ref={panelRef}
-        className={`app-drawer-panel ${isOpen ? "open" : ""} ${isLeft ? "left" : "right"}`}
-        style={{ width: drawerWidth }}
-        onKeyDown={handleKeyDown}
-        role="dialog"
-        aria-modal="true"
-        aria-label="应用面板"
-      >
-        {/* Tab bar */}
-        <div className="app-drawer-tabs">
-          <button
-            type="button"
-            className={activeTab === "chat" ? "active" : ""}
-            onClick={() => setActiveTab("chat")}
+          {/* Centered modal */}
+          <div
+            ref={modalRef}
+            className="app-drawer-modal"
+            style={{ width: size.width, height: size.height }}
+            onKeyDown={handleKeyDown}
+            role="dialog"
+            aria-modal="true"
+            aria-label="应用面板"
           >
-            <MessageSquare size={16} />
-            <span>聊天</span>
-          </button>
-          <button
-            type="button"
-            className={activeTab === "settings" ? "active" : ""}
-            onClick={() => setActiveTab("settings")}
-          >
-            <Settings size={16} />
-            <span>设置</span>
-          </button>
-          <button type="button" className="app-drawer-close" onClick={close} aria-label="关闭">
-            <X size={18} />
-          </button>
-        </div>
+            {/* Tab bar */}
+            <div className="app-drawer-tabs">
+              <button
+                type="button"
+                className={activeTab === "chat" ? "active" : ""}
+                onClick={() => setActiveTab("chat")}
+              >
+                <MessageSquare size={16} />
+                <span>聊天</span>
+              </button>
+              <button
+                type="button"
+                className={activeTab === "settings" ? "active" : ""}
+                onClick={() => setActiveTab("settings")}
+              >
+                <Settings size={16} />
+                <span>设置</span>
+              </button>
+              <button type="button" className="app-drawer-close" onClick={close} aria-label="关闭">
+                <X size={18} />
+              </button>
+            </div>
 
-        {/* Content area */}
-        <div className="app-drawer-content">
-          {activeTab === "chat" ? (
-            <CopilotChat
-              agentId="default"
-              labels={{
-                modalHeaderTitle: "麒盾",
-                chatInputPlaceholder: "直接输入你的问题...",
-                chatInputToolbarAddButtonLabel: "添加附件",
-                welcomeMessageText:
-                  "你好，我是麒盾。你可以直接描述问题，也可以附上日志、配置片段或截图；我会在安全策略约束下处理。",
-                chatDisclaimerText: "智能体只执行受控只读工具；重要结论请结合审计证据复核。",
-              }}
-              input={{
-                addMenuButton: DirectAttachmentButton,
-              }}
-              attachments={attachments}
-            />
-          ) : (
-            <SettingsPanel
-              preferences={preferences}
-              updatePreferences={updatePreferences}
-              resetPreferences={resetPreferences}
-            />
-          )}
-        </div>
-      </div>
+            {/* Content */}
+            <div className="app-drawer-content">
+              {activeTab === "chat" ? (
+                <CopilotChat
+                  agentId="default"
+                  labels={{
+                    modalHeaderTitle: "麒盾",
+                    chatInputPlaceholder: "直接输入你的问题...",
+                    chatInputToolbarAddButtonLabel: "添加附件",
+                    welcomeMessageText:
+                      "你好，我是麒盾。你可以直接描述问题，也可以附上日志、配置片段或截图；我会在安全策略约束下处理。",
+                    chatDisclaimerText: "智能体只执行受控只读工具；重要结论请结合审计证据复核。",
+                  }}
+                  input={{
+                    addMenuButton: DirectAttachmentButton,
+                  }}
+                  attachments={attachments}
+                />
+              ) : (
+                <SettingsPanel
+                  preferences={preferences}
+                  updatePreferences={updatePreferences}
+                  resetPreferences={resetPreferences}
+                />
+              )}
+            </div>
+
+            {/* Resize handle */}
+            <div className="app-drawer-resize-handle" onMouseDown={handleResizeStart} />
+          </div>
+        </>
+      )}
     </>
   );
 });
