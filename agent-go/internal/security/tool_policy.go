@@ -174,6 +174,21 @@ func (ToolPolicy) Evaluate(name string, metadata tools.ToolMetadata, exists bool
 				return denyToolCall("configuration_drift_detector package name contains unsafe characters")
 			}
 		}
+	case "systemd_unit_inventory", "block_device_inventory", "mount_inventory":
+		if reason := validateInventoryLimit(input, name); reason != "" {
+			return denyToolCall(reason)
+		}
+	case "rpm_package_inventory":
+		if reason := validateInventoryLimit(input, name); reason != "" {
+			return denyToolCall(reason)
+		}
+		query := stringFromInput(input, "query", "")
+		if len(query) > 80 {
+			return denyToolCall("rpm_package_inventory query must be at most 80 characters")
+		}
+		if query != "" && !tools.IsSafeRPMPackageName(query) {
+			return denyToolCall("rpm_package_inventory query contains unsafe characters")
+		}
 	}
 
 	return ToolPolicyDecision{
@@ -181,6 +196,18 @@ func (ToolPolicy) Evaluate(name string, metadata tools.ToolMetadata, exists bool
 		Method:   ToolPolicyMethod,
 		Message:  "tool call allowed by tool policy",
 	}
+}
+
+func validateInventoryLimit(input map[string]any, toolName string) string {
+	limitValue, limitProvided := input["limit"]
+	limit, limitValid := intFromAny(limitValue)
+	if limitProvided && !limitValid {
+		return toolName + " limit must be an integer"
+	}
+	if limit != 0 && (limit < 1 || limit > 500) {
+		return toolName + " limit must be between 1 and 500"
+	}
+	return ""
 }
 
 func packageNamesForPolicy(value any) ([]string, bool) {

@@ -70,13 +70,13 @@ func ValidateToolPlan(plan *ToolPlan, registry *tools.Registry) ValidateToolPlan
 			continue
 		}
 		// Check if tool exists in registry.
-		meta, exists := registry.GetTool(toolName)
+		_, exists := registry.GetTool(toolName)
 		if !exists {
 			rejectedTools = append(rejectedTools, toolName)
 			continue
 		}
-		// safe_shell is never allowed in LLM tool plans.
-		if toolName == "safe_shell" {
+		// Only registry-approved direct-call tools are allowed in LLM tool plans.
+		if !registry.IsToolEnabledForDirectCall(toolName) {
 			rejectedTools = append(rejectedTools, toolName)
 			continue
 		}
@@ -84,7 +84,6 @@ func ValidateToolPlan(plan *ToolPlan, registry *tools.Registry) ValidateToolPlan
 		if item.Arguments == nil {
 			item.Arguments = map[string]any{}
 		}
-		_ = meta
 		validTools = append(validTools, toolName)
 	}
 
@@ -134,13 +133,9 @@ func ParseToolPlanJSON(data []byte) (*ToolPlan, error) {
 // BuildToolDefsForPrompt builds a safe subset of tool metadata for inclusion in LLM prompts.
 // It does NOT include sensitive fields like API keys, internal paths, or full command templates.
 func BuildToolDefsForPrompt(registry *tools.Registry) []map[string]any {
-	allTools := registry.ListTools()
+	allTools := registry.ListDirectCallTools()
 	defs := make([]map[string]any, 0, len(allTools))
 	for _, t := range allTools {
-		// Only expose tools that are safe for structured direct invocation.
-		if !registry.IsToolEnabledForDirectCall(t.Name) {
-			continue
-		}
 		def := map[string]any{
 			"tool_name":          t.Name,
 			"description":        t.Description,
@@ -152,11 +147,7 @@ func BuildToolDefsForPrompt(registry *tools.Registry) []map[string]any {
 			"requires_privilege": t.RequiresPrivilege,
 		}
 		// Extract allowed argument keys from input_schema properties.
-		if props, ok := t.InputSchema["properties"].(map[string]any); ok {
-			argKeys := make([]string, 0, len(props))
-			for key := range props {
-				argKeys = append(argKeys, key)
-			}
+		if argKeys := t.ArgumentKeys(); len(argKeys) > 0 {
 			def["allowed_argument_keys"] = argKeys
 		}
 		defs = append(defs, def)

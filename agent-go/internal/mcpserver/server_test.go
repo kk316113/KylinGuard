@@ -167,6 +167,9 @@ func TestDefaultServerPublishesCompetitionSensingTools(t *testing.T) {
 			t.Fatalf("MCP tool list missing %s: %#v", required, names)
 		}
 	}
+	if len(listed.Tools) != len(tools.NewDefaultRegistry().ListDirectCallTools()) {
+		t.Fatalf("MCP tool count should match direct-call registry tools, got %d", len(listed.Tools))
+	}
 	if names["safe_shell"] {
 		t.Fatal("safe_shell must not be published by MCP")
 	}

@@ -26,6 +26,25 @@ type ToolMetadata struct {
 	DirectCallAllowed bool           `json:"direct_call_allowed"`
 }
 
+func (m ToolMetadata) ArgumentKeys() []string {
+	properties, _ := m.InputSchema["properties"].(map[string]any)
+	keys := make([]string, 0, len(properties))
+	for key := range properties {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func (m ToolMetadata) IsReadOnly() bool {
+	switch m.OperationType {
+	case "read", "inspect", "analyze", "verify":
+		return true
+	default:
+		return false
+	}
+}
+
 func DefaultToolMetadata() map[string]ToolMetadata {
 	return map[string]ToolMetadata{
 		"os_info": {
@@ -383,6 +402,111 @@ func DefaultToolMetadata() map[string]ToolMetadata {
 			PermissionScope: "configuration_drift_read", OperationType: "verify",
 			ResourceType: "package_configuration", BoundaryLevel: "sensitive_system_resource",
 			RequiresPrivilege: false, AllowedByPolicy: true, Dangerous: false, Enabled: true, DirectCallAllowed: true,
+		},
+		"systemd_unit_inventory": {
+			Name:        "systemd_unit_inventory",
+			Description: "Inventory systemd service units with read-only systemctl list-units output.",
+			Category:    "service",
+			Version:     ToolProtocolVersion,
+			InputSchema: objectSchema(map[string]any{
+				"limit": map[string]any{
+					"type":        "integer",
+					"minimum":     1,
+					"maximum":     500,
+					"default":     100,
+					"description": "Maximum number of service units to return",
+				},
+			}),
+			OutputSchema:      objectSchema(map[string]any{}),
+			RiskLevel:         "low",
+			PermissionScope:   "systemd_unit_inventory_read",
+			OperationType:     "inspect",
+			ResourceType:      "system_service",
+			BoundaryLevel:     "low",
+			RequiresPrivilege: false,
+			AllowedByPolicy:   true,
+			Dangerous:         false,
+			Enabled:           true,
+			DirectCallAllowed: true,
+		},
+		"block_device_inventory": {
+			Name:        "block_device_inventory",
+			Description: "Inventory block devices with bounded read-only lsblk JSON output.",
+			Category:    "resource",
+			Version:     ToolProtocolVersion,
+			InputSchema: objectSchema(map[string]any{
+				"limit": map[string]any{
+					"type":    "integer",
+					"minimum": 1,
+					"maximum": 500,
+					"default": 100,
+				},
+			}),
+			OutputSchema:      objectSchema(map[string]any{}),
+			RiskLevel:         "low",
+			PermissionScope:   "block_device_inventory_read",
+			OperationType:     "inspect",
+			ResourceType:      "block_device",
+			BoundaryLevel:     "low",
+			RequiresPrivilege: false,
+			AllowedByPolicy:   true,
+			Dangerous:         false,
+			Enabled:           true,
+			DirectCallAllowed: true,
+		},
+		"mount_inventory": {
+			Name:        "mount_inventory",
+			Description: "Inventory filesystem mount topology with bounded read-only findmnt JSON output.",
+			Category:    "resource",
+			Version:     ToolProtocolVersion,
+			InputSchema: objectSchema(map[string]any{
+				"limit": map[string]any{
+					"type":    "integer",
+					"minimum": 1,
+					"maximum": 500,
+					"default": 100,
+				},
+			}),
+			OutputSchema:      objectSchema(map[string]any{}),
+			RiskLevel:         "low",
+			PermissionScope:   "mount_inventory_read",
+			OperationType:     "inspect",
+			ResourceType:      "filesystem_mount",
+			BoundaryLevel:     "low",
+			RequiresPrivilege: false,
+			AllowedByPolicy:   true,
+			Dangerous:         false,
+			Enabled:           true,
+			DirectCallAllowed: true,
+		},
+		"rpm_package_inventory": {
+			Name:        "rpm_package_inventory",
+			Description: "Inventory installed RPM packages with a bounded read-only rpm query.",
+			Category:    "configuration",
+			Version:     ToolProtocolVersion,
+			InputSchema: objectSchema(map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Optional safe package-name substring filter",
+				},
+				"limit": map[string]any{
+					"type":    "integer",
+					"minimum": 1,
+					"maximum": 500,
+					"default": 100,
+				},
+			}),
+			OutputSchema:      objectSchema(map[string]any{}),
+			RiskLevel:         "low",
+			PermissionScope:   "rpm_package_inventory_read",
+			OperationType:     "inspect",
+			ResourceType:      "package_inventory",
+			BoundaryLevel:     "low",
+			RequiresPrivilege: false,
+			AllowedByPolicy:   true,
+			Dangerous:         false,
+			Enabled:           true,
+			DirectCallAllowed: true,
 		},
 	}
 }

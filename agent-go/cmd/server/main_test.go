@@ -362,16 +362,14 @@ func TestCapabilitiesHandlerUsesRegisteredTools(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	expected := 0
+	expected := len(registry.ListDirectCallTools())
 	foundDrift := false
-	for _, metadata := range registry.ListTools() {
-		if registry.IsToolEnabledForDirectCall(metadata.Name) {
-			expected++
-		}
-	}
 	for _, tool := range response.AvailableTools {
 		if tool.ToolName == "safe_shell" {
 			t.Fatal("disabled safe_shell must not be advertised as available")
+		}
+		if !tool.ReadOnly {
+			t.Fatalf("available tool %s should be read-only", tool.ToolName)
 		}
 		if tool.ToolName == "configuration_drift_detector" {
 			foundDrift = true

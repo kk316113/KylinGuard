@@ -82,8 +82,77 @@ func SemanticForTool(toolName string, input map[string]any) ToolSemantic {
 		return diskIOCheckerSemantic()
 	case "configuration_drift_detector":
 		return configurationDriftSemantic(input)
+	case "systemd_unit_inventory":
+		return systemdUnitInventorySemantic()
+	case "block_device_inventory":
+		return blockDeviceInventorySemantic()
+	case "mount_inventory":
+		return mountInventorySemantic()
+	case "rpm_package_inventory":
+		return rpmPackageInventorySemantic(input)
 	default:
 		return unknownSemantic(toolName)
+	}
+}
+
+func systemdUnitInventorySemantic() ToolSemantic {
+	return ToolSemantic{
+		OperationType:     "inspect",
+		ResourceType:      "system_service",
+		ResourcePath:      "systemd:services",
+		PermissionScope:   "systemd_unit_inventory_read",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "systemd_service_unit_inventory",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Read-only systemd service inventory is allowed for operations diagnosis",
+	}
+}
+
+func blockDeviceInventorySemantic() ToolSemantic {
+	return ToolSemantic{
+		OperationType:     "inspect",
+		ResourceType:      "block_device",
+		ResourcePath:      "sysfs:block-devices",
+		PermissionScope:   "block_device_inventory_read",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "block_device_inventory",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Read-only block device metadata inventory is allowed for capacity diagnosis",
+	}
+}
+
+func mountInventorySemantic() ToolSemantic {
+	return ToolSemantic{
+		OperationType:     "inspect",
+		ResourceType:      "filesystem_mount",
+		ResourcePath:      "mounts:all",
+		PermissionScope:   "mount_inventory_read",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "filesystem_mount_inventory",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Read-only mount topology inventory is allowed for filesystem diagnosis",
+	}
+}
+
+func rpmPackageInventorySemantic(input map[string]any) ToolSemantic {
+	query := strings.TrimSpace(stringValue(input, "query", ""))
+	resourcePath := "rpm:packages"
+	if query != "" {
+		resourcePath += ":query=" + query
+	}
+	return ToolSemantic{
+		OperationType:     "inspect",
+		ResourceType:      "package_inventory",
+		ResourcePath:      resourcePath,
+		PermissionScope:   "rpm_package_inventory_read",
+		BoundaryLevel:     "low",
+		ToolSemantic:      "rpm_package_inventory",
+		RequiresPrivilege: false,
+		AllowedByPolicy:   true,
+		PolicyReason:      "Read-only RPM package inventory is allowed for configuration diagnosis",
 	}
 }
 

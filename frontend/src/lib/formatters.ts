@@ -2,36 +2,44 @@ import type { AgentRun, AgentStep, Decision, ToolTrace } from "@/types/agent";
 
 const toolNames: Record<string, string> = {
   configuration_drift_detector: "配置漂移检测",
+  block_device_inventory: "块设备清单",
   disk_io_checker: "磁盘 I/O 检查",
   disk_memory_checker: "磁盘与内存检查",
   journalctl_reader: "系统日志读取",
   log_reader: "日志读取",
+  mount_inventory: "挂载清单",
   network_connection_inspector: "网络连接检查",
   open_file_inspector: "文件占用检查",
   os_info: "系统信息检查",
   port_checker: "端口检查",
   process_inspector: "进程检查",
   resource_usage_checker: "资源使用检查",
+  rpm_package_inventory: "RPM 包清单",
   safe_shell: "受控命令执行",
   service_status: "服务状态检查",
   ssh_login_analyzer: "登录日志分析",
+  systemd_unit_inventory: "服务单元清单",
 };
 
 const toolDescriptions: Record<string, string> = {
   configuration_drift_detector: "依据可信 RPM 数据库检查软件包配置漂移，不读取文件正文。",
+  block_device_inventory: "读取块设备元数据，用于容量和存储拓扑诊断。",
   disk_io_checker: "采样磁盘吞吐、IOPS、队列和利用率。",
   disk_memory_checker: "检查磁盘空间和内存使用概况，不修改系统数据。",
   journalctl_reader: "读取指定服务近期的系统日志。",
   log_reader: "读取受控范围内的系统日志。",
+  mount_inventory: "读取文件系统挂载拓扑和挂载选项，不修改挂载状态。",
   network_connection_inspector: "检查网络连接和监听状态。",
   open_file_inspector: "检查受控路径或进程的文件占用关系，不读取文件正文。",
   os_info: "获取操作系统和架构等基础信息。",
   port_checker: "检查本地或远程端口是否可达。",
   process_inspector: "按名称检查进程状态。",
   resource_usage_checker: "检查系统负载和资源使用情况。",
+  rpm_package_inventory: "读取已安装 RPM 软件包清单，可按包名片段过滤。",
   safe_shell: "执行安全策略允许的只读命令。",
   service_status: "检查系统服务的运行状态。",
   ssh_login_analyzer: "分析登录认证日志中的异常行为。",
+  systemd_unit_inventory: "读取 systemd 服务单元清单和运行状态。",
 };
 
 const operationNames: Record<string, string> = {
@@ -47,6 +55,8 @@ const operationNames: Record<string, string> = {
 const resourceNames: Record<string, string> = {
   disk_memory: "磁盘与内存",
   disk_io: "磁盘 I/O",
+  block_device: "块设备",
+  filesystem_mount: "文件系统挂载",
   journal_log: "系统日志",
   system_log: "系统日志",
   network_connection: "网络连接",
@@ -55,6 +65,7 @@ const resourceNames: Record<string, string> = {
   network_port: "网络端口",
   process: "系统进程",
   package_configuration: "软件包配置",
+  package_inventory: "软件包清单",
   system_resource: "系统资源",
   safe_command: "受控命令",
   system_service: "系统服务",

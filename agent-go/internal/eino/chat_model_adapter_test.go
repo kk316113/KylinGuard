@@ -485,12 +485,29 @@ func TestToolPlanValidationRejectsEmpty(t *testing.T) {
 	}
 }
 
+func TestToolPlanValidationRejectsDisabledDirectCallTool(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	result := ValidateToolPlan(&ToolPlan{
+		Scenario: "diagnosis",
+		ToolPlan: []ToolPlanItem{
+			{ToolName: "safe_shell", Arguments: map[string]any{"command": "date"}},
+		},
+	}, registry)
+
+	if result.Valid {
+		t.Fatalf("expected disabled direct-call tool to be invalid, got %#v", result)
+	}
+	if len(result.RejectedTools) != 1 || result.RejectedTools[0] != "safe_shell" {
+		t.Fatalf("expected safe_shell rejection, got %#v", result.RejectedTools)
+	}
+}
+
 func TestBuildToolDefsForPrompt(t *testing.T) {
 	registry := tools.NewDefaultRegistry()
 	defs := BuildToolDefsForPrompt(registry)
 
-	if len(defs) == 0 {
-		t.Fatal("expected non-empty tool defs")
+	if len(defs) != len(registry.ListDirectCallTools()) {
+		t.Fatalf("expected prompt tool defs to match direct-call tools, got %d defs", len(defs))
 	}
 
 	// Check that sensitive fields are not present.

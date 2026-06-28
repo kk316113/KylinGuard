@@ -92,6 +92,16 @@ func (ExecPolicy) Evaluate(command string, args []string, profile ExecutionProfi
 			return denyDecision(reason)
 		}
 	}
+	if command == "lsblk" {
+		if reason := validateLSBLKArgs(args); reason != "" {
+			return denyDecision(reason)
+		}
+	}
+	if command == "findmnt" {
+		if reason := validateFindmntArgs(args); reason != "" {
+			return denyDecision(reason)
+		}
+	}
 
 	return ExecPolicyDecision{
 		Allowed: true,
@@ -149,11 +159,13 @@ func commandAllowlist() map[string]bool {
 		"ss": true, "netstat": true,
 		"journalctl": true,
 		"df":         true, "free": true,
-		"uptime": true,
-		"cat":    true,
-		"lsof":   true,
-		"rpm":    true,
-		"uname":  true, "hostname": true, "whoami": true, "date": true,
+		"uptime":  true,
+		"cat":     true,
+		"lsof":    true,
+		"rpm":     true,
+		"lsblk":   true,
+		"findmnt": true,
+		"uname":   true, "hostname": true, "whoami": true, "date": true,
 		// systemctl read-only subcommands only (args are validated separately).
 		"systemctl": true,
 	}
@@ -181,7 +193,7 @@ func IsSafeSystemctlArg(arg string) bool {
 	allowed := map[string]bool{
 		"is-active": true, "is-enabled": true, "is-failed": true,
 		"status": true, "show": true, "list-units": true,
-		"list-timers": true, "list-sockets": true,
+		"list-timers": true, "list-sockets": true, "list-unit-files": true,
 		"--version": true, "--no-pager": true,
 	}
 	return allowed[arg]
@@ -201,6 +213,17 @@ func validateSystemctlArgs(args []string) string {
 			return ""
 		}
 		return "systemctl --version does not accept additional arguments"
+	}
+	if args[0] == "list-units" || args[0] == "list-unit-files" {
+		for _, arg := range args[1:] {
+			switch arg {
+			case "--no-pager", "--plain", "--all", "--legend=false", "--type=service":
+				continue
+			default:
+				return fmt.Sprintf("systemctl list argument %q is not allowed", arg)
+			}
+		}
+		return ""
 	}
 
 	expectLineCount := false
@@ -272,11 +295,40 @@ func validateLsofArgs(args []string) string {
 var safeRPMPackagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$`)
 
 func validateRPMArgs(args []string) string {
-	if len(args) != 2 || args[0] != "--verify" {
-		return "rpm is restricted to exactly: rpm --verify <package>"
+	if len(args) == 2 && args[0] == "--verify" {
+		if !safeRPMPackagePattern.MatchString(args[1]) {
+			return "rpm package name contains unsafe characters"
+		}
+		return ""
 	}
-	if !safeRPMPackagePattern.MatchString(args[1]) {
-		return "rpm package name contains unsafe characters"
+	if len(args) == 3 && args[0] == "-qa" && args[1] == "--qf" && args[2] == "%{NAME}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\n" {
+		return ""
+	}
+	return "rpm is restricted to read-only verification or package inventory query"
+}
+
+func validateLSBLKArgs(args []string) string {
+	if len(args) != 4 {
+		return "lsblk requires the bounded JSON output profile"
+	}
+	if args[0] != "--json" || args[1] != "--output" || args[3] != "--nodeps" {
+		return "lsblk arguments must use --json --output <columns> --nodeps"
+	}
+	if args[2] != "NAME,TYPE,SIZE,FSTYPE,MOUNTPOINT,ROTA,MODEL" {
+		return "lsblk output columns are not in the allowlist"
+	}
+	return ""
+}
+
+func validateFindmntArgs(args []string) string {
+	if len(args) != 3 {
+		return "findmnt requires the bounded JSON output profile"
+	}
+	if args[0] != "--json" || args[1] != "--output" {
+		return "findmnt arguments must use --json --output <columns>"
+	}
+	if args[2] != "TARGET,SOURCE,FSTYPE,OPTIONS" {
+		return "findmnt output columns are not in the allowlist"
 	}
 	return ""
 }

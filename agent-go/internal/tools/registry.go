@@ -33,20 +33,32 @@ func NewRegistry() *Registry {
 func NewDefaultRegistry() *Registry {
 	registry := NewRegistry()
 	metadata := DefaultToolMetadata()
-	registry.RegisterWithMetadata("os_info", OSInfo, metadata["os_info"])
-	registry.RegisterWithMetadata("service_status", ServiceStatus, metadata["service_status"])
-	registry.RegisterWithMetadata("log_reader", LogReader, metadata["log_reader"])
-	registry.RegisterWithMetadata("ssh_login_analyzer", SSHLoginAnalyzer, metadata["ssh_login_analyzer"])
-	registry.RegisterWithMetadata("port_checker", PortChecker, metadata["port_checker"])
-	registry.RegisterWithMetadata("safe_shell", SafeShell, metadata["safe_shell"])
-	registry.RegisterWithMetadata("process_inspector", ProcessInspector, metadata["process_inspector"])
-	registry.RegisterWithMetadata("network_connection_inspector", NetworkConnectionInspector, metadata["network_connection_inspector"])
-	registry.RegisterWithMetadata("journalctl_reader", JournalctlReader, metadata["journalctl_reader"])
-	registry.RegisterWithMetadata("resource_usage_checker", ResourceUsageChecker, metadata["resource_usage_checker"])
-	registry.RegisterWithMetadata("disk_memory_checker", DiskMemoryChecker, metadata["disk_memory_checker"])
-	registry.RegisterWithMetadata("open_file_inspector", OpenFileInspector, metadata["open_file_inspector"])
-	registry.RegisterWithMetadata("disk_io_checker", DiskIOChecker, metadata["disk_io_checker"])
-	registry.RegisterWithMetadata("configuration_drift_detector", ConfigurationDriftDetector, metadata["configuration_drift_detector"])
+	registrations := []struct {
+		name    string
+		handler Handler
+	}{
+		{"os_info", OSInfo},
+		{"service_status", ServiceStatus},
+		{"log_reader", LogReader},
+		{"ssh_login_analyzer", SSHLoginAnalyzer},
+		{"port_checker", PortChecker},
+		{"safe_shell", SafeShell},
+		{"process_inspector", ProcessInspector},
+		{"network_connection_inspector", NetworkConnectionInspector},
+		{"journalctl_reader", JournalctlReader},
+		{"resource_usage_checker", ResourceUsageChecker},
+		{"disk_memory_checker", DiskMemoryChecker},
+		{"open_file_inspector", OpenFileInspector},
+		{"disk_io_checker", DiskIOChecker},
+		{"configuration_drift_detector", ConfigurationDriftDetector},
+		{"systemd_unit_inventory", SystemdUnitInventory},
+		{"block_device_inventory", BlockDeviceInventory},
+		{"mount_inventory", MountInventory},
+		{"rpm_package_inventory", RPMPackageInventory},
+	}
+	for _, entry := range registrations {
+		registry.RegisterWithMetadata(entry.name, entry.handler, metadata[entry.name])
+	}
 	return registry
 }
 
@@ -79,6 +91,44 @@ func (r *Registry) ListTools() []ToolMetadata {
 	return result
 }
 
+func (r *Registry) ListDirectCallTools() []ToolMetadata {
+	if r == nil {
+		return []ToolMetadata{}
+	}
+	all := r.ListTools()
+	result := make([]ToolMetadata, 0, len(all))
+	for _, metadata := range all {
+		if r.IsToolEnabledForDirectCall(metadata.Name) {
+			result = append(result, metadata)
+		}
+	}
+	return result
+}
+
+func (r *Registry) RegisteredNames() []string {
+	if r == nil {
+		return []string{}
+	}
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (r *Registry) MetadataNames() []string {
+	if r == nil {
+		return []string{}
+	}
+	names := make([]string, 0, len(r.metadata))
+	for name := range r.metadata {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (r *Registry) GetTool(name string) (ToolMetadata, bool) {
 	if r == nil {
 		return ToolMetadata{}, false
@@ -93,6 +143,66 @@ func (r *Registry) IsToolEnabledForDirectCall(name string) bool {
 		return false
 	}
 	return metadata.Enabled && metadata.DirectCallAllowed && metadata.AllowedByPolicy && !metadata.Dangerous
+}
+
+func (r *Registry) Validate() error {
+	if r == nil {
+		return fmt.Errorf("tool registry is nil")
+	}
+	problems := make([]string, 0)
+	for _, name := range r.RegisteredNames() {
+		if _, ok := r.metadata[name]; !ok {
+			problems = append(problems, fmt.Sprintf("registered handler %q has no metadata", name))
+		}
+	}
+	for _, name := range r.MetadataNames() {
+		metadata := r.metadata[name]
+		if _, ok := r.tools[name]; !ok {
+			problems = append(problems, fmt.Sprintf("metadata %q has no handler", name))
+		}
+		if err := validateToolMetadata(name, metadata); err != nil {
+			problems = append(problems, err.Error())
+		}
+		if r.IsToolEnabledForDirectCall(name) && !metadata.IsReadOnly() {
+			problems = append(problems, fmt.Sprintf("direct-call tool %q is not read-only", name))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("invalid tool registry: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func validateToolMetadata(name string, metadata ToolMetadata) error {
+	switch {
+	case strings.TrimSpace(name) == "":
+		return fmt.Errorf("tool metadata has empty registry name")
+	case strings.TrimSpace(metadata.Name) == "":
+		return fmt.Errorf("tool %q missing metadata name", name)
+	case metadata.Name != name:
+		return fmt.Errorf("tool %q metadata name mismatch: %q", name, metadata.Name)
+	case strings.TrimSpace(metadata.Description) == "":
+		return fmt.Errorf("tool %q missing description", name)
+	case strings.TrimSpace(metadata.Category) == "":
+		return fmt.Errorf("tool %q missing category", name)
+	case strings.TrimSpace(metadata.Version) == "":
+		return fmt.Errorf("tool %q missing version", name)
+	case metadata.InputSchema == nil:
+		return fmt.Errorf("tool %q missing input_schema", name)
+	case metadata.OutputSchema == nil:
+		return fmt.Errorf("tool %q missing output_schema", name)
+	case strings.TrimSpace(metadata.RiskLevel) == "":
+		return fmt.Errorf("tool %q missing risk_level", name)
+	case strings.TrimSpace(metadata.PermissionScope) == "":
+		return fmt.Errorf("tool %q missing permission_scope", name)
+	case strings.TrimSpace(metadata.OperationType) == "":
+		return fmt.Errorf("tool %q missing operation_type", name)
+	case strings.TrimSpace(metadata.ResourceType) == "":
+		return fmt.Errorf("tool %q missing resource_type", name)
+	case strings.TrimSpace(metadata.BoundaryLevel) == "":
+		return fmt.Errorf("tool %q missing boundary_level", name)
+	}
+	return nil
 }
 
 func (r *Registry) CallTool(ctx context.Context, name string, input map[string]any) (Result, error) {
@@ -261,6 +371,38 @@ func extractExecutionContext(output any) *logtrace.ExecutionContext {
 			return typed.ExecutionContext
 		}
 	case *ConfigurationDriftResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case SystemdUnitInventoryResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *SystemdUnitInventoryResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case BlockDeviceInventoryResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *BlockDeviceInventoryResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case MountInventoryResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *MountInventoryResult:
+		if typed != nil && typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case RPMPackageInventoryResult:
+		if typed.ExecutionContext != nil {
+			return typed.ExecutionContext
+		}
+	case *RPMPackageInventoryResult:
 		if typed != nil && typed.ExecutionContext != nil {
 			return typed.ExecutionContext
 		}

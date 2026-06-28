@@ -49,13 +49,9 @@ func NewServer(deps Dependencies) *mcp.Server {
 		Version: ServerVersion,
 	}, nil)
 
-	for _, metadata := range deps.Registry.ListTools() {
-		if !deps.Registry.IsToolEnabledForDirectCall(metadata.Name) {
-			continue
-		}
-
+	for _, metadata := range deps.Registry.ListDirectCallTools() {
 		meta := metadata
-		readOnly := meta.OperationType != "write" && meta.OperationType != "execute"
+		readOnly := meta.IsReadOnly()
 		destructive := meta.Dangerous
 		openWorld := meta.ResourceType == "network_port"
 

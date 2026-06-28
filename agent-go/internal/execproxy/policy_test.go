@@ -20,6 +20,9 @@ func TestExecPolicyAllowsWhitelistedReadCommand(t *testing.T) {
 		{"df", []string{"-h"}, ProfileLowRead},
 		{"uname", []string{"-r"}, ProfilePublicRead},
 		{"systemctl", []string{"is-active", "sshd"}, ProfileLowRead},
+		{"systemctl", []string{"list-units", "--type=service", "--all", "--no-pager", "--plain", "--legend=false"}, ProfileLowRead},
+		{"lsblk", []string{"--json", "--output", "NAME,TYPE,SIZE,FSTYPE,MOUNTPOINT,ROTA,MODEL", "--nodeps"}, ProfileLowRead},
+		{"findmnt", []string{"--json", "--output", "TARGET,SOURCE,FSTYPE,OPTIONS"}, ProfileLowRead},
 		{"pgrep", []string{"sshd"}, ProfileLowRead},
 		{"free", []string{"-h"}, ProfileLowRead},
 		{"uptime", []string{}, ProfileLowRead},
@@ -44,7 +47,7 @@ func TestExecPolicyAllowsWhitelistedReadCommand(t *testing.T) {
 func TestExecPolicyAllowsSystemctlReadOnlyActions(t *testing.T) {
 	policy := NewExecPolicy()
 
-	allowed := []string{"is-active", "is-enabled", "is-failed", "status", "show", "list-units", "list-timers", "list-sockets"}
+	allowed := []string{"is-active", "is-enabled", "is-failed", "status", "show", "list-timers", "list-sockets"}
 	for _, action := range allowed {
 		decision := policy.Evaluate("systemctl", []string{action, "sshd"}, ProfileLowRead)
 		if !decision.Allowed {
@@ -60,6 +63,14 @@ func TestExecPolicyAllowsSystemctlReadOnlyActions(t *testing.T) {
 	decision = policy.Evaluate("systemctl", []string{"status", "sshd", "--no-pager", "-n", "20"}, ProfileLowRead)
 	if !decision.Allowed {
 		t.Fatalf("expected read-only systemctl status arguments to be allowed: %s", decision.Reason)
+	}
+	decision = policy.Evaluate("systemctl", []string{"list-units", "--type=service", "--all", "--no-pager", "--plain", "--legend=false"}, ProfileLowRead)
+	if !decision.Allowed {
+		t.Fatalf("expected read-only systemctl list-units arguments to be allowed: %s", decision.Reason)
+	}
+	decision = policy.Evaluate("systemctl", []string{"list-unit-files", "--type=service", "--no-pager", "--plain", "--legend=false"}, ProfileLowRead)
+	if !decision.Allowed {
+		t.Fatalf("expected read-only systemctl list-unit-files arguments to be allowed: %s", decision.Reason)
 	}
 }
 
@@ -258,7 +269,7 @@ func TestContainsShellCharsEdgeCases(t *testing.T) {
 }
 
 func TestIsSafeSystemctlArg(t *testing.T) {
-	safe := []string{"is-active", "is-enabled", "is-failed", "status", "show", "list-units", "list-timers", "list-sockets", "--version", "--no-pager"}
+	safe := []string{"is-active", "is-enabled", "is-failed", "status", "show", "list-units", "list-timers", "list-sockets", "list-unit-files", "--version", "--no-pager"}
 	for _, arg := range safe {
 		if !IsSafeSystemctlArg(arg) {
 			t.Fatalf("expected %q to be safe systemctl arg", arg)
@@ -275,7 +286,7 @@ func TestIsSafeSystemctlArg(t *testing.T) {
 
 func TestCommandAllowlistContainsExpectedCommands(t *testing.T) {
 	allowlist := commandAllowlist()
-	expected := []string{"ps", "ss", "netstat", "journalctl", "df", "uname", "systemctl", "lsof"}
+	expected := []string{"ps", "ss", "netstat", "journalctl", "df", "uname", "systemctl", "lsof", "lsblk", "findmnt", "rpm"}
 	for _, cmd := range expected {
 		if !allowlist[cmd] {
 			t.Fatalf("expected %q in command allowlist", cmd)
@@ -288,11 +299,38 @@ func TestExecPolicyAllowsOnlyBoundedRPMVerify(t *testing.T) {
 	if decision := policy.Evaluate("rpm", []string{"--verify", "openssh-server"}, ProfileSensitiveRead); !decision.Allowed {
 		t.Fatalf("expected RPM verification to be allowed: %s", decision.Reason)
 	}
+	if decision := policy.Evaluate("rpm", []string{"-qa", "--qf", "%{NAME}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\n"}, ProfileLowRead); !decision.Allowed {
+		t.Fatalf("expected bounded RPM package inventory to be allowed: %s", decision.Reason)
+	}
 	for _, args := range [][]string{
-		{"-Va"}, {"--verify", "--all"}, {"--erase", "openssh-server"}, {"--verify", "pkg;id"},
+		{"-Va"}, {"--verify", "--all"}, {"--erase", "openssh-server"}, {"--verify", "pkg;id"}, {"-qa"}, {"-qa", "--qf", "%{NAME}\n"},
 	} {
 		if decision := policy.Evaluate("rpm", args, ProfileSensitiveRead); decision.Allowed {
 			t.Fatalf("expected RPM args %#v to be denied", args)
+		}
+	}
+}
+
+func TestExecPolicyAllowsOnlyBoundedInventoryCommands(t *testing.T) {
+	policy := NewExecPolicy()
+	if decision := policy.Evaluate("lsblk", []string{"--json", "--output", "NAME,TYPE,SIZE,FSTYPE,MOUNTPOINT,ROTA,MODEL", "--nodeps"}, ProfileLowRead); !decision.Allowed {
+		t.Fatalf("expected bounded lsblk inventory to be allowed: %s", decision.Reason)
+	}
+	if decision := policy.Evaluate("findmnt", []string{"--json", "--output", "TARGET,SOURCE,FSTYPE,OPTIONS"}, ProfileLowRead); !decision.Allowed {
+		t.Fatalf("expected bounded findmnt inventory to be allowed: %s", decision.Reason)
+	}
+	for _, tc := range []struct {
+		command string
+		args    []string
+	}{
+		{"lsblk", []string{"-f"}},
+		{"lsblk", []string{"--json", "--output", "NAME,UUID", "--nodeps"}},
+		{"findmnt", []string{}},
+		{"findmnt", []string{"--json", "--output", "TARGET,SOURCE,OPTIONS,UUID"}},
+		{"systemctl", []string{"list-units", "--type=mount"}},
+	} {
+		if decision := policy.Evaluate(tc.command, tc.args, ProfileLowRead); decision.Allowed {
+			t.Fatalf("expected %s args %#v to be denied", tc.command, tc.args)
 		}
 	}
 }
