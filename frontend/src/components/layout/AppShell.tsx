@@ -3,12 +3,12 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CopilotChatToggleButton,
-  CopilotChatMessageView,
   CopilotSidebar,
   useCopilotChatConfiguration,
   useFrontendTool,
+  type AttachmentsConfig,
 } from "@copilotkit/react-core/v2";
-import { FileText, LayoutDashboard, ListChecks, Settings, ShieldCheck, Wrench } from "lucide-react";
+import { FileText, LayoutDashboard, ListChecks, Plus, Settings, ShieldCheck, Wrench } from "lucide-react";
 import { z } from "zod";
 import { DashboardView, OpsDashboard } from "@/components/dashboard/OpsDashboard";
 import { useConsolePreferences } from "@/hooks/useConsolePreferences";
@@ -25,6 +25,22 @@ const navItems: Array<{ key: DashboardView; label: string; icon: React.ReactNode
   { key: "settings", label: "设置", icon: <Settings size={17} /> },
 ];
 
+const attachmentAccept =
+  "text/plain,text/markdown,application/json,application/pdf,image/png,image/jpeg,.log,.conf,.ini,.yaml,.yml,.md,.txt,.json";
+const attachmentMaxSize = 5 * 1024 * 1024;
+
+type AttachmentUploadResult = {
+  type: "data";
+  value: string;
+  mimeType: string;
+  metadata?: Record<string, unknown>;
+};
+
+type AttachmentUploadError = {
+  reason: string;
+  message: string;
+};
+
 export function AppShell() {
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>();
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>();
@@ -35,6 +51,18 @@ export function AppShell() {
   const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<DashboardView>("overview");
   const { preferences, updatePreferences, resetPreferences, hydrated } = useConsolePreferences();
+  const attachments = useMemo<AttachmentsConfig>(
+    () => ({
+      enabled: true,
+      accept: attachmentAccept,
+      maxSize: attachmentMaxSize,
+      onUpload: uploadAttachmentForAgent,
+      onUploadFailed: (error: AttachmentUploadError) => {
+        console.warn(`[KylinGuard] attachment rejected: ${error.reason}: ${error.message}`);
+      },
+    }),
+    [],
+  );
 
   useFrontendTool({
     name: "syncKylinGuardRun",
@@ -161,25 +189,113 @@ export function AppShell() {
           position={preferences.chatPosition}
           width={preferences.chatWidth}
           toggleButton={SidebarToggleButton}
-          messageView={{ cursor: ThinkingCursor }}
           labels={{
             modalHeaderTitle: "麒盾",
-            chatInputPlaceholder: "描述你要排查的运维问题...",
-            welcomeMessageText: "你好，我是麒盾。你可以直接说“SSH 连不上了”或“机器很卡”，我会先做安全检查，再调用受控工具。",
+            chatInputPlaceholder: "直接输入你的问题...",
+            chatInputToolbarAddButtonLabel: "添加附件",
+            welcomeMessageText: "你好，我是麒盾。你可以直接描述问题，也可以附上日志、配置片段或截图；我会在安全策略约束下处理。",
             chatDisclaimerText: "智能体只执行受控只读工具；重要结论请结合审计证据复核。",
           }}
+          input={{
+            addMenuButton: DirectAttachmentButton,
+          }}
+          attachments={attachments}
         />
       ) : null}
     </div>
   );
 }
 
-function ThinkingCursor({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+function DirectAttachmentButton({
+  onAddFile,
+  disabled,
+  className,
+  toolsMenu,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { onAddFile?: () => void; toolsMenu?: unknown }) {
   return (
-    <div className={["thinking-cursor", className].filter(Boolean).join(" ")} role="status" aria-live="polite" {...props}>
-      <CopilotChatMessageView.Cursor />
-      <span>正在思考…</span>
-    </div>
+    <button
+      {...props}
+      type="button"
+      className={["kg-chat-attachment-button", className].filter(Boolean).join(" ")}
+      disabled={disabled || !onAddFile}
+      aria-label="添加附件"
+      title="添加附件"
+      onClick={(event) => {
+        props.onClick?.(event);
+        if (!event.defaultPrevented) {
+          onAddFile?.();
+        }
+      }}
+    >
+      <Plus size={20} aria-hidden="true" />
+    </button>
+  );
+}
+
+async function uploadAttachmentForAgent(file: File): Promise<AttachmentUploadResult> {
+  const mimeType = file.type || mimeTypeFromName(file.name);
+  const preview = await textPreview(file, mimeType);
+  return {
+    type: "data",
+    value: await fileToBase64(file),
+    mimeType,
+    metadata: {
+      filename: file.name,
+      size: file.size,
+      text_preview: preview,
+      preview_truncated: preview.length >= 12000,
+    },
+  };
+}
+
+async function textPreview(file: File, mimeType: string) {
+  if (!isTextLikeAttachment(file.name, mimeType)) {
+    return "";
+  }
+  const text = await file.text();
+  return text.slice(0, 12000);
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = typeof reader.result === "string" ? reader.result : "";
+      const base64 = value.split(",")[1] || "";
+      if (!base64) {
+        reject(new Error("Failed to read attachment"));
+        return;
+      }
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error || new Error("Failed to read attachment"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function mimeTypeFromName(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".md")) return "text/markdown";
+  if (lower.endsWith(".log") || lower.endsWith(".txt") || lower.endsWith(".conf") || lower.endsWith(".ini")) {
+    return "text/plain";
+  }
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "text/yaml";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  return "application/octet-stream";
+}
+
+function isTextLikeAttachment(name: string, mimeType: string) {
+  const lower = name.toLowerCase();
+  return (
+    mimeType.startsWith("text/") ||
+    mimeType === "application/json" ||
+    lower.endsWith(".log") ||
+    lower.endsWith(".conf") ||
+    lower.endsWith(".ini") ||
+    lower.endsWith(".yaml") ||
+    lower.endsWith(".yml")
   );
 }
 
