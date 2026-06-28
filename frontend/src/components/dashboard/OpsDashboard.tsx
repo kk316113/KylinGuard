@@ -250,8 +250,10 @@ function GaugeStat({
   return (
     <div className={`gauge-stat-card${danger ? " danger" : ""}${onClick ? " clickable" : ""}`} onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}>
       <div className="gauge-stat-icon">{icon}</div>
-      <strong className="gauge-stat-value">{value}<span className="gauge-stat-unit">{unit}</span></strong>
-      <span className="gauge-stat-label">{label}</span>
+      <div className="gauge-stat-body">
+        <span className="gauge-stat-label">{label}</span>
+        <strong className="gauge-stat-value">{value}<span className="gauge-stat-unit"> {unit}</span></strong>
+      </div>
     </div>
   );
 }
