@@ -1189,6 +1189,11 @@ html.dark body {
   background: transparent;
   color: var(--muted);
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.segmented-control button:hover {
+  color: var(--text);
 }
 
 .segmented-control button.active {
