@@ -1456,7 +1456,6 @@ html.dark body {
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: var(--muted);
   font-size: 13px;
   cursor: pointer;
 }
@@ -1467,8 +1466,7 @@ html.dark body {
 
 .app-drawer-tabs button.active {
   background: rgba(255, 255, 255, 0.10);
-  color: var(--text);
-  border-color: var(--line);
+  border-color: rgba(255, 255, 255, 0.12);
   font-weight: 600;
 }
 
@@ -1479,7 +1477,6 @@ html.dark body {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--muted);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -1539,14 +1536,13 @@ html.dark body {
 
 .app-drawer-settings-desc {
   margin: 0;
-  color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .app-drawer-settings-list {
   display: grid;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid;
 }
 
 .app-drawer-settings-footer {
@@ -1805,6 +1801,48 @@ html.dark .app-drawer-tabs button.active {
 html:not(.dark) .app-drawer-tabs button.active {
   background: rgba(0, 112, 243, 0.10);
   border-color: rgba(0, 112, 243, 0.20);
+}
+
+/* ── Explicit drawer text colors (bypass CSS variable conflicts) ── */
+
+html.dark .app-drawer-modal,
+html.dark .app-drawer-modal * {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+html.dark .app-drawer-modal .app-drawer-settings-desc,
+html.dark .app-drawer-modal .setting-row > div:first-child > span,
+html.dark .app-drawer-modal .app-drawer-tabs button:not(.active),
+html.dark .app-drawer-modal .app-drawer-close {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+html.dark .app-drawer-modal .app-drawer-settings-list {
+  border-top-color: rgba(255, 255, 255, 0.10);
+}
+
+html.dark .app-drawer-modal .setting-row {
+  border-bottom-color: rgba(255, 255, 255, 0.10);
+}
+
+html:not(.dark) .app-drawer-modal,
+html:not(.dark) .app-drawer-modal * {
+  color: rgba(0, 0, 0, 0.88);
+}
+
+html:not(.dark) .app-drawer-modal .app-drawer-settings-desc,
+html:not(.dark) .app-drawer-modal .setting-row > div:first-child > span,
+html:not(.dark) .app-drawer-modal .app-drawer-tabs button:not(.active),
+html:not(.dark) .app-drawer-modal .app-drawer-close {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+html:not(.dark) .app-drawer-modal .app-drawer-settings-list {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+
+html:not(.dark) .app-drawer-modal .setting-row {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
 }
 
 html.dark .app-drawer-overlay {
