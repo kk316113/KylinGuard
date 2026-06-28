@@ -76,11 +76,29 @@ html.dark body {
   --muted: var(--muted-foreground);
   --line: var(--border);
   --brand: var(--primary);
+  --glass-panel: rgba(255, 255, 255, 0.72);
+  --glass-panel-soft: rgba(255, 255, 255, 0.56);
+  --glass-panel-strong: rgba(255, 255, 255, 0.84);
+  --glass-border: rgba(255, 255, 255, 0.72);
+  --glass-shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+  --glass-shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.70);
+  --glass-blur: blur(24px) saturate(140%);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
+}
+
+html.dark .app-shell {
+  --glass-panel: rgba(255, 255, 255, 0.055);
+  --glass-panel-soft: rgba(255, 255, 255, 0.035);
+  --glass-panel-strong: rgba(255, 255, 255, 0.095);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-shadow: 0 18px 56px rgba(0, 0, 0, 0.34);
+  --glass-shadow-soft: 0 10px 34px rgba(0, 0, 0, 0.24);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .top-status-bar {
@@ -2003,6 +2021,146 @@ html:not(.dark) .app-drawer-overlay {
   background: rgba(0, 0, 0, 0.20);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+}
+
+/* Unified frosted-glass finish */
+
+.top-status-bar,
+.left-sidebar,
+.insight-panel,
+.board-hero,
+.board-section,
+.empty-board-state,
+.final-answer-card,
+.timeline-section,
+.insight-section,
+.hotspot-item,
+.metric-card,
+.answer-list,
+.detail-item,
+.empty-inline,
+.step-card,
+.inline-error,
+.graph-node,
+.graph-edge,
+.tool-row,
+.tool-catalog-row,
+.evidence-row,
+.acceptance-row,
+.run-history-row,
+.graph-stat,
+.risk-map-card,
+.risk-graph-detail,
+.risk-map-scroll,
+.risk-detail-grid > div,
+.decision-path button,
+.risk-hotspot-card,
+.settings-section,
+.sidebar-note,
+.secondary-action,
+.segmented-control,
+.app-drawer-modal,
+.app-drawer-tabs,
+.app-drawer-content,
+.app-drawer-settings-list,
+.gauge-primary,
+.gauge-stat-card {
+  background: var(--glass-panel);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow-soft), var(--glass-highlight);
+}
+
+.top-status-bar,
+.left-sidebar,
+.insight-panel,
+.board-hero,
+.board-section,
+.risk-map-card,
+.risk-graph-detail,
+.app-drawer-modal,
+.gauge-primary,
+.gauge-stat-card {
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.top-status-bar,
+.left-sidebar,
+.insight-panel {
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+}
+
+.dashboard-board {
+  background:
+    radial-gradient(circle at 18% 4%, rgba(0, 184, 255, 0.10), transparent 28%),
+    radial-gradient(circle at 82% 12%, rgba(0, 230, 118, 0.08), transparent 24%),
+    var(--background);
+}
+
+.status-pill,
+.icon-button,
+.sidebar-nav button,
+.sidebar-settings-btn,
+.insight-tabs,
+.insight-tabs button.active,
+.audit-summary span:not(.decision-badge),
+.gauge-stat-icon,
+.app-drawer-tabs button.active,
+.settings-section,
+.range-control,
+.switch-control {
+  background: var(--glass-panel-soft);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-highlight);
+}
+
+.sidebar-nav button.active,
+.segmented-control button.active,
+.decision-path button.active,
+.step-card.selected,
+.run-history-row.selected,
+.gauge-primary.clickable:hover,
+.gauge-stat-card.clickable:hover,
+.secondary-action:hover,
+.icon-button:hover,
+.sidebar-settings-btn:hover {
+  background: var(--glass-panel-strong);
+  box-shadow: var(--glass-shadow-soft), var(--glass-highlight);
+}
+
+.risk-map-card {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(0, 184, 255, 0.13), transparent 34%),
+    radial-gradient(circle at 78% 12%, rgba(0, 230, 118, 0.10), transparent 30%),
+    var(--glass-panel);
+}
+
+.risk-map-scroll {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    var(--glass-panel-soft);
+  background-size: 28px 28px;
+}
+
+html:not(.dark) .risk-map-scroll {
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.045) 1px, transparent 1px),
+    var(--glass-panel-soft);
+  background-size: 28px 28px;
+}
+
+.app-drawer-modal {
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18), var(--glass-highlight);
+}
+
+html.dark .app-drawer-modal {
+  background: rgba(12, 16, 24, 0.82);
+}
+
+html:not(.dark) .app-drawer-modal {
+  background: rgba(255, 255, 255, 0.74);
 }
 
 /* ── Cyan accent active states ── */
