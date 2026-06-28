@@ -293,6 +293,10 @@ func TestBuildSecurityReportLocalSafetyFallbackAudit(t *testing.T) {
 	if report.AuditMetadata["audit_method"] != "local-safety-fallback" {
 		t.Fatalf("expected local fallback method, got %#v", report.AuditMetadata["audit_method"])
 	}
+	assertCategory(t, report, "local_safety_fallback")
+	if report.AuditMetadata["audit_violation_count"] != 0 || report.AuditMetadata["audit_evidence_count"] != 0 {
+		t.Fatalf("expected empty fallback audit counts, got %#v", report.AuditMetadata)
+	}
 	if report.Summary == "" {
 		t.Fatal("expected summary")
 	}

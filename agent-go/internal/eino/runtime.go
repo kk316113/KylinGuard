@@ -807,10 +807,29 @@ func aggregateAuditFromSteps(steps []agentloop.AgentStep, intent security.Intent
 			maxRisk = ar.RiskScore
 		}
 		for _, v := range ar.Violations {
-			violations = append(violations, auditclient.Violation{Severity: "medium", Message: v, StepID: ar.StepID})
+			violations = append(violations, auditclient.Violation{
+				Type:     "step_audit",
+				Severity: severityForAuditDecision(ar.Decision),
+				Message:  v,
+				StepID:   ar.StepID,
+			})
 		}
-		for _, e := range ar.Evidence {
-			evidence = append(evidence, auditclient.EvidenceItem{ToolName: ar.ToolName, Reason: e, StepID: ar.StepID})
+		if len(ar.Evidence) == 0 {
+			evidence = append(evidence, auditclient.EvidenceItem{
+				StepID:   ar.StepID,
+				ToolName: ar.ToolName,
+				Resource: s.ResourcePath,
+				Reason:   stepAuditEvidenceReason(s, ar),
+			})
+		} else {
+			for _, e := range ar.Evidence {
+				evidence = append(evidence, auditclient.EvidenceItem{
+					ToolName: ar.ToolName,
+					Resource: s.ResourcePath,
+					Reason:   e,
+					StepID:   ar.StepID,
+				})
+			}
 		}
 	}
 	if violations == nil {
@@ -824,9 +843,100 @@ func aggregateAuditFromSteps(steps []agentloop.AgentStep, intent security.Intent
 		RiskScore:     maxRisk,
 		Violations:    violations,
 		EvidenceChain: evidence,
+		RiskGraph:     aggregateRiskGraphFromSteps(steps),
 		Method:        "per-step-aggregate",
 		Message:       "aggregated from per-step audit reports",
 	}
+}
+
+func severityForAuditDecision(decision string) string {
+	switch decision {
+	case "deny":
+		return "high"
+	case "review":
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func stepAuditEvidenceReason(step agentloop.AgentStep, report *agentloop.AuditReport) string {
+	if report != nil && strings.TrimSpace(report.Message) != "" {
+		return report.Message
+	}
+	if strings.TrimSpace(step.UserVisibleSummary) != "" {
+		return step.UserVisibleSummary
+	}
+	if strings.TrimSpace(step.Reason) != "" {
+		return step.Reason
+	}
+	return fmt.Sprintf("step %d executed %s against %s", step.StepIndex, step.ToolName, step.ResourceType)
+}
+
+func aggregateRiskGraphFromSteps(steps []agentloop.AgentStep) *auditclient.RiskGraph {
+	if len(steps) == 0 {
+		return nil
+	}
+	nodes := make([]map[string]any, 0, len(steps))
+	edges := make([]map[string]any, 0, maxInt(0, len(steps)-1))
+	for index, step := range steps {
+		stepID := fmt.Sprintf("step-%03d", step.StepIndex)
+		decision := ""
+		method := ""
+		riskScore := 0.0
+		violationsCount := 0
+		if step.AuditReport != nil {
+			if step.AuditReport.StepID != "" {
+				stepID = step.AuditReport.StepID
+			}
+			decision = step.AuditReport.Decision
+			method = step.AuditReport.Method
+			riskScore = step.AuditReport.RiskScore
+			violationsCount = len(step.AuditReport.Violations)
+		}
+		nodes = append(nodes, map[string]any{
+			"id":                stepID,
+			"step_id":           stepID,
+			"step_index":        step.StepIndex,
+			"type":              "tool_call",
+			"label":             step.ToolName,
+			"tool_name":         step.ToolName,
+			"decision":          decision,
+			"risk_score":        riskScore,
+			"risk_level":        severityForAuditDecision(decision),
+			"violations_count":  violationsCount,
+			"method":            method,
+			"policy_decision":   step.PolicyDecision,
+			"operation_type":    step.OperationType,
+			"resource_type":     step.ResourceType,
+			"resource_path":     step.ResourcePath,
+			"boundary_level":    step.BoundaryLevel,
+			"allowed_by_policy": step.AllowedByPolicy,
+			"policy_reason":     step.PolicyReason,
+		})
+		if index > 0 {
+			prevID := fmt.Sprintf("step-%03d", steps[index-1].StepIndex)
+			if steps[index-1].AuditReport != nil && steps[index-1].AuditReport.StepID != "" {
+				prevID = steps[index-1].AuditReport.StepID
+			}
+			edges = append(edges, map[string]any{
+				"from":   prevID,
+				"to":     stepID,
+				"source": prevID,
+				"target": stepID,
+				"type":   "sequence",
+				"label":  "sequence",
+			})
+		}
+	}
+	return &auditclient.RiskGraph{Nodes: nodes, Edges: edges}
+}
+
+func maxInt(a, b int) int {
+	if b > a {
+		return b
+	}
+	return a
 }
 
 // attachLLMMetadata injects remote LLM execution metadata into the security report.

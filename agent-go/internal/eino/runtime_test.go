@@ -85,8 +85,17 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoGraphRuntime(t *testing.T) {
 	if response.RiskGraph == nil {
 		t.Fatal("expected non-nil risk_graph")
 	}
+	if response.AuditResult.RiskGraph == nil {
+		t.Fatal("expected aggregate audit_result risk_graph")
+	}
 	if len(response.RiskGraph.Nodes) != len(response.AgentSteps) {
 		t.Fatalf("expected %d risk_graph nodes, got %d", len(response.AgentSteps), len(response.RiskGraph.Nodes))
+	}
+	if len(response.AuditResult.RiskGraph.Nodes) != len(response.AgentSteps) {
+		t.Fatalf("expected %d aggregate audit graph nodes, got %d", len(response.AgentSteps), len(response.AuditResult.RiskGraph.Nodes))
+	}
+	if len(response.AuditResult.EvidenceChain) == 0 {
+		t.Fatal("expected aggregate audit evidence_chain")
 	}
 	wantEdges := len(response.AgentSteps) - 1
 	if len(response.RiskGraph.Edges) != wantEdges {

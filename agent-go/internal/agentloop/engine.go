@@ -314,16 +314,21 @@ func buildRiskGraph(steps []AgentStep) *auditclient.RiskGraph {
 			ar = *s.AuditReport
 		}
 		node := map[string]any{
+			"id":               ar.StepID,
 			"step_id":          ar.StepID,
 			"step_index":       s.StepIndex,
+			"type":             "tool_call",
+			"label":            s.ToolName,
 			"tool_name":        s.ToolName,
 			"decision":         ar.Decision,
 			"risk_score":       ar.RiskScore,
+			"risk_level":       riskLevelForAuditDecision(ar.Decision),
 			"violations_count": len(ar.Violations),
 			"method":           ar.Method,
 			"policy_decision":  s.PolicyDecision,
 			"operation_type":   s.OperationType,
 			"resource_type":    s.ResourceType,
+			"resource_path":    s.ResourcePath,
 			"boundary_level":   s.BoundaryLevel,
 		}
 		nodes = append(nodes, node)
@@ -333,13 +338,29 @@ func buildRiskGraph(steps []AgentStep) *auditclient.RiskGraph {
 				prevID = steps[i-1].AuditReport.StepID
 			}
 			edges = append(edges, map[string]any{
-				"from": prevID,
-				"to":   ar.StepID,
-				"type": "sequence",
+				"from":   prevID,
+				"to":     ar.StepID,
+				"source": prevID,
+				"target": ar.StepID,
+				"type":   "sequence",
+				"label":  "sequence",
 			})
 		}
 	}
 	return &auditclient.RiskGraph{Nodes: nodes, Edges: edges}
+}
+
+func riskLevelForAuditDecision(decision string) string {
+	switch decision {
+	case "deny":
+		return "high"
+	case "review":
+		return "medium"
+	case "allow":
+		return "low"
+	default:
+		return "unknown"
+	}
 }
 
 func buildMaxStepsFinalAnswer(task string, steps []AgentStep) string {
@@ -429,22 +450,13 @@ func truncateText(value string, limit int) string {
 }
 
 func buildToolDefs(registry *tools.Registry) []ToolDef {
-	all := registry.ListTools()
+	all := registry.ListDirectCallTools()
 	defs := make([]ToolDef, 0, len(all))
 	for _, t := range all {
-		if !registry.IsToolEnabledForDirectCall(t.Name) {
-			continue
-		}
-		keys := make([]string, 0)
-		if props, ok := t.InputSchema["properties"].(map[string]any); ok {
-			for k := range props {
-				keys = append(keys, k)
-			}
-		}
 		defs = append(defs, ToolDef{
 			ToolName:      t.Name,
 			Description:   t.Description,
-			ArgKeys:       keys,
+			ArgKeys:       t.ArgumentKeys(),
 			OperationType: t.OperationType,
 			ResourceType:  t.ResourceType,
 			BoundaryLevel: t.BoundaryLevel,

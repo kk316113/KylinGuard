@@ -136,6 +136,9 @@ func buildRiskExplanation(input BuildInput, report *SecurityReport) []RiskExplan
 		}
 		items = appendRisk(items, severity, "boundary_audit", "TraceShield audited the semantic tool-call chain and produced the final audit result.", allEvidenceIDs(report.EvidenceChain))
 	}
+	if input.AuditResult.Method == "local-safety-fallback" {
+		items = appendRisk(items, "medium", "local_safety_fallback", "External audit service was unavailable, so KylinGuard used retained tool traces for a conservative local safety review.", allEvidenceIDs(report.EvidenceChain))
+	}
 	if len(items) == 0 {
 		items = appendRisk(items, "info", "boundary_audit", "KylinGuard generated a minimal report even though audit context was incomplete.", nil)
 	}
@@ -214,9 +217,13 @@ func buildAuditMetadata(input BuildInput, report *SecurityReport) map[string]any
 		"audit_method":             input.AuditResult.Method,
 		"audit_message":            input.AuditResult.Message,
 		"audit_risk_score":         input.AuditResult.RiskScore,
+		"audit_violation_count":    len(input.AuditResult.Violations),
+		"audit_evidence_count":     len(input.AuditResult.EvidenceChain),
 		"trace_count":              len(input.ToolTrace),
 		"evidence_count":           len(report.EvidenceChain),
 		"sensitive_resource_count": len(report.SensitiveResources),
+		"risk_graph_node_count":    riskGraphNodeCount(input.AuditResult.RiskGraph),
+		"risk_graph_edge_count":    riskGraphEdgeCount(input.AuditResult.RiskGraph),
 		"has_diagnosis":            input.Diagnosis != nil,
 		"route":                    route,
 		"generated_by":             "kylin-guard-report-builder",
@@ -226,6 +233,20 @@ func buildAuditMetadata(input BuildInput, report *SecurityReport) map[string]any
 		"registered_tool_count":    tools.RegisteredToolCount(),
 		"tools_used":               toolsUsed(input.ToolTrace),
 	}
+}
+
+func riskGraphNodeCount(graph *auditclient.RiskGraph) int {
+	if graph == nil {
+		return 0
+	}
+	return len(graph.Nodes)
+}
+
+func riskGraphEdgeCount(graph *auditclient.RiskGraph) int {
+	if graph == nil {
+		return 0
+	}
+	return len(graph.Edges)
 }
 
 func toolsUsed(traces []logtrace.ToolTrace) []string {
