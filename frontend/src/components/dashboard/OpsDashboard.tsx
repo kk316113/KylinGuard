@@ -316,16 +316,21 @@ function ToolsBoard({ capabilities }: { capabilities?: CapabilitiesResponse }) {
     <div className="board-stack">
       <section className="board-section">
         <SectionHeading icon={<Wrench size={18} />} title="工具能力" />
-        <p className="section-copy">工具选择来自智能体规划，实际执行仍由后端安全策略控制。</p>
+        <p className="section-copy">共 {tools.length} 个受控只读工具，由后端安全策略控制执行。</p>
         <div className="tool-catalog">
           {tools.length ? (
-            tools.map((tool) => (
+            tools.map((tool, index) => (
               <div className="tool-catalog-row" key={tool.tool_name}>
-                <div>
+                <span className="tool-index">{index + 1}</span>
+                <div className="tool-info">
                   <strong>{toolNameLabel(tool.tool_name)}</strong>
-                  <span>{toolDescriptionLabel(tool.tool_name)}</span>
+                  <span className="tool-desc">{toolDescriptionLabel(tool.tool_name)}</span>
                 </div>
-                <small>{operationTypeLabel(tool.operation_type)} / {resourceTypeLabel(tool.resource_type)} / {boundaryLevelLabel(tool.boundary_level)}</small>
+                <div className="tool-tags">
+                  <span className="tool-tag">{operationTypeLabel(tool.operation_type)}</span>
+                  <span className="tool-tag">{resourceTypeLabel(tool.resource_type)}</span>
+                  <span className="tool-tag">{boundaryLevelLabel(tool.boundary_level)}</span>
+                </div>
               </div>
             ))
           ) : (

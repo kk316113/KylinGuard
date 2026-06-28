@@ -17,8 +17,8 @@ const MIN_W = 520;
 const MIN_H = 420;
 const MAX_W_RATIO = 0.9;
 const MAX_H_RATIO = 0.85;
-const DEFAULT_W = 680;
-const DEFAULT_H = 560;
+const DEFAULT_W = 840;
+const DEFAULT_H = 640;
 
 const attachmentAccept =
   "text/plain,text/markdown,application/json,application/pdf,image/png,image/jpeg,.log,.conf,.ini,.yaml,.yml,.md,.txt,.json";
@@ -252,37 +252,6 @@ function SettingsPanel({
           </div>
         </SettingRow>
 
-        <SettingRow label="面板位置" description="面板从左侧或右侧滑出。">
-          <div className="segmented-control" role="group" aria-label="面板位置">
-            {(["left", "right"] as const).map((chatPosition) => (
-              <button
-                key={chatPosition}
-                type="button"
-                aria-pressed={preferences.chatPosition === chatPosition}
-                className={preferences.chatPosition === chatPosition ? "active" : ""}
-                onClick={() => updatePreferences({ chatPosition })}
-              >
-                {chatPosition === "left" ? "左侧" : "右侧"}
-              </button>
-            ))}
-          </div>
-        </SettingRow>
-
-        <SettingRow label="面板宽度" description={`${preferences.chatWidth} 像素`}>
-          <div className="range-control">
-            <span>360</span>
-            <input
-              type="range"
-              min={360}
-              max={640}
-              step={20}
-              value={preferences.chatWidth}
-              onChange={(event) => updatePreferences({ chatWidth: Number(event.target.value) })}
-              aria-label="面板宽度"
-            />
-            <span>640</span>
-          </div>
-        </SettingRow>
 
         <SettingRow label="默认展开" description="页面加载后直接打开面板。">
           <label className="switch-control">

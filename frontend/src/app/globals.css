@@ -997,8 +997,63 @@ html.dark body {
 }
 
 .tool-catalog-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: center;
+  padding: 12px 14px;
+}
+
+.tool-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.tool-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tool-info strong {
+  font-size: 14px;
+}
+
+.tool-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tool-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .graph-node.danger {
@@ -1514,12 +1569,12 @@ html:not(.dark) .copilot-product-root {
 
 html.dark .app-shell {
   --bg: transparent;
-  --surface: rgba(255, 255, 255, 0.06);
-  --surface-soft: rgba(255, 255, 255, 0.03);
-  --surface-strong: rgba(255, 255, 255, 0.10);
+  --surface: rgba(20, 40, 80, 0.40);
+  --surface-soft: rgba(20, 40, 80, 0.25);
+  --surface-strong: rgba(20, 40, 80, 0.55);
   --text: rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.50);
-  --line: rgba(255, 255, 255, 0.08);
+  --muted: rgba(255, 255, 255, 0.55);
+  --line: rgba(255, 255, 255, 0.10);
   --brand: #00b8ff;
   background: transparent;
   color: var(--text);
@@ -1527,12 +1582,12 @@ html.dark .app-shell {
 
 html:not(.dark) .app-shell {
   --bg: transparent;
-  --surface: rgba(255, 255, 255, 0.65);
-  --surface-soft: rgba(255, 255, 255, 0.50);
-  --surface-strong: rgba(255, 255, 255, 0.80);
+  --surface: rgba(255, 255, 255, 0.75);
+  --surface-soft: rgba(255, 255, 255, 0.60);
+  --surface-strong: rgba(255, 255, 255, 0.88);
   --text: rgba(0, 0, 0, 0.88);
-  --muted: rgba(0, 0, 0, 0.45);
-  --line: rgba(0, 0, 0, 0.07);
+  --muted: rgba(0, 0, 0, 0.50);
+  --line: rgba(0, 0, 0, 0.08);
   --brand: #0070f3;
   background: transparent;
   color: var(--text);
@@ -1546,17 +1601,17 @@ html:not(.dark) .dashboard-board {
 /* ── Glass sidebar ── */
 
 html.dark .left-sidebar {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 30, 65, 0.55);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-right: 1px solid var(--line);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 html:not(.dark) .left-sidebar {
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.60);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-right: 1px solid var(--line);
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 html.dark .sidebar-settings-btn,
@@ -1585,15 +1640,17 @@ html:not(.dark) .sidebar-settings-btn:hover {
 /* ── Glass status bar ── */
 
 html.dark .top-status-bar {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 30, 65, 0.50);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 html:not(.dark) .top-status-bar {
-  background: rgba(255, 255, 255, 0.60);
+  background: rgba(255, 255, 255, 0.65);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 /* ── Glass cards (no backdrop-filter — only outermost containers have it) ── */
@@ -1626,9 +1683,9 @@ html.dark .inline-error,
 html.dark .detail-item.wide,
 html.dark .answer-list,
 html.dark .sidebar-note {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  background: rgba(20, 45, 85, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.20);
 }
 
 html:not(.dark) .board-hero,
@@ -1659,9 +1716,9 @@ html:not(.dark) .inline-error,
 html:not(.dark) .detail-item.wide,
 html:not(.dark) .answer-list,
 html:not(.dark) .sidebar-note {
-  background: rgba(255, 255, 255, 0.70);
-  border: 1px solid var(--line);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.05);
 }
 
 /* ── Glass controls (no backdrop-filter) ── */
