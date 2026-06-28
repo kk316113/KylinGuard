@@ -129,6 +129,7 @@ export function AppShell() {
               setSelectedStepIndex(run.agent_steps?.length ? 0 : null);
               setActiveView("overview");
             }}
+            onNavigate={setActiveView}
             selectedStepIndex={selectedStepIndex}
             onSelectStep={setSelectedStepIndex}
           />

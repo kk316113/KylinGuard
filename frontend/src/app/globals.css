@@ -1011,7 +1011,6 @@ html.dark body {
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.15);
@@ -1091,6 +1090,23 @@ html.dark body {
 
 .gauge-stat-card.danger .gauge-stat-value {
   color: #ff1744;
+}
+
+.gauge-primary.clickable,
+.gauge-stat-card.clickable {
+  cursor: pointer;
+  transition: background 200ms ease, box-shadow 200ms ease, transform 150ms ease;
+}
+
+.gauge-primary.clickable:hover,
+.gauge-stat-card.clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.gauge-primary.clickable:active,
+.gauge-stat-card.clickable:active {
+  transform: scale(0.98);
 }
 
 @media (max-width: 900px) {
@@ -1707,12 +1723,12 @@ html:not(.dark) .copilot-product-root {
 
 html.dark {
   --bg: transparent;
-  --surface: rgba(20, 40, 80, 0.40);
-  --surface-soft: rgba(20, 40, 80, 0.25);
-  --surface-strong: rgba(20, 40, 80, 0.55);
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-soft: rgba(255, 255, 255, 0.03);
+  --surface-strong: rgba(255, 255, 255, 0.10);
   --text: rgba(255, 255, 255, 0.95);
   --muted: rgba(255, 255, 255, 0.72);
-  --line: rgba(255, 255, 255, 0.10);
+  --line: rgba(255, 255, 255, 0.08);
   --brand: #00b8ff;
 }
 
@@ -1745,7 +1761,7 @@ html:not(.dark) .dashboard-board {
 /* ── Glass sidebar ── */
 
 html.dark .left-sidebar {
-  background: rgba(15, 30, 65, 0.55);
+  background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
@@ -1784,7 +1800,7 @@ html:not(.dark) .sidebar-settings-btn:hover {
 /* ── Glass status bar ── */
 
 html.dark .top-status-bar {
-  background: rgba(15, 30, 65, 0.50);
+  background: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -1826,7 +1842,7 @@ html.dark .inline-error,
 html.dark .detail-item.wide,
 html.dark .answer-list,
 html.dark .sidebar-note {
-  background: rgba(20, 45, 85, 0.35);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.20);
 }

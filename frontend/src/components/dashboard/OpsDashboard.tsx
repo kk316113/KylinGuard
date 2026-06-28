@@ -44,6 +44,7 @@ type Props = {
   acceptance?: AcceptanceSummary;
   currentRun?: AgentRun | null;
   onSelectRun: (run: AgentRun) => void;
+  onNavigate: (view: DashboardView) => void;
   selectedStepIndex: number | null;
   onSelectStep: (index: number) => void;
 };
@@ -55,6 +56,7 @@ export function OpsDashboard({
   acceptance,
   currentRun,
   onSelectRun,
+  onNavigate,
   selectedStepIndex,
   onSelectStep,
 }: Props) {
@@ -66,6 +68,7 @@ export function OpsDashboard({
           capabilities={capabilities}
           acceptance={acceptance}
           currentRun={currentRun}
+          onNavigate={onNavigate}
         />
       ) : null}
       {activeView === "audit" ? (
@@ -87,11 +90,13 @@ function OverviewBoard({
   capabilities,
   acceptance,
   currentRun,
+  onNavigate,
 }: {
   runtimeStatus?: RuntimeStatus;
   capabilities?: CapabilitiesResponse;
   acceptance?: AcceptanceSummary;
   currentRun?: AgentRun | null;
+  onNavigate?: (view: DashboardView) => void;
 }) {
   const stagesPassed = acceptance?.stages.filter((stage) => stage.status === "PASS").length || 0;
   const totalStages = acceptance?.stages.length || 1;
@@ -122,9 +127,10 @@ function OverviewBoard({
           color={gaugeColor}
           subtitle={`${stagesPassed}/${totalStages} 项通过`}
           size={140}
+          onClick={onNavigate ? () => onNavigate("audit") : undefined}
         />
-        <GaugeStat icon={<ShieldCheck size={20} />} label="安全层" value={`${layerCount}`} unit="层" />
-        <GaugeStat icon={<Wrench size={20} />} label="受控工具" value={`${tools.length}`} unit="个" />
+        <GaugeStat icon={<ShieldCheck size={20} />} label="安全层" value={`${layerCount}`} unit="层" onClick={onNavigate ? () => onNavigate("audit") : undefined} />
+        <GaugeStat icon={<Wrench size={20} />} label="受控工具" value={`${tools.length}`} unit="个" onClick={onNavigate ? () => onNavigate("tools") : undefined} />
         <GaugeStat
           icon={<Activity size={20} />}
           label="运行模式"
@@ -137,6 +143,7 @@ function OverviewBoard({
           value={`${violations}`}
           unit={violations > 0 ? "项 ⚠" : "项"}
           danger={violations > 0}
+          onClick={onNavigate ? () => onNavigate("audit") : undefined}
         />
       </section>
 
@@ -180,6 +187,7 @@ function GaugeRing({
   color,
   subtitle,
   size = 140,
+  onClick,
 }: {
   value: number;
   max: number;
@@ -187,6 +195,7 @@ function GaugeRing({
   color: string;
   subtitle?: string;
   size?: number;
+  onClick?: () => void;
 }) {
   const cx = size / 2;
   const cy = size / 2;
@@ -197,7 +206,7 @@ function GaugeRing({
   const offset = circ * (1 - pct);
 
   return (
-    <div className="gauge-primary">
+    <div className={`gauge-primary${onClick ? " clickable" : ""}`} onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeW} />
         <circle
@@ -229,15 +238,17 @@ function GaugeStat({
   value,
   unit,
   danger,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   unit: string;
   danger?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div className={`gauge-stat-card${danger ? " danger" : ""}`}>
+    <div className={`gauge-stat-card${danger ? " danger" : ""}${onClick ? " clickable" : ""}`} onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}>
       <div className="gauge-stat-icon">{icon}</div>
       <strong className="gauge-stat-value">{value}</strong>
       <span className="gauge-stat-unit">{unit}</span>
