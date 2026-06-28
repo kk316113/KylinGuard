@@ -1498,21 +1498,37 @@ html.dark body {
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   cursor: nwse-resize;
-  z-index: 1;
+  z-index: 5;
+  display: grid;
+  place-items: end;
+  padding: 4px;
 }
 
 .app-drawer-resize-handle::after {
   content: "";
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 10px;
-  height: 10px;
-  border-right: 2px solid color-mix(in srgb, var(--muted) 50%, transparent);
-  border-bottom: 2px solid color-mix(in srgb, var(--muted) 50%, transparent);
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-right: 3px solid;
+  border-bottom: 3px solid;
+  border-radius: 0 0 3px 0;
+  opacity: 0.5;
+  transition: opacity 200ms;
+}
+
+.app-drawer-resize-handle:hover::after {
+  opacity: 1;
+}
+
+html.dark .app-drawer-resize-handle::after {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+html:not(.dark) .app-drawer-resize-handle::after {
+  border-color: rgba(0, 0, 0, 0.4);
 }
 
 /* ── Settings panel inside modal ────────────────────────────── */
