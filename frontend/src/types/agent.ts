@@ -76,16 +76,27 @@ export type EvidenceItem = {
 
 export type RiskGraphNode = {
   id?: string;
+  step_id?: string;
+  tool_name?: string;
   type?: string;
   label?: string;
+  decision?: Decision;
   risk_level?: string;
   step_index?: number;
+  risk_score?: number;
+  resource_type?: string;
+  resource_path?: string;
+  boundary_level?: string;
+  operation_type?: string;
+  allowed_by_policy?: boolean;
   [key: string]: unknown;
 };
 
 export type RiskGraphEdge = {
   source?: string;
   target?: string;
+  from?: string;
+  to?: string;
   type?: string;
   label?: string;
   [key: string]: unknown;

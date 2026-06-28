@@ -32,22 +32,6 @@ html.dark body {
   color: var(--foreground);
 }
 
-.thinking-cursor {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  margin-left: 4px;
-  color: var(--muted-foreground);
-  font-size: 13px;
-  line-height: 1;
-}
-
-.thinking-cursor [data-testid="copilot-loading-cursor"] {
-  flex: 0 0 auto;
-  margin-left: 0;
-}
-
 .app-shell button,
 .app-shell textarea {
   font: inherit;
@@ -60,6 +44,24 @@ html.dark body {
 .app-shell button:disabled {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+.kg-chat-attachment-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-left: 4px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--copilot-kit-muted-color, currentColor);
+  background: transparent;
+  cursor: pointer;
+}
+
+.kg-chat-attachment-button:hover {
+  background: var(--copilot-kit-secondary-contrast-color, rgba(127, 127, 127, 0.12));
 }
 
 .app-shell {
@@ -680,6 +682,283 @@ html.dark body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.risk-graph-view {
+  display: grid;
+  gap: 12px;
+}
+
+.graph-stat {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, var(--brand)), var(--surface));
+}
+
+.graph-stat strong {
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.graph-stat span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.graph-stat.danger strong {
+  color: var(--red);
+}
+
+.risk-map-card,
+.risk-graph-detail {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--brand) 12%, transparent), transparent 32%),
+    var(--surface);
+}
+
+.risk-map-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.risk-map-toolbar p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.risk-map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.risk-map-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
+.risk-map-controls button:hover {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+  background: var(--surface-strong);
+}
+
+.risk-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.legend-item::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--muted);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 12%, transparent);
+}
+
+.legend-item.good::before {
+  background: var(--green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.legend-item.warn::before {
+  background: var(--amber);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 12%, transparent);
+}
+
+.legend-item.danger::before {
+  background: var(--red);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.risk-map-scroll {
+  overflow: auto;
+  min-height: 300px;
+  max-height: 560px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-soft) 70%, transparent), transparent),
+    var(--bg);
+}
+
+.risk-map-svg {
+  display: block;
+  min-width: 100%;
+}
+
+.risk-map-grid line {
+  stroke: color-mix(in srgb, var(--line) 52%, transparent);
+  stroke-width: 1;
+}
+
+.risk-map-edge {
+  fill: none;
+  color: color-mix(in srgb, var(--brand) 70%, var(--muted));
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2.5;
+  opacity: 0.64;
+  transition:
+    opacity 160ms ease,
+    stroke-width 160ms ease;
+}
+
+.risk-map-edge.good {
+  color: var(--green);
+}
+
+.risk-map-edge.warn {
+  color: var(--amber);
+}
+
+.risk-map-edge.danger {
+  color: var(--red);
+}
+
+.risk-map-edge.related,
+.risk-map-edge.active {
+  opacity: 1;
+  stroke-width: 4;
+}
+
+.risk-map-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-linecap: round;
+  stroke-width: 16;
+  cursor: pointer;
+}
+
+.risk-map-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.risk-map-node rect {
+  fill: color-mix(in srgb, var(--surface) 94%, var(--brand));
+  stroke: var(--line);
+  stroke-width: 1.4;
+  transition:
+    fill 160ms ease,
+    stroke 160ms ease,
+    stroke-width 160ms ease,
+    transform 160ms ease;
+}
+
+.risk-map-node circle {
+  fill: var(--muted);
+}
+
+.risk-map-node.good circle {
+  fill: var(--green);
+}
+
+.risk-map-node.warn circle {
+  fill: var(--amber);
+}
+
+.risk-map-node.danger circle {
+  fill: var(--red);
+}
+
+.risk-map-node.good rect {
+  stroke: color-mix(in srgb, var(--green) 38%, var(--line));
+}
+
+.risk-map-node.warn rect {
+  stroke: color-mix(in srgb, var(--amber) 42%, var(--line));
+}
+
+.risk-map-node.danger rect {
+  fill: color-mix(in srgb, var(--red) 8%, var(--surface));
+  stroke: color-mix(in srgb, var(--red) 55%, var(--line));
+}
+
+.risk-map-node.active rect,
+.risk-map-node:focus-visible rect {
+  stroke: var(--brand);
+  stroke-width: 2.4;
+}
+
+.risk-map-node:hover rect {
+  transform: translateY(-2px);
+}
+
+.risk-map-node-index {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.risk-map-node-title {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.risk-map-node-meta {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.risk-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.risk-detail-grid div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.risk-detail-grid span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.risk-detail-grid strong {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .export-actions {
