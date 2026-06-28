@@ -246,6 +246,27 @@ html.dark body {
   gap: 10px;
 }
 
+.sidebar-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 200ms ease, color 200ms ease;
+}
+
+.sidebar-settings-btn:hover {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
 .sidebar-note {
   display: flex;
   gap: 7px;
@@ -1490,6 +1511,27 @@ html.dark .left-sidebar {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-right: 1px solid var(--line);
+}
+
+html.dark .sidebar-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 200ms ease, color 200ms ease;
+}
+
+html.dark .sidebar-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
 }
 
 html.dark .top-status-bar {

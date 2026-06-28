@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { CopilotChat, type AttachmentsConfig } from "@copilotkit/react-core/v2";
 import { MessageSquare, Plus, Settings, X } from "lucide-react";
 import { useConsolePreferences, type ConsolePreferences } from "@/hooks/useConsolePreferences";
 
-// ── Attachment helpers ──────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────
+
+type TabKey = "chat" | "settings";
+
+export type AppDrawerHandle = {
+  openToSettings: () => void;
+};
 
 const attachmentAccept =
   "text/plain,text/markdown,application/json,application/pdf,image/png,image/jpeg,.log,.conf,.ini,.yaml,.yml,.md,.txt,.json";
@@ -25,13 +31,20 @@ type AttachmentUploadError = {
 
 // ── Component ───────────────────────────────────────────────────
 
-type TabKey = "chat" | "settings";
-
-export function AppDrawer() {
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface AppDrawerProps {}
+export const AppDrawer = forwardRef<AppDrawerHandle, AppDrawerProps>(function AppDrawer(_props, ref) {
   const { preferences, updatePreferences, resetPreferences } = useConsolePreferences();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("chat");
   const panelRef = useRef<HTMLDivElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    openToSettings() {
+      setActiveTab("settings");
+      setIsOpen(true);
+    },
+  }));
 
   // Auto-open if preference says so (mount only)
   useEffect(() => {
@@ -156,7 +169,7 @@ export function AppDrawer() {
       </div>
     </>
   );
-}
+});
 
 // ── Settings Panel ──────────────────────────────────────────────
 

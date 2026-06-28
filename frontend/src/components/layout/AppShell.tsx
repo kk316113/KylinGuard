@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { FileText, LayoutDashboard, ListChecks, ShieldCheck, Wrench } from "lucide-react";
+import { FileText, LayoutDashboard, ListChecks, Settings, ShieldCheck, Wrench } from "lucide-react";
 import { z } from "zod";
 import { OpsDashboard, type DashboardView } from "@/components/dashboard/OpsDashboard";
 import { getAcceptanceSummary, getAgentRun, getCapabilities, getRuntimeStatus } from "@/lib/api";
 import type { AgentRun } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse, RuntimeStatus } from "@/types/runtime";
 import { TopStatusBar } from "./TopStatusBar";
-import { AppDrawer } from "./AppDrawer";
+import { AppDrawer, type AppDrawerHandle } from "./AppDrawer";
 
 const navItems: Array<{ key: DashboardView; label: string; icon: React.ReactNode }> = [
   { key: "overview", label: "总览", icon: <LayoutDashboard size={17} /> },
@@ -27,6 +27,7 @@ export function AppShell() {
   const [currentRun, setCurrentRun] = useState<AgentRun | null>(null);
   const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<DashboardView>("overview");
+  const drawerRef = useRef<AppDrawerHandle>(null);
 
   useFrontendTool({
     name: "syncKylinGuardRun",
@@ -100,6 +101,16 @@ export function AppShell() {
             </nav>
 
             <div className="sidebar-footer">
+              <button
+                type="button"
+                className="sidebar-settings-btn"
+                onClick={() => drawerRef.current?.openToSettings()}
+                aria-label="打开设置"
+                title="设置"
+              >
+                <Settings size={16} />
+                <span>设置</span>
+              </button>
               <div className="sidebar-note">
                 <ListChecks size={14} />
                 <span>执行记录、安全审计和工具证据会在任务完成后同步到控制台。</span>
@@ -124,7 +135,7 @@ export function AppShell() {
         </div>
       </div>
 
-      <AppDrawer />
+      <AppDrawer ref={drawerRef} />
     </div>
   );
 }
