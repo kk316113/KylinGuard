@@ -109,7 +109,7 @@ html.dark body {
 }
 
 .brand-block strong {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .brand-block span,
@@ -209,7 +209,7 @@ html.dark body {
 .sidebar-title strong {
   display: block;
   margin-top: 4px;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .sidebar-nav {
@@ -285,7 +285,7 @@ html.dark body {
 
 .board-hero h1 {
   margin: 4px 0 8px;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.2;
 }
 
@@ -297,7 +297,7 @@ html.dark body {
   margin: 0;
   color: var(--muted);
   line-height: 1.55;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .metric-grid {
@@ -322,7 +322,7 @@ html.dark body {
 
 .metric-card strong {
   overflow-wrap: anywhere;
-  font-size: 15px;
+  font-size: 14px;
   word-break: normal;
 }
 
@@ -344,7 +344,7 @@ html.dark body {
 
 .section-title h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .run-overview-grid {
@@ -362,7 +362,7 @@ html.dark body {
 
 .run-overview-main h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .run-overview-main p {
@@ -504,7 +504,7 @@ html.dark body {
 .step-meta {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -591,13 +591,13 @@ html.dark body {
 
 .detail-item span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   margin-bottom: 4px;
 }
 
 .detail-item strong {
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .decision-badge {
@@ -700,7 +700,7 @@ html.dark body {
 
 .graph-stat strong {
   color: var(--text);
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -1015,6 +1015,80 @@ html.dark body {
   grid-column: 2 / -1;
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+.risk-hotspot-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.risk-hotspot-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.risk-hotspot-card.danger {
+  border-color: color-mix(in srgb, var(--red) 42%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--red) 6%, var(--surface)), var(--surface));
+}
+
+.risk-hotspot-card.warn {
+  border-color: color-mix(in srgb, var(--amber) 42%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--amber) 6%, var(--surface)), var(--surface));
+}
+
+.risk-hotspot-card.good {
+  border-color: color-mix(in srgb, var(--green) 42%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 6%, var(--surface)), var(--surface));
+}
+
+.risk-hotspot-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 16%, var(--surface));
+}
+
+.risk-hotspot-card.warn .risk-hotspot-badge {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 16%, var(--surface));
+}
+
+.risk-hotspot-card.good .risk-hotspot-badge {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 16%, var(--surface));
+}
+
+.risk-hotspot-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.risk-hotspot-body strong {
+  font-size: 14px;
+}
+
+.risk-hotspot-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .settings-section {

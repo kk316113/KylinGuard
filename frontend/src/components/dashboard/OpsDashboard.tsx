@@ -5,20 +5,22 @@ import {
   Activity,
   FileText,
   GitBranch,
+  GitMerge,
   LayoutDashboard,
   ListChecks,
   RotateCcw,
   Settings,
   ShieldCheck,
+  Siren,
   Wrench,
 } from "lucide-react";
 import { AgentRunTimeline } from "@/components/agent/AgentRunTimeline";
 import { FinalAnswerCard } from "@/components/agent/FinalAnswerCard";
 import { RiskDecisionBadge } from "@/components/audit/RiskDecisionBadge";
-import { RightInsightPanel } from "@/components/layout/RightInsightPanel";
 import { RiskGraphPanel } from "@/components/risk-graph/RiskGraphPanel";
 import type { ConsolePreferences } from "@/hooks/useConsolePreferences";
 import {
+  auditMethodLabel,
   boundaryLevelLabel,
   compactDate,
   decisionLabel,
@@ -32,7 +34,7 @@ import {
   toolNameLabel,
   traceSummary,
 } from "@/lib/formatters";
-import { getAgentRun, getAgentRuns, type AgentRunSummary } from "@/lib/api";
+import { agentReportMarkdownURL, agentRiskGraphArtifactURL, getAgentRun, getAgentRuns, type AgentRunSummary } from "@/lib/api";
 import type { AgentRun } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse, RuntimeStatus } from "@/types/runtime";
 
@@ -157,7 +159,7 @@ function OverviewBoard({
       )}
 
       <section className="board-section">
-        <SectionHeading icon={<ShieldCheck size={18} />} title="风险图" />
+        <SectionHeading icon={<GitMerge size={18} />} title="风险图" />
         <RiskGraphPanel run={currentRun} />
       </section>
     </div>
@@ -187,16 +189,139 @@ function AuditBoard({
     );
   }
 
+  const violations = currentRun.audit_result?.violations || [];
+  const sensitiveTraces = (currentRun.tool_trace || []).filter(
+    (trace) => trace.risk_level === "high" || trace.boundary_level === "high",
+  );
+  const hasRisks = violations.length > 0 || sensitiveTraces.length > 0;
+  const hasRiskGraph = !!(currentRun.risk_graph || currentRun.audit_result?.risk_graph);
+  const runId = currentRun.run_id || currentRun.task_id;
+
   return (
     <div className="board-stack">
       <FinalAnswerCard run={currentRun} />
+
+      {hasRisks ? (
+        <section className="board-section">
+          <SectionHeading icon={<Siren size={18} />} title="风险点" />
+          <p className="section-copy">
+            共检测到 <strong>{violations.length + sensitiveTraces.length}</strong> 个风险项
+          </p>
+          <div className="risk-hotspot-list">
+            {violations.map((violation, index) => (
+              <RiskHotspotCard
+                key={`v-${index}`}
+                severity={violation.severity || "medium"}
+                label={violation.type || "安全风险"}
+                message={violation.message || "检测到需要关注的风险。"}
+              />
+            ))}
+            {sensitiveTraces.map((trace, index) => (
+              <RiskHotspotCard
+                key={`t-${index}`}
+                severity="high"
+                label={toolNameLabel(trace.tool_name)}
+                message={trace.risk_hint || trace.output_summary || "检测到高边界工具调用。"}
+              />
+            ))}
+          </div>
+        </section>
+      ) : (
+        <section className="board-section">
+          <SectionHeading icon={<ShieldCheck size={18} />} title="安全结论" />
+          <p className="section-copy">
+            本次任务未触发任何风险规则，所有工具调用均在安全策略允许范围内。
+          </p>
+        </section>
+      )}
+
+      {hasRiskGraph ? (
+        <section className="board-section">
+          <SectionHeading icon={<GitMerge size={18} />} title="风险图" />
+          <RiskGraphPanel run={currentRun} />
+        </section>
+      ) : null}
+
       <AgentRunTimeline run={currentRun} selectedStepIndex={selectedStepIndex} onSelectStep={onSelectStep} />
-      <RightInsightPanel
-        run={currentRun}
-        selectedStepIndex={selectedStepIndex}
-        onSelectStep={onSelectStep}
-        capabilities={capabilities}
-      />
+
+      <section className="board-section">
+        <SectionHeading icon={<FileText size={18} />} title="审计摘要" />
+        <p className="section-copy">
+          {currentRun.security_report?.executive_summary ||
+            currentRun.security_report?.summary ||
+            currentRun.audit_result?.message ||
+            "没有额外审计说明。"}
+        </p>
+        <div className="detail-grid">
+          <Detail
+            label="审计方法"
+            value={auditMethodLabel(currentRun.audit_result?.method)}
+          />
+          <Detail
+            label="风险评分"
+            value={typeof currentRun.audit_result?.risk_score === "number" ? `${Math.round(currentRun.audit_result.risk_score * 100)} 分` : "未评分"}
+          />
+          <Detail
+            label="违规项"
+            value={
+              currentRun.audit_result?.violations?.length !== undefined
+                ? `${currentRun.audit_result.violations.length} 项`
+                : "无"
+            }
+          />
+          <Detail
+            label="证据链"
+            value={
+              currentRun.audit_result?.evidence_chain?.length !== undefined
+                ? `${currentRun.audit_result.evidence_chain.length} 条`
+                : "无"
+            }
+          />
+        </div>
+        {runId ? (
+          <div className="export-actions">
+            <a className="secondary-action" href={agentReportMarkdownURL(runId)} download>
+              导出 Markdown 报告
+            </a>
+            <a className="secondary-action" href={agentRiskGraphArtifactURL(runId)} download>
+              下载 Risk Graph JSON
+            </a>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function RiskHotspotCard({
+  severity,
+  label,
+  message,
+}: {
+  severity: string;
+  label: string;
+  message: string;
+}) {
+  const tone =
+    severity === "high" || severity === "critical"
+      ? "danger"
+      : severity === "medium"
+        ? "warn"
+        : "good";
+  const levelLabel =
+    severity === "high" || severity === "critical"
+      ? "高危"
+      : severity === "medium"
+        ? "中危"
+        : "低风险";
+
+  return (
+    <div className={`risk-hotspot-card ${tone}`}>
+      <div className="risk-hotspot-badge">{levelLabel}</div>
+      <div className="risk-hotspot-body">
+        <strong>{label}</strong>
+        <p>{message}</p>
+      </div>
     </div>
   );
 }
