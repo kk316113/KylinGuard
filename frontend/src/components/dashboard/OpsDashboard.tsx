@@ -8,8 +8,6 @@ import {
   GitMerge,
   LayoutDashboard,
   ListChecks,
-  RotateCcw,
-  Settings,
   ShieldCheck,
   Siren,
   Wrench,
@@ -38,7 +36,7 @@ import { agentReportMarkdownURL, agentRiskGraphArtifactURL, getAgentRun, getAgen
 import type { AgentRun } from "@/types/agent";
 import type { AcceptanceSummary, CapabilitiesResponse, RuntimeStatus } from "@/types/runtime";
 
-export type DashboardView = "overview" | "audit" | "tools" | "runs" | "settings";
+export type DashboardView = "overview" | "audit" | "tools" | "runs";
 
 type Props = {
   activeView: DashboardView;
@@ -87,13 +85,6 @@ export function OpsDashboard({
       ) : null}
       {activeView === "tools" ? <ToolsBoard capabilities={capabilities} /> : null}
       {activeView === "runs" ? <RunsBoard currentRun={currentRun} onSelectRun={onSelectRun} /> : null}
-      {activeView === "settings" ? (
-        <SettingsBoard
-          preferences={preferences}
-          onUpdatePreferences={onUpdatePreferences}
-          onResetPreferences={onResetPreferences}
-        />
-      ) : null}
     </main>
   );
 }
@@ -478,114 +469,6 @@ function friendlyAPIError(message: string) {
     return "前端代理连接被重置：请刷新状态或重启 Web 服务后重试。";
   }
   return message;
-}
-
-function SettingsBoard({
-  preferences,
-  onUpdatePreferences,
-  onResetPreferences,
-}: {
-  preferences: ConsolePreferences;
-  onUpdatePreferences: (patch: Partial<ConsolePreferences>) => void;
-  onResetPreferences: () => void;
-}) {
-  return (
-    <div className="board-stack">
-      <section className="board-section settings-section">
-        <div className="settings-heading">
-          <div>
-            <SectionHeading icon={<Settings size={18} />} title="界面设置" />
-            <p className="section-copy">更改会立即生效，并保存在当前浏览器。</p>
-          </div>
-        </div>
-
-        <div className="settings-list">
-          <SettingRow label="外观" description="跟随系统或指定浅色、深色主题。">
-            <div className="segmented-control" role="group" aria-label="外观主题">
-              {(["system", "light", "dark"] as const).map((theme) => (
-                <button
-                  key={theme}
-                  type="button"
-                  aria-pressed={preferences.theme === theme}
-                  className={preferences.theme === theme ? "active" : ""}
-                  onClick={() => onUpdatePreferences({ theme })}
-                >
-                  {theme === "system" ? "跟随系统" : theme === "light" ? "浅色" : "深色"}
-                </button>
-              ))}
-            </div>
-          </SettingRow>
-
-          <SettingRow label="聊天位置" description="使用官方聊天侧边栏，选择从左侧或右侧展开。">
-            <div className="segmented-control" role="group" aria-label="聊天侧边栏位置">
-              {(["left", "right"] as const).map((chatPosition) => (
-                <button
-                  key={chatPosition}
-                  type="button"
-                  aria-pressed={preferences.chatPosition === chatPosition}
-                  className={preferences.chatPosition === chatPosition ? "active" : ""}
-                  onClick={() => onUpdatePreferences({ chatPosition })}
-                >
-                  {chatPosition === "left" ? "左侧" : "右侧"}
-                </button>
-              ))}
-            </div>
-          </SettingRow>
-
-          <SettingRow label="聊天宽度" description={`${preferences.chatWidth} 像素`}>
-            <div className="range-control">
-              <span>360</span>
-              <input
-                type="range"
-                min={360}
-                max={640}
-                step={20}
-                value={preferences.chatWidth}
-                onChange={(event) => onUpdatePreferences({ chatWidth: Number(event.target.value) })}
-                aria-label="聊天侧边栏宽度"
-              />
-              <span>640</span>
-            </div>
-          </SettingRow>
-
-          <SettingRow label="默认展开聊天" description="页面加载后直接打开聊天侧边栏。">
-            <label className="switch-control">
-              <input
-                type="checkbox"
-                checked={preferences.chatDefaultOpen}
-                onChange={(event) => onUpdatePreferences({ chatDefaultOpen: event.target.checked })}
-              />
-              <span aria-hidden="true" />
-              <strong>{preferences.chatDefaultOpen ? "已开启" : "已关闭"}</strong>
-            </label>
-          </SettingRow>
-        </div>
-      </section>
-
-      <section className="board-section preference-storage-section">
-        <div>
-          <SectionHeading icon={<RotateCcw size={18} />} title="本地偏好" />
-          <p className="section-copy">这些设置仅保存在当前浏览器，不会上传到服务端。</p>
-        </div>
-        <button className="secondary-action" type="button" onClick={onResetPreferences}>
-          <RotateCcw size={15} />
-          恢复默认设置
-        </button>
-      </section>
-    </div>
-  );
-}
-
-function SettingRow({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
-  return (
-    <div className="setting-row">
-      <div>
-        <strong>{label}</strong>
-        <span>{description}</span>
-      </div>
-      {children}
-    </div>
-  );
 }
 
 function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {

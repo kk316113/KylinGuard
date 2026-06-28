@@ -1283,6 +1283,167 @@ html.dark body {
   }
 }
 
+/* ── AppDrawer ──────────────────────────────────────────────── */
+
+.app-drawer-toggle {
+  position: fixed;
+  bottom: 24px;
+  z-index: 30;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow:
+    0 4px 12px color-mix(in srgb, var(--primary) 40%, transparent);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.app-drawer-toggle:hover {
+  transform: scale(1.08);
+  box-shadow:
+    0 6px 20px color-mix(in srgb, var(--primary) 50%, transparent);
+}
+
+.app-drawer-toggle.left {
+  left: 24px;
+}
+
+.app-drawer-toggle.right {
+  right: 24px;
+}
+
+.app-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: color-mix(in srgb, #000 32%, transparent);
+}
+
+.app-drawer-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  box-shadow:
+    0 0 32px color-mix(in srgb, #000 10%, transparent);
+  transition: transform 200ms ease;
+}
+
+.app-drawer-panel.left {
+  left: 0;
+  border-right: 1px solid var(--line);
+  transform: translateX(-100%);
+}
+
+.app-drawer-panel.right {
+  right: 0;
+  border-left: 1px solid var(--line);
+  transform: translateX(100%);
+}
+
+.app-drawer-panel.open {
+  transform: translateX(0);
+}
+
+.app-drawer-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.app-drawer-tabs button:not(.app-drawer-close) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.app-drawer-tabs button:not(.app-drawer-close):hover {
+  background: var(--surface-strong);
+}
+
+.app-drawer-tabs button.active {
+  background: var(--surface-strong);
+  color: var(--text);
+  border-color: var(--line);
+  font-weight: 600;
+}
+
+.app-drawer-close {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.app-drawer-close:hover {
+  background: var(--surface-strong);
+}
+
+.app-drawer-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.app-drawer-settings {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.app-drawer-settings-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-drawer-settings-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.app-drawer-settings-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.app-drawer-settings-list {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.app-drawer-settings-footer {
+  padding-top: 8px;
+}
+
 @media (max-width: 1120px) {
   .top-status-bar {
     grid-template-columns: 1fr auto;
