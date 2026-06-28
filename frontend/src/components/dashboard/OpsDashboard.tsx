@@ -317,26 +317,35 @@ function ToolsBoard({ capabilities }: { capabilities?: CapabilitiesResponse }) {
       <section className="board-section">
         <SectionHeading icon={<Wrench size={18} />} title="工具能力" />
         <p className="section-copy">共 {tools.length} 个受控只读工具，由后端安全策略控制执行。</p>
-        <div className="tool-catalog">
-          {tools.length ? (
-            tools.map((tool, index) => (
-              <div className="tool-catalog-row" key={tool.tool_name}>
-                <span className="tool-index">{index + 1}</span>
-                <div className="tool-info">
-                  <strong>{toolNameLabel(tool.tool_name)}</strong>
-                  <span className="tool-desc">{toolDescriptionLabel(tool.tool_name)}</span>
-                </div>
-                <div className="tool-tags">
-                  <span className="tool-tag">{operationTypeLabel(tool.operation_type)}</span>
-                  <span className="tool-tag">{resourceTypeLabel(tool.resource_type)}</span>
-                  <span className="tool-tag">{boundaryLevelLabel(tool.boundary_level)}</span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <EmptyInline>暂无工具数据</EmptyInline>
-          )}
-        </div>
+        {tools.length ? (
+          <table className="tool-table">
+            <thead>
+              <tr>
+                <th className="tt-col-num">#</th>
+                <th className="tt-col-name">工具名称</th>
+                <th className="tt-col-tag">操作类型</th>
+                <th className="tt-col-tag">资源类型</th>
+                <th className="tt-col-tag">安全边界</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tools.map((tool, index) => (
+                <tr key={tool.tool_name} className="tool-tr">
+                  <td className="tt-col-num">{index + 1}</td>
+                  <td className="tt-col-name">
+                    <strong>{toolNameLabel(tool.tool_name)}</strong>
+                    <span className="tt-desc">{toolDescriptionLabel(tool.tool_name)}</span>
+                  </td>
+                  <td className="tt-col-tag">{operationTypeLabel(tool.operation_type)}</td>
+                  <td className="tt-col-tag">{resourceTypeLabel(tool.resource_type)}</td>
+                  <td className="tt-col-tag">{boundaryLevelLabel(tool.boundary_level)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyInline>暂无工具数据</EmptyInline>
+        )}
       </section>
     </div>
   );

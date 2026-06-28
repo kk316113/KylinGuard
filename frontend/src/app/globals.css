@@ -996,66 +996,81 @@ html.dark body {
   text-decoration: none;
 }
 
-.tool-catalog-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 12px 14px;
+/* ── Tool table ──────────────────────────────────────────────── */
+
+.tool-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 12px;
 }
 
-.tool-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--surface-strong);
-  color: var(--muted);
+.tool-table thead th {
+  padding: 10px 12px;
+  text-align: left;
   font-size: 12px;
   font-weight: 800;
-  flex-shrink: 0;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  letter-spacing: 0.3px;
 }
 
-.tool-info {
-  display: grid;
-  gap: 4px;
+.tt-col-num {
+  width: 44px;
+  text-align: center !important;
+}
+
+.tt-col-name {
   min-width: 0;
 }
 
-.tool-info strong {
-  font-size: 14px;
+.tt-col-tag {
+  width: 88px;
+  text-align: center !important;
 }
 
-.tool-desc {
-  color: var(--text);
+.tool-tr td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.tool-tr:last-child td {
+  border-bottom: none;
+}
+
+.tool-tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tool-tr .tt-col-num {
+  color: var(--muted);
   font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.tool-tr .tt-col-name strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.tt-desc {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
   line-height: 1.4;
-  opacity: 0.65;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tool-tags {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.tool-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: var(--surface-strong);
-  color: var(--text);
+.tool-tr .tt-col-tag {
   font-size: 12px;
-  white-space: nowrap;
-  line-height: 1;
-  opacity: 0.80;
+  color: var(--muted);
+  text-align: center;
 }
 
 .graph-node.danger {
@@ -1671,7 +1686,6 @@ html.dark .risk-hotspot-card,
 html.dark .evidence-row,
 html.dark .acceptance-row,
 html.dark .run-history-row,
-html.dark .tool-catalog-row,
 html.dark .tool-row,
 html.dark .graph-node,
 html.dark .graph-edge,
@@ -1704,7 +1718,6 @@ html:not(.dark) .risk-hotspot-card,
 html:not(.dark) .evidence-row,
 html:not(.dark) .acceptance-row,
 html:not(.dark) .run-history-row,
-html:not(.dark) .tool-catalog-row,
 html:not(.dark) .tool-row,
 html:not(.dark) .graph-node,
 html:not(.dark) .graph-edge,
@@ -2060,8 +2073,9 @@ html:not(.dark) .export-actions a:hover {
   .run-overview-meta,
   .answer-grid,
   .detail-grid,
-  .tool-catalog-row {
-    grid-template-columns: 1fr;
+  .tt-col-tag,
+  .tool-table thead th.tt-col-tag {
+    display: none;
   }
 
   .final-answer-heading,
