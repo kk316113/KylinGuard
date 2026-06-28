@@ -996,6 +996,115 @@ html.dark body {
   text-decoration: none;
 }
 
+/* ── Gauge dashboard ──────────────────────────────────────────── */
+
+.gauge-dashboard {
+  display: grid;
+  grid-template-columns: 160px repeat(4, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.gauge-primary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.15);
+  aspect-ratio: 1;
+}
+
+.gauge-primary-value {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.gauge-primary-value strong {
+  font-size: 26px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.gauge-primary-value span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gauge-primary-value small {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.gauge-stat-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 4px 12px;
+  align-content: center;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.15);
+}
+
+.gauge-stat-icon {
+  grid-row: 1 / -1;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+
+.gauge-stat-value {
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1;
+  align-self: end;
+}
+
+.gauge-stat-unit {
+  font-size: 12px;
+  color: var(--muted);
+  align-self: end;
+  margin-left: 2px;
+}
+
+.gauge-stat-label {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gauge-stat-card.danger .gauge-stat-value {
+  color: #ff1744;
+}
+
+@media (max-width: 900px) {
+  .gauge-dashboard {
+    grid-template-columns: 1fr 1fr;
+  }
+  .gauge-primary {
+    grid-column: 1 / -1;
+    aspect-ratio: auto;
+    max-width: 200px;
+    justify-self: center;
+  }
+}
+
 /* ── Tool table ──────────────────────────────────────────────── */
 
 .tool-table {

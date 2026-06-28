@@ -94,7 +94,15 @@ function OverviewBoard({
   currentRun?: AgentRun | null;
 }) {
   const stagesPassed = acceptance?.stages.filter((stage) => stage.status === "PASS").length || 0;
+  const totalStages = acceptance?.stages.length || 1;
+  const passRate = Math.round((stagesPassed / totalStages) * 100);
   const tools = capabilities?.available_tools || [];
+  const violations = currentRun?.audit_result?.violations?.length || 0;
+  const riskScore = currentRun?.audit_result?.risk_score ?? 0;
+  const layerCount = Object.keys(runtimeStatus?.security_layers || {}).length || 0;
+
+  const gaugeColor = passRate >= 80 ? "#00e676" : passRate >= 50 ? "#ffab00" : "#ff1744";
+  const riskColor = riskScore < 0.3 ? "#00e676" : riskScore < 0.6 ? "#ffab00" : "#ff1744";
 
   return (
     <div className="board-stack">
@@ -106,15 +114,30 @@ function OverviewBoard({
         </div>
       </section>
 
-      <section className="metric-grid">
-        <MetricCard icon={<Activity size={18} />} label="运行模式" value={runtimeModeLabel(runtimeStatus?.runtime.chat_model)} />
-        <MetricCard
-          icon={<ShieldCheck size={18} />}
-          label="安全层"
-          value={`${Object.keys(runtimeStatus?.security_layers || {}).length || 0} 层`}
+      <section className="gauge-dashboard">
+        <GaugeRing
+          value={passRate}
+          max={100}
+          label="安全验证"
+          color={gaugeColor}
+          subtitle={`${stagesPassed}/${totalStages} 项通过`}
+          size={140}
         />
-        <MetricCard icon={<Wrench size={18} />} label="工具" value={`${tools.length || 0}`} />
-        <MetricCard icon={<ListChecks size={18} />} label="验证结果" value={`${stagesPassed}/${acceptance?.stages.length || 0} 项通过`} />
+        <GaugeStat icon={<ShieldCheck size={20} />} label="安全层" value={`${layerCount}`} unit="层" />
+        <GaugeStat icon={<Wrench size={20} />} label="受控工具" value={`${tools.length}`} unit="个" />
+        <GaugeStat
+          icon={<Activity size={20} />}
+          label="运行模式"
+          value={runtimeModeLabel(runtimeStatus?.runtime.chat_model) || "—"}
+          unit=""
+        />
+        <GaugeStat
+          icon={<Siren size={20} />}
+          label="违规项"
+          value={`${violations}`}
+          unit={violations > 0 ? "项 ⚠" : "项"}
+          danger={violations > 0}
+        />
       </section>
 
       {currentRun ? (
@@ -146,6 +169,79 @@ function OverviewBoard({
         <SectionHeading icon={<GitMerge size={18} />} title="风险图" />
         <RiskGraphPanel run={currentRun} />
       </section>
+    </div>
+  );
+}
+
+function GaugeRing({
+  value,
+  max,
+  label,
+  color,
+  subtitle,
+  size = 140,
+}: {
+  value: number;
+  max: number;
+  label: string;
+  color: string;
+  subtitle?: string;
+  size?: number;
+}) {
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = (size - 24) / 2;
+  const strokeW = 10;
+  const circ = 2 * Math.PI * r;
+  const pct = Math.min(value / max, 1);
+  const offset = circ * (1 - pct);
+
+  return (
+    <div className="gauge-primary">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeW} />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeW}
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${cx} ${cy})`}
+          style={{ transition: "stroke-dashoffset 600ms ease, stroke 300ms ease" }}
+        />
+      </svg>
+      <div className="gauge-primary-value">
+        <strong style={{ color }}>{value}%</strong>
+        <span>{label}</span>
+        {subtitle && <small>{subtitle}</small>}
+      </div>
+    </div>
+  );
+}
+
+function GaugeStat({
+  icon,
+  label,
+  value,
+  unit,
+  danger,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  unit: string;
+  danger?: boolean;
+}) {
+  return (
+    <div className={`gauge-stat-card${danger ? " danger" : ""}`}>
+      <div className="gauge-stat-icon">{icon}</div>
+      <strong className="gauge-stat-value">{value}</strong>
+      <span className="gauge-stat-unit">{unit}</span>
+      <span className="gauge-stat-label">{label}</span>
     </div>
   );
 }
