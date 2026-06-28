@@ -1029,9 +1029,10 @@ html.dark body {
 }
 
 .tool-desc {
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--text);
+  font-size: 13px;
   line-height: 1.4;
+  opacity: 0.65;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1047,13 +1048,14 @@ html.dark body {
 .tool-tag {
   display: inline-flex;
   align-items: center;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 6px;
-  background: var(--surface-soft);
-  color: var(--muted);
-  font-size: 11px;
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 12px;
   white-space: nowrap;
   line-height: 1;
+  opacity: 0.80;
 }
 
 .graph-node.danger {
@@ -1572,8 +1574,8 @@ html.dark .app-shell {
   --surface: rgba(20, 40, 80, 0.40);
   --surface-soft: rgba(20, 40, 80, 0.25);
   --surface-strong: rgba(20, 40, 80, 0.55);
-  --text: rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.55);
+  --text: rgba(255, 255, 255, 0.95);
+  --muted: rgba(255, 255, 255, 0.72);
   --line: rgba(255, 255, 255, 0.10);
   --brand: #00b8ff;
   background: transparent;
@@ -1582,11 +1584,11 @@ html.dark .app-shell {
 
 html:not(.dark) .app-shell {
   --bg: transparent;
-  --surface: rgba(255, 255, 255, 0.75);
-  --surface-soft: rgba(255, 255, 255, 0.60);
-  --surface-strong: rgba(255, 255, 255, 0.88);
-  --text: rgba(0, 0, 0, 0.88);
-  --muted: rgba(0, 0, 0, 0.50);
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-soft: rgba(255, 255, 255, 0.62);
+  --surface-strong: rgba(255, 255, 255, 0.90);
+  --text: rgba(0, 0, 0, 0.92);
+  --muted: rgba(0, 0, 0, 0.60);
   --line: rgba(0, 0, 0, 0.08);
   --brand: #0070f3;
   background: transparent;
@@ -1869,13 +1871,13 @@ html:not(.dark) .decision-badge.danger {
 }
 
 html.dark .decision-badge.neutral {
-  color: rgba(255, 255, 255, 0.50);
-  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 html:not(.dark) .decision-badge.neutral {
-  color: rgba(0, 0, 0, 0.45);
-  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.60);
+  background: rgba(0, 0, 0, 0.06);
 }
 
 /* ── Risk hotspot neon tones ── */
