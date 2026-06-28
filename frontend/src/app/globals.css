@@ -297,7 +297,7 @@ html.dark body {
 .insight-section,
 .hotspot-item {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
   padding: 16px;
 }
@@ -335,7 +335,7 @@ html.dark body {
   gap: 6px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--card);
 }
 
@@ -458,7 +458,7 @@ html.dark body {
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
 }
 
@@ -495,7 +495,7 @@ html.dark body {
   align-items: start;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
   color: var(--text);
   text-align: left;
@@ -587,7 +587,7 @@ html.dark body {
   margin: 10px 0;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line));
-  border-radius: 8px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--red) 7%, var(--surface));
   color: var(--red);
   font-size: 13px;
@@ -667,7 +667,7 @@ html.dark body {
   gap: 4px;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
 }
 
@@ -743,7 +743,7 @@ html.dark body {
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background:
     radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--brand) 12%, transparent), transparent 32%),
     var(--surface);
@@ -1226,7 +1226,7 @@ html.dark body {
   align-items: center;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface);
   text-align: left;
 }
