@@ -38,8 +38,11 @@ type EvidenceItem struct {
 }
 
 type RiskGraph struct {
-	Nodes []map[string]any `json:"nodes"`
-	Edges []map[string]any `json:"edges"`
+	Nodes             []map[string]any `json:"nodes"`
+	Edges             []map[string]any `json:"edges"`
+	RiskHotspots      []map[string]any `json:"risk_hotspots,omitempty"`
+	BoundaryCrossings []map[string]any `json:"boundary_crossings,omitempty"`
+	DecisionPath      []map[string]any `json:"decision_path,omitempty"`
 }
 
 type Client interface {
@@ -154,40 +157,27 @@ func (c HTTPClient) fallback(ctx context.Context, task string, traces []logtrace
 }
 
 func riskGraphFromRealTraces(traces []logtrace.ToolTrace) *RiskGraph {
-	nodes := make([]map[string]any, 0, len(traces))
-	edgeCapacity := 0
-	if len(traces) > 1 {
-		edgeCapacity = len(traces) - 1
-	}
-	edges := make([]map[string]any, 0, edgeCapacity)
-	for i, trace := range traces {
-		nodes = append(nodes, map[string]any{
-			"id":             trace.StepID,
-			"step_id":        trace.StepID,
-			"type":           "tool_call",
-			"label":          trace.ToolName,
-			"tool_name":      trace.ToolName,
-			"status":         trace.Status,
-			"operation_type": trace.OperationType, "resource_type": trace.ResourceType,
-			"resource_path": trace.ResourcePath, "boundary_level": trace.BoundaryLevel,
-			"allowed_by_policy":  trace.AllowedByPolicy,
-			"policy_reason":      trace.PolicyReason,
-			"requires_privilege": trace.RequiresPrivilege,
-			"risk_hint":          trace.RiskHint,
-			"risk_level":         traceRiskLevel(trace),
+	steps := make([]SemanticGraphStep, 0, len(traces))
+	for index, trace := range traces {
+		steps = append(steps, SemanticGraphStep{
+			StepID:            trace.StepID,
+			StepIndex:         index + 1,
+			ToolName:          trace.ToolName,
+			Decision:          traceDecision(trace),
+			RiskLevel:         traceRiskLevel(trace),
+			Status:            trace.Status,
+			PolicyDecision:    tracePolicyDecision(trace),
+			OperationType:     trace.OperationType,
+			ResourceType:      trace.ResourceType,
+			ResourcePath:      trace.ResourcePath,
+			BoundaryLevel:     trace.BoundaryLevel,
+			AllowedByPolicy:   trace.AllowedByPolicy,
+			PolicyReason:      trace.PolicyReason,
+			RequiresPrivilege: trace.RequiresPrivilege,
+			RiskHint:          trace.RiskHint,
 		})
-		if i > 0 {
-			edges = append(edges, map[string]any{
-				"from":   traces[i-1].StepID,
-				"to":     trace.StepID,
-				"source": traces[i-1].StepID,
-				"target": trace.StepID,
-				"type":   "sequence",
-				"label":  "sequence",
-			})
-		}
 	}
-	return &RiskGraph{Nodes: nodes, Edges: edges}
+	return RiskGraphFromSemanticSteps(steps)
 }
 
 func localSafetyResultFromTraces(traces []logtrace.ToolTrace) Result {
@@ -310,6 +300,27 @@ func traceRiskLevel(trace logtrace.ToolTrace) string {
 	default:
 		return "low"
 	}
+}
+
+func traceDecision(trace logtrace.ToolTrace) string {
+	switch traceRiskLevel(trace) {
+	case "high":
+		return "deny"
+	case "medium":
+		return "review"
+	default:
+		return "allow"
+	}
+}
+
+func tracePolicyDecision(trace logtrace.ToolTrace) string {
+	if trace.AllowedByPolicy {
+		return "allow"
+	}
+	if strings.TrimSpace(trace.PolicyReason) != "" || trace.Status == "denied" {
+		return "deny"
+	}
+	return "review"
 }
 
 func isDeniedTrace(trace logtrace.ToolTrace) bool {

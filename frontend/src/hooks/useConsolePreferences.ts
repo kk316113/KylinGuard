@@ -3,24 +3,41 @@
 import { useCallback, useEffect, useState } from "react";
 
 export type ConsoleTheme = "system" | "light" | "dark";
-export type ChatPosition = "left" | "right";
+export type ChatPosition = "left" | "center" | "right";
+export type GlassIntensity = "soft" | "balanced" | "strong";
 
 export type ConsolePreferences = {
   theme: ConsoleTheme;
   chatPosition: ChatPosition;
   chatWidth: number;
+  chatHeight: number;
   chatDefaultOpen: boolean;
+  glassIntensity: GlassIntensity;
+  reduceMotion: boolean;
+  compactMode: boolean;
+  processPanelDefaultOpen: boolean;
+  attachmentsEnabled: boolean;
 };
 
 const STORAGE_KEY = "kylinguard.console.preferences.v1";
-const MIN_CHAT_WIDTH = 360;
-const MAX_CHAT_WIDTH = 640;
+const DEFAULT_CHAT_WIDTH = 860;
+const DEFAULT_CHAT_HEIGHT = 680;
+const MIN_CHAT_WIDTH = 560;
+const MAX_CHAT_WIDTH = 1100;
+const MIN_CHAT_HEIGHT = 430;
+const MAX_CHAT_HEIGHT = 820;
 
 export const defaultConsolePreferences: ConsolePreferences = {
   theme: "system",
-  chatPosition: "right",
-  chatWidth: 480,
+  chatPosition: "center",
+  chatWidth: DEFAULT_CHAT_WIDTH,
+  chatHeight: DEFAULT_CHAT_HEIGHT,
   chatDefaultOpen: false,
+  glassIntensity: "balanced",
+  reduceMotion: false,
+  compactMode: false,
+  processPanelDefaultOpen: true,
+  attachmentsEnabled: true,
 };
 
 function normalizePreferences(value: unknown): ConsolePreferences {
@@ -30,17 +47,40 @@ function normalizePreferences(value: unknown): ConsolePreferences {
 
   const candidate = value as Partial<ConsolePreferences>;
   const theme = candidate.theme === "light" || candidate.theme === "dark" ? candidate.theme : "system";
-  const chatPosition = candidate.chatPosition === "left" ? "left" : "right";
+  const chatPosition =
+    candidate.chatPosition === "left" || candidate.chatPosition === "right" || candidate.chatPosition === "center"
+      ? candidate.chatPosition
+      : "center";
   const chatWidth = Math.min(
     MAX_CHAT_WIDTH,
-    Math.max(MIN_CHAT_WIDTH, Number.isFinite(candidate.chatWidth) ? Number(candidate.chatWidth) : 480),
+    Math.max(
+      MIN_CHAT_WIDTH,
+      Number.isFinite(candidate.chatWidth) ? Number(candidate.chatWidth) : DEFAULT_CHAT_WIDTH,
+    ),
   );
+  const chatHeight = Math.min(
+    MAX_CHAT_HEIGHT,
+    Math.max(
+      MIN_CHAT_HEIGHT,
+      Number.isFinite(candidate.chatHeight) ? Number(candidate.chatHeight) : DEFAULT_CHAT_HEIGHT,
+    ),
+  );
+  const glassIntensity =
+    candidate.glassIntensity === "soft" || candidate.glassIntensity === "strong"
+      ? candidate.glassIntensity
+      : "balanced";
 
   return {
     theme,
     chatPosition,
     chatWidth,
+    chatHeight,
     chatDefaultOpen: candidate.chatDefaultOpen === true,
+    glassIntensity,
+    reduceMotion: candidate.reduceMotion === true,
+    compactMode: candidate.compactMode === true,
+    processPanelDefaultOpen: candidate.processPanelDefaultOpen !== false,
+    attachmentsEnabled: candidate.attachmentsEnabled !== false,
   };
 }
 
@@ -80,6 +120,17 @@ export function useConsolePreferences() {
     media.addEventListener("change", applyTheme);
     return () => media.removeEventListener("change", applyTheme);
   }, [preferences.theme]);
+
+  useEffect(() => {
+    document.documentElement.dataset.glassIntensity = preferences.glassIntensity;
+    document.documentElement.classList.toggle("kg-reduce-motion", preferences.reduceMotion);
+    document.documentElement.classList.toggle("kg-compact-ui", preferences.compactMode);
+
+    return () => {
+      delete document.documentElement.dataset.glassIntensity;
+      document.documentElement.classList.remove("kg-reduce-motion", "kg-compact-ui");
+    };
+  }, [preferences.glassIntensity, preferences.reduceMotion, preferences.compactMode]);
 
   const updatePreferences = useCallback((patch: Partial<ConsolePreferences>) => {
     setPreferences((current) => normalizePreferences({ ...current, ...patch }));

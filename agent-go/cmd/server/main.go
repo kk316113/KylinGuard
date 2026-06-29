@@ -53,6 +53,7 @@ func main() {
 	mux.HandleFunc("/api/agent/runs", agentRunListHandler(runStore))
 	mux.HandleFunc("/api/agent/runs/", agentRunsHandler(runStore))
 	mux.HandleFunc("/api/agent/runtime-status", runtimeStatusHandler(cfg))
+	mux.HandleFunc("/api/agent/profile", agentProfileHandler(registry))
 	mux.HandleFunc("/api/agent/capabilities", capabilitiesHandler(registry, cfg.EinoAgentMaxSteps))
 	mux.HandleFunc("/api/agent/acceptance-summary", acceptanceSummaryHandler())
 	mux.HandleFunc("/api/tools", toolsListHandler(registry))

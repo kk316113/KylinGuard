@@ -93,12 +93,14 @@ export type RiskGraphNode = {
 };
 
 export type RiskGraphEdge = {
+  id?: string;
   source?: string;
   target?: string;
   from?: string;
   to?: string;
   type?: string;
   label?: string;
+  risk_level?: string;
   [key: string]: unknown;
 };
 

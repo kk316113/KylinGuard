@@ -81,25 +81,26 @@ func TestRuntimeSafeSSHAnomalyTaskUsesEinoGraphRuntime(t *testing.T) {
 			t.Fatalf("step %d audit_report has empty method", i)
 		}
 	}
-	// req 8: aggregated risk_graph with one node per step and sequence edges.
+	// req 8: aggregated semantic risk_graph with per-step and semantic nodes.
 	if response.RiskGraph == nil {
 		t.Fatal("expected non-nil risk_graph")
 	}
 	if response.AuditResult.RiskGraph == nil {
 		t.Fatal("expected aggregate audit_result risk_graph")
 	}
-	if len(response.RiskGraph.Nodes) != len(response.AgentSteps) {
-		t.Fatalf("expected %d risk_graph nodes, got %d", len(response.AgentSteps), len(response.RiskGraph.Nodes))
+	for _, step := range response.AgentSteps {
+		toolName, _ := step["tool_name"].(string)
+		if !runtimeGraphHasNode(response.RiskGraph, "tool_name", toolName) {
+			t.Fatalf("risk_graph missing tool node %q: %#v", toolName, response.RiskGraph.Nodes)
+		}
 	}
-	if len(response.AuditResult.RiskGraph.Nodes) != len(response.AgentSteps) {
-		t.Fatalf("expected %d aggregate audit graph nodes, got %d", len(response.AgentSteps), len(response.AuditResult.RiskGraph.Nodes))
+	if !runtimeGraphHasEdgeType(response.RiskGraph, "performs") ||
+		!runtimeGraphHasEdgeType(response.RiskGraph, "targets") ||
+		!runtimeGraphHasEdgeType(response.RiskGraph, "audited_as") {
+		t.Fatalf("expected semantic graph edges, got %#v", response.RiskGraph.Edges)
 	}
 	if len(response.AuditResult.EvidenceChain) == 0 {
 		t.Fatal("expected aggregate audit evidence_chain")
-	}
-	wantEdges := len(response.AgentSteps) - 1
-	if len(response.RiskGraph.Edges) != wantEdges {
-		t.Fatalf("expected %d risk_graph edges, got %d", wantEdges, len(response.RiskGraph.Edges))
 	}
 	if response.SecurityReport == nil {
 		t.Fatal("expected security_report")
@@ -412,6 +413,24 @@ func assertRuntimeMetadata(t *testing.T, metadata map[string]any, registry *tool
 			t.Fatalf("expected tools_used metadata, got %#v", metadata["tools_used"])
 		}
 	}
+}
+
+func runtimeGraphHasNode(graph *auditclient.RiskGraph, key string, value any) bool {
+	for _, node := range graph.Nodes {
+		if node[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeGraphHasEdgeType(graph *auditclient.RiskGraph, edgeType string) bool {
+	for _, edge := range graph.Edges {
+		if edge["type"] == edgeType {
+			return true
+		}
+	}
+	return false
 }
 
 type countingAdapter struct {

@@ -299,55 +299,42 @@ func (e *Engine) auditStepSafe(ctx context.Context, task string, stepIndex int, 
 	return rep
 }
 
-// buildRiskGraph aggregates all per-step AuditReports into one risk_graph: one node
-// per step (carrying the audit conclusion), sequence edges between consecutive steps.
+// buildRiskGraph aggregates tool calls, semantic operation/resource/boundary
+// nodes, policy decisions, and audit conclusions into one explainable graph.
 // Returns nil when there are no steps (pure final_answer / intent-guard deny).
 func buildRiskGraph(steps []AgentStep) *auditclient.RiskGraph {
 	if len(steps) == 0 {
 		return nil
 	}
-	nodes := make([]map[string]any, 0, len(steps))
-	edges := make([]map[string]any, 0, len(steps)-1)
-	for i, s := range steps {
+	semanticSteps := make([]auditclient.SemanticGraphStep, 0, len(steps))
+	for index, s := range steps {
 		ar := AuditReport{}
 		if s.AuditReport != nil {
 			ar = *s.AuditReport
 		}
-		node := map[string]any{
-			"id":               ar.StepID,
-			"step_id":          ar.StepID,
-			"step_index":       s.StepIndex,
-			"type":             "tool_call",
-			"label":            s.ToolName,
-			"tool_name":        s.ToolName,
-			"decision":         ar.Decision,
-			"risk_score":       ar.RiskScore,
-			"risk_level":       riskLevelForAuditDecision(ar.Decision),
-			"violations_count": len(ar.Violations),
-			"method":           ar.Method,
-			"policy_decision":  s.PolicyDecision,
-			"operation_type":   s.OperationType,
-			"resource_type":    s.ResourceType,
-			"resource_path":    s.ResourcePath,
-			"boundary_level":   s.BoundaryLevel,
+		stepID := ar.StepID
+		if stepID == "" {
+			stepID = fmt.Sprintf("step-%03d", firstPositiveInt(s.StepIndex, index+1))
 		}
-		nodes = append(nodes, node)
-		if i > 0 {
-			prevID := ""
-			if steps[i-1].AuditReport != nil {
-				prevID = steps[i-1].AuditReport.StepID
-			}
-			edges = append(edges, map[string]any{
-				"from":   prevID,
-				"to":     ar.StepID,
-				"source": prevID,
-				"target": ar.StepID,
-				"type":   "sequence",
-				"label":  "sequence",
-			})
-		}
+		semanticSteps = append(semanticSteps, auditclient.SemanticGraphStep{
+			StepID:          stepID,
+			StepIndex:       s.StepIndex,
+			ToolName:        s.ToolName,
+			Decision:        ar.Decision,
+			RiskScore:       ar.RiskScore,
+			RiskLevel:       riskLevelForAuditDecision(ar.Decision),
+			Method:          ar.Method,
+			PolicyDecision:  s.PolicyDecision,
+			OperationType:   s.OperationType,
+			ResourceType:    s.ResourceType,
+			ResourcePath:    s.ResourcePath,
+			BoundaryLevel:   s.BoundaryLevel,
+			AllowedByPolicy: s.AllowedByPolicy,
+			PolicyReason:    s.PolicyReason,
+			ViolationsCount: len(ar.Violations),
+		})
 	}
-	return &auditclient.RiskGraph{Nodes: nodes, Edges: edges}
+	return auditclient.RiskGraphFromSemanticSteps(semanticSteps)
 }
 
 func riskLevelForAuditDecision(decision string) string {
@@ -361,6 +348,15 @@ func riskLevelForAuditDecision(decision string) string {
 	default:
 		return "unknown"
 	}
+}
+
+func firstPositiveInt(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 1
 }
 
 func buildMaxStepsFinalAnswer(task string, steps []AgentStep) string {
@@ -456,11 +452,14 @@ func buildToolDefs(registry *tools.Registry) []ToolDef {
 		defs = append(defs, ToolDef{
 			ToolName:      t.Name,
 			Description:   t.Description,
+			Category:      t.Category,
 			ArgKeys:       t.ArgumentKeys(),
 			OperationType: t.OperationType,
 			ResourceType:  t.ResourceType,
 			BoundaryLevel: t.BoundaryLevel,
 			RiskLevel:     t.RiskLevel,
+			UseCases:      t.UseCases,
+			SafetyNotes:   t.SafetyNotes,
 		})
 	}
 	return defs

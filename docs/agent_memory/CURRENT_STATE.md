@@ -23,6 +23,66 @@ LoongArch note: the project has a successful `GOOS=linux GOARCH=loong64`
 static build. No LoongArch VMware/runtime execution is claimed without a real
 LoongArch Kylin V11 environment.
 
+## Ops Agent Foundation Enhancements
+
+Latest backend foundation work makes the project less like a demo chatbot and
+more like a real Kylin security operations Agent:
+
+```text
+GET /api/agent/profile added as a read-only Agent identity and operations contract endpoint
+/api/agent/capabilities now includes tool catalog summary and extensibility metadata
+ToolMetadata now carries display_name, platforms, architectures, tags, use_cases, safety_notes, example_input, audit_event_type, and llm_callable
+Agent Loop prompt receives tool category/use_cases/risk/boundary context while tool execution order remains LLM next_action driven
+Tool catalog reports categories, direct-call counts, safety model, and extension points
+```
+
+Safety constraints preserved:
+
+```text
+No mutation tools exposed as direct calls
+safe_shell remains disabled for direct/LLM calls
+Unknown tools remain denied by policy
+Risk graph and audit evidence must still derive from real tool_trace data
+No real API keys are stored in repository files or memory docs
+```
+
+Verification:
+
+```text
+go test ./... - PASS
+```
+
+## Semantic Risk Graph Enhancement
+
+Risk graph generation now uses a joint semantic model instead of a simple
+step-by-step sequence graph:
+
+```text
+tool_event -> operation -> resource -> boundary -> audit_decision
+policy_guard -> tool_event
+tool_event -> next tool_event for execution order context
+```
+
+Graph data now includes:
+
+```text
+semantic_role and layer fields for graph layout
+risk_hotspots for high/review risk nodes
+boundary_crossings for sensitive resource transitions
+decision_path for policy/audit decision trace
+```
+
+Frontend visualization now uses React Flow (`@xyflow/react`) with layered
+semantic nodes, labelled edges, minimap, controls, and node/edge selection.
+
+Verification:
+
+```text
+GOMAXPROCS=1 go test -p 1 ./... - PASS
+npm run typecheck - PASS
+npm run build - PASS
+```
+
 ## Stage 18D Persistent History and Export Enhancements
 
 Implementation is in progress and locally verified.

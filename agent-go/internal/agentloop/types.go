@@ -101,9 +101,12 @@ type NextActionRequest struct {
 type ToolDef struct {
 	ToolName      string   `json:"tool_name"`
 	Description   string   `json:"description"`
+	Category      string   `json:"category,omitempty"`
 	ArgKeys       []string `json:"arg_keys,omitempty"`
 	OperationType string   `json:"operation_type"`
 	ResourceType  string   `json:"resource_type"`
 	BoundaryLevel string   `json:"boundary_level"`
 	RiskLevel     string   `json:"risk_level"`
+	UseCases      []string `json:"use_cases,omitempty"`
+	SafetyNotes   []string `json:"safety_notes,omitempty"`
 }

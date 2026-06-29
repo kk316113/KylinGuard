@@ -371,6 +371,12 @@ func TestCapabilitiesHandlerUsesRegisteredTools(t *testing.T) {
 		if !tool.ReadOnly {
 			t.Fatalf("available tool %s should be read-only", tool.ToolName)
 		}
+		if !tool.LLMCallable {
+			t.Fatalf("available tool %s should be LLM callable", tool.ToolName)
+		}
+		if tool.Category == "" || len(tool.Platforms) == 0 || len(tool.UseCases) == 0 {
+			t.Fatalf("available tool %s missing catalog metadata: %#v", tool.ToolName, tool)
+		}
 		if tool.ToolName == "configuration_drift_detector" {
 			foundDrift = true
 		}
@@ -378,11 +384,44 @@ func TestCapabilitiesHandlerUsesRegisteredTools(t *testing.T) {
 	if len(response.AvailableTools) != expected || !foundDrift {
 		t.Fatalf("expected %d enabled tools including configuration drift, got %#v", expected, response.AvailableTools)
 	}
+	if response.ToolCatalog.ToolCount != tools.RegisteredToolCount() || len(response.ToolCatalog.Categories) == 0 {
+		t.Fatalf("expected populated tool catalog, got %#v", response.ToolCatalog)
+	}
 	if !response.ToolPolicy.Enabled || !response.ToolPolicy.DangerousActionsBlocked {
 		t.Fatalf("expected enabled tool policy, got %#v", response.ToolPolicy)
 	}
 	if response.AgentLoop.MaxSteps != 10 {
 		t.Fatalf("expected configured max_steps=10, got %d", response.AgentLoop.MaxSteps)
+	}
+	if len(response.AgentLoop.MainPath) == 0 || len(response.Extensibility.AddToolChecklist) == 0 {
+		t.Fatalf("expected agent loop and extensibility metadata, got %#v", response)
+	}
+}
+
+func TestAgentProfileHandlerReturnsOpsAgentFoundation(t *testing.T) {
+	registry := tools.NewDefaultRegistry()
+	request := httptest.NewRequest(http.MethodGet, "/api/agent/profile", nil)
+	recorder := httptest.NewRecorder()
+	agentProfileHandler(registry).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response agentProfileResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.OK || response.Agent.Name != "KylinGuard" || response.Agent.CodeName == "" {
+		t.Fatalf("unexpected profile agent identity: %#v", response.Agent)
+	}
+	if len(response.TargetEnvironment.KylinEditions) == 0 || len(response.TargetEnvironment.Architectures) == 0 {
+		t.Fatalf("expected Kylin target environment: %#v", response.TargetEnvironment)
+	}
+	if response.ToolCatalog.DirectCallCount != len(registry.ListDirectCallTools()) {
+		t.Fatalf("expected tool catalog count, got %#v", response.ToolCatalog)
+	}
+	if len(response.SafetyBoundaries) == 0 || len(response.RunContract) == 0 {
+		t.Fatalf("expected safety boundaries and run contract: %#v", response)
 	}
 }
 
@@ -547,12 +586,41 @@ func assertAgentLoopResponse(t *testing.T, response agent.AgentRunResponse) {
 	if len(response.ToolTrace) == 0 {
 		t.Fatal("expected nonempty tool_trace")
 	}
-	if response.RiskGraph == nil || len(response.RiskGraph.Nodes) != len(response.AgentSteps) {
-		t.Fatalf("expected risk_graph with %d nodes", len(response.AgentSteps))
+	if response.RiskGraph == nil || len(response.RiskGraph.Nodes) == 0 {
+		t.Fatal("expected nonempty semantic risk_graph")
+	}
+	for i, step := range response.AgentSteps {
+		toolName, _ := step["tool_name"].(string)
+		if !serverRiskGraphHasNode(response.RiskGraph, "tool_name", toolName) {
+			t.Fatalf("risk_graph missing tool node for step %d %q", i, toolName)
+		}
+	}
+	if !serverRiskGraphHasEdgeType(response.RiskGraph, "performs") ||
+		!serverRiskGraphHasEdgeType(response.RiskGraph, "targets") ||
+		!serverRiskGraphHasEdgeType(response.RiskGraph, "audited_as") {
+		t.Fatalf("risk_graph missing semantic edges: %#v", response.RiskGraph.Edges)
 	}
 	if response.SecurityReport == nil {
 		t.Fatal("expected security_report")
 	}
+}
+
+func serverRiskGraphHasNode(graph *auditclient.RiskGraph, key string, value any) bool {
+	for _, node := range graph.Nodes {
+		if node[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func serverRiskGraphHasEdgeType(graph *auditclient.RiskGraph, edgeType string) bool {
+	for _, edge := range graph.Edges {
+		if edge["type"] == edgeType {
+			return true
+		}
+	}
+	return false
 }
 
 func postAgentRequest(t *testing.T, handler http.HandlerFunc, path string, task string) agent.AgentRunResponse {

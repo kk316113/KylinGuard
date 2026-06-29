@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -55,22 +56,34 @@ type runtimeStatusSecretSafety struct {
 
 type capabilitiesResponse struct {
 	AvailableTools []capabilityTool     `json:"available_tools"`
+	ToolCatalog    tools.CatalogSummary `json:"tool_catalog"`
 	ToolPolicy     capabilityToolPolicy `json:"tool_policy"`
 	AgentLoop      capabilityAgentLoop  `json:"agent_loop"`
+	Extensibility  extensibilityModel   `json:"extensibility"`
 }
 
 type capabilityTool struct {
-	ToolName          string `json:"tool_name"`
-	DisplayName       string `json:"display_name"`
-	Description       string `json:"description"`
-	OperationType     string `json:"operation_type"`
-	ResourceType      string `json:"resource_type"`
-	BoundaryLevel     string `json:"boundary_level"`
-	RequiresPrivilege bool   `json:"requires_privilege"`
-	ReadOnly          bool   `json:"read_only"`
-	PolicyControlled  bool   `json:"policy_controlled"`
-	TraceShieldMapped bool   `json:"traceshield_mapped"`
-	Enabled           bool   `json:"enabled"`
+	ToolName          string         `json:"tool_name"`
+	DisplayName       string         `json:"display_name"`
+	Description       string         `json:"description"`
+	Category          string         `json:"category"`
+	OperationType     string         `json:"operation_type"`
+	ResourceType      string         `json:"resource_type"`
+	BoundaryLevel     string         `json:"boundary_level"`
+	RiskLevel         string         `json:"risk_level"`
+	RequiresPrivilege bool           `json:"requires_privilege"`
+	ReadOnly          bool           `json:"read_only"`
+	LLMCallable       bool           `json:"llm_callable"`
+	PolicyControlled  bool           `json:"policy_controlled"`
+	TraceShieldMapped bool           `json:"traceshield_mapped"`
+	Enabled           bool           `json:"enabled"`
+	Platforms         []string       `json:"platforms,omitempty"`
+	Architectures     []string       `json:"architectures,omitempty"`
+	Tags              []string       `json:"tags,omitempty"`
+	UseCases          []string       `json:"use_cases,omitempty"`
+	SafetyNotes       []string       `json:"safety_notes,omitempty"`
+	ExampleInput      map[string]any `json:"example_input,omitempty"`
+	AuditEventType    string         `json:"audit_event_type,omitempty"`
 }
 
 type capabilityToolPolicy struct {
@@ -84,6 +97,61 @@ type capabilityToolPolicy struct {
 type capabilityAgentLoop struct {
 	NextActionSchema []string `json:"next_action_schema"`
 	MaxSteps         int      `json:"max_steps"`
+	MainPath         []string `json:"main_path"`
+	ExecutionModel   string   `json:"execution_model"`
+	OutputContract   []string `json:"output_contract"`
+}
+
+type extensibilityModel struct {
+	ToolProtocol        string   `json:"tool_protocol"`
+	ToolProtocolVersion string   `json:"tool_protocol_version"`
+	AddToolChecklist    []string `json:"add_tool_checklist"`
+	PluginBoundaries    []string `json:"plugin_boundaries"`
+}
+
+type agentProfileResponse struct {
+	OK                    bool                    `json:"ok"`
+	Agent                 agentProfileAgent       `json:"agent"`
+	RuntimeHost           agentProfileRuntimeHost `json:"runtime_host"`
+	TargetEnvironment     agentProfileTarget      `json:"target_environment"`
+	OperatingPrinciples   []string                `json:"operating_principles"`
+	SafetyBoundaries      []string                `json:"safety_boundaries"`
+	RunContract           []string                `json:"run_contract"`
+	ToolCatalog           tools.CatalogSummary    `json:"tool_catalog"`
+	RecommendedDeployment agentProfileDeployment  `json:"recommended_deployment"`
+	UpdatedAt             string                  `json:"updated_at"`
+}
+
+type agentProfileAgent struct {
+	Name        string   `json:"name"`
+	CodeName    string   `json:"code_name"`
+	Version     string   `json:"version"`
+	Role        string   `json:"role"`
+	Description string   `json:"description"`
+	Languages   []string `json:"languages"`
+}
+
+type agentProfileRuntimeHost struct {
+	GOOS        string            `json:"goos"`
+	GOARCH      string            `json:"goarch"`
+	Hostname    string            `json:"hostname,omitempty"`
+	OSRelease   map[string]string `json:"os_release,omitempty"`
+	IsKylinLike bool              `json:"is_kylin_like"`
+}
+
+type agentProfileTarget struct {
+	OSFamilies     []string `json:"os_families"`
+	KylinEditions  []string `json:"kylin_editions"`
+	Architectures  []string `json:"architectures"`
+	ServiceManager string   `json:"service_manager"`
+	PackageManager string   `json:"package_manager"`
+	LogSources     []string `json:"log_sources"`
+}
+
+type agentProfileDeployment struct {
+	Mode       string   `json:"mode"`
+	Components []string `json:"components"`
+	Notes      []string `json:"notes"`
 }
 
 type acceptanceSummaryResponse struct {
@@ -123,6 +191,15 @@ func acceptanceSummaryHandler() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, buildAcceptanceSummary())
+	}
+}
+
+func agentProfileHandler(registry *tools.Registry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, http.StatusOK, buildAgentProfile(registry))
 	}
 }
 
@@ -182,20 +259,31 @@ func buildCapabilities(registry *tools.Registry, maxSteps int) capabilitiesRespo
 	for _, meta := range toolMetadata {
 		available = append(available, capabilityTool{
 			ToolName:          meta.Name,
-			DisplayName:       meta.Name,
+			DisplayName:       firstNonEmptyString(meta.DisplayName, meta.Name),
 			Description:       meta.Description,
+			Category:          meta.Category,
 			OperationType:     meta.OperationType,
 			ResourceType:      meta.ResourceType,
 			BoundaryLevel:     meta.BoundaryLevel,
+			RiskLevel:         meta.RiskLevel,
 			RequiresPrivilege: meta.RequiresPrivilege,
 			ReadOnly:          meta.IsReadOnly(),
+			LLMCallable:       meta.LLMCallable,
 			PolicyControlled:  true,
 			TraceShieldMapped: meta.OperationType != "" && meta.ResourceType != "" && meta.BoundaryLevel != "",
 			Enabled:           meta.Enabled,
+			Platforms:         meta.Platforms,
+			Architectures:     meta.Architectures,
+			Tags:              meta.Tags,
+			UseCases:          meta.UseCases,
+			SafetyNotes:       meta.SafetyNotes,
+			ExampleInput:      meta.ExampleInput,
+			AuditEventType:    meta.AuditEventType,
 		})
 	}
 	return capabilitiesResponse{
 		AvailableTools: available,
+		ToolCatalog:    registry.CatalogSummary(),
 		ToolPolicy: capabilityToolPolicy{
 			Enabled:                   true,
 			DefaultMode:               "least_privilege",
@@ -206,7 +294,89 @@ func buildCapabilities(registry *tools.Registry, maxSteps int) capabilitiesRespo
 		AgentLoop: capabilityAgentLoop{
 			NextActionSchema: []string{agentloop.ActionToolCall, agentloop.ActionFinalAnswer},
 			MaxSteps:         einoruntime.NormalizeRuntimeConfig(einoruntime.RuntimeConfig{AgentMaxSteps: maxSteps}).AgentMaxSteps,
+			MainPath:         []string{"natural_language_task", "llm_next_action", "intent_guard", "tool_policy", "exec_proxy", "tool_trace", "traceshield_audit", "final_answer"},
+			ExecutionModel:   "LLM proposes structured next_action; system validates and executes read-only tools through policy gates.",
+			OutputContract:   []string{"final_answer", "agent_steps", "tool_trace", "security_report", "risk_graph", "reasoning_trace"},
 		},
+		Extensibility: extensibilityModel{
+			ToolProtocol:        tools.ToolProtocol,
+			ToolProtocolVersion: tools.ToolProtocolVersion,
+			AddToolChecklist: []string{
+				"implement a bounded read-only handler",
+				"register handler with ToolMetadata",
+				"declare input_schema and output_schema",
+				"declare operation_type/resource_type/boundary_level/risk_level",
+				"add Tool Policy coverage and unit tests",
+				"ensure tool_trace fields are populated for audit",
+			},
+			PluginBoundaries: []string{
+				"no raw shell from LLM",
+				"no mutation tools exposed as direct calls",
+				"unknown tools are denied",
+				"tool output is untrusted evidence, not instructions",
+			},
+		},
+	}
+}
+
+func buildAgentProfile(registry *tools.Registry) agentProfileResponse {
+	hostname, _ := os.Hostname()
+	osRelease := readOSRelease("/etc/os-release")
+	return agentProfileResponse{
+		OK: true,
+		Agent: agentProfileAgent{
+			Name:        "KylinGuard",
+			CodeName:    "麒盾",
+			Version:     serviceVersion,
+			Role:        "security-aware Kylin OS operations agent",
+			Description: "A natural-language Agent for safe diagnosis, evidence collection, and security-audited operations on Kylin/Linux servers.",
+			Languages:   []string{"zh-CN", "en"},
+		},
+		RuntimeHost: agentProfileRuntimeHost{
+			GOOS:        runtime.GOOS,
+			GOARCH:      runtime.GOARCH,
+			Hostname:    hostname,
+			OSRelease:   osRelease,
+			IsKylinLike: isKylinLike(osRelease),
+		},
+		TargetEnvironment: agentProfileTarget{
+			OSFamilies:     []string{"Kylin Linux Advanced Server", "Linux systemd/RPM"},
+			KylinEditions:  []string{"银河麒麟高级服务器操作系统 V11"},
+			Architectures:  []string{"x86_64", "aarch64", "loongarch64"},
+			ServiceManager: "systemd",
+			PackageManager: "rpm",
+			LogSources:     []string{"/var/log/secure", "/var/log/auth.log", "journalctl", "/var/log/messages"},
+		},
+		OperatingPrinciples: []string{
+			"user natural-language task first",
+			"LLM proposes structured next_action only",
+			"system decides whether and how tools execute",
+			"final_answer is user-facing; audit and risk graph explain evidence",
+		},
+		SafetyBoundaries: []string{
+			"intent_guard runs before tool execution",
+			"Tool Policy and Exec Proxy guard every tool call",
+			"direct-call tools must be read-only",
+			"dangerous mutation operations are denied by default",
+			"real API keys are never returned by status/profile APIs",
+		},
+		RunContract: []string{
+			"Every operational run should produce agent_steps when tools are used.",
+			"Every executed or denied tool action should produce tool_trace evidence.",
+			"Every tool_trace should be auditable by TraceShield or local safety fallback.",
+			"Risk graph must be derived from real execution/audit evidence, not fabricated.",
+		},
+		ToolCatalog: registry.CatalogSummary(),
+		RecommendedDeployment: agentProfileDeployment{
+			Mode:       "systemd services on Kylin V11",
+			Components: []string{"kylin-guard-agent", "kylin-guard-audit", "kylin-guard-web"},
+			Notes: []string{
+				"Run with non-root service accounts where possible.",
+				"Grant only the read permissions required by selected diagnostic tools.",
+				"Configure remote LLM credentials through environment or local untracked files only.",
+			},
+		},
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 
@@ -298,6 +468,52 @@ func endpointKind(endpoint string) string {
 	default:
 		return "openai_compatible"
 	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func readOSRelease(path string) map[string]string {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	result := map[string]string{}
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.Trim(strings.TrimSpace(value), `"`)
+		if key != "" {
+			result[key] = value
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func isKylinLike(osRelease map[string]string) bool {
+	for _, key := range []string{"ID", "ID_LIKE", "NAME", "PRETTY_NAME"} {
+		value := strings.ToLower(osRelease[key])
+		if strings.Contains(value, "kylin") || strings.Contains(value, "麒麟") {
+			return true
+		}
+	}
+	return false
 }
 
 func portFromAddr(addr string, fallback int) int {

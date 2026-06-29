@@ -136,7 +136,7 @@ export function AppShell() {
         </div>
       </div>
 
-      <AppDrawer ref={drawerRef} />
+      <AppDrawer ref={drawerRef} currentRun={currentRun} />
     </div>
   );
 }

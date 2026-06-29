@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"kylin-guard-agent/agent-go/internal/auditclient"
 	"kylin-guard-agent/agent-go/internal/logtrace"
 	"kylin-guard-agent/agent-go/internal/security"
 	"kylin-guard-agent/agent-go/internal/tools"
@@ -261,23 +262,19 @@ func TestEngineBuildsRiskGraph(t *testing.T) {
 	if resp.RiskGraph == nil {
 		t.Fatal("expected non-nil risk_graph for multi-step run")
 	}
-	if len(resp.RiskGraph.Nodes) != len(resp.AgentSteps) {
-		t.Fatalf("expected %d nodes, got %d", len(resp.AgentSteps), len(resp.RiskGraph.Nodes))
+	for _, step := range resp.AgentSteps {
+		if !riskGraphHasNode(resp.RiskGraph, "step_id", step.AuditReport.StepID) {
+			t.Fatalf("risk graph missing step node %q: %#v", step.AuditReport.StepID, resp.RiskGraph.Nodes)
+		}
 	}
-	wantEdges := len(resp.AgentSteps) - 1
-	if len(resp.RiskGraph.Edges) != wantEdges {
-		t.Fatalf("expected %d edges, got %d", wantEdges, len(resp.RiskGraph.Edges))
+	if !riskGraphHasEdgeType(resp.RiskGraph, "performs") ||
+		!riskGraphHasEdgeType(resp.RiskGraph, "targets") ||
+		!riskGraphHasEdgeType(resp.RiskGraph, "crosses_boundary") ||
+		!riskGraphHasEdgeType(resp.RiskGraph, "audited_as") {
+		t.Fatalf("expected semantic risk graph edges, got %#v", resp.RiskGraph.Edges)
 	}
-	for i, edge := range resp.RiskGraph.Edges {
-		if edge["type"] != "sequence" {
-			t.Fatalf("edge %d expected type=sequence, got %v", i, edge["type"])
-		}
-		if edge["from"] != resp.AgentSteps[i].AuditReport.StepID {
-			t.Fatalf("edge %d from mismatch", i)
-		}
-		if edge["to"] != resp.AgentSteps[i+1].AuditReport.StepID {
-			t.Fatalf("edge %d to mismatch", i)
-		}
+	if !riskGraphHasEdgeType(resp.RiskGraph, "next_action") {
+		t.Fatalf("expected next_action edge for multi-step graph, got %#v", resp.RiskGraph.Edges)
 	}
 }
 
@@ -309,13 +306,31 @@ func TestEngineDeniedStepHasDenyAuditReport(t *testing.T) {
 	if step.AuditReport.Method != "tool_policy" {
 		t.Fatalf("expected denied step audit method=tool_policy, got %q", step.AuditReport.Method)
 	}
-	// Denied step must appear as a node in the risk_graph.
-	if resp.RiskGraph == nil || len(resp.RiskGraph.Nodes) != 1 {
-		t.Fatal("expected risk_graph with 1 node for denied step")
+	// Denied step must appear as a node in the semantic risk_graph.
+	if resp.RiskGraph == nil || !riskGraphHasNode(resp.RiskGraph, "decision", "deny") {
+		t.Fatal("expected risk_graph with a denied decision node")
 	}
-	if resp.RiskGraph.Nodes[0]["decision"] != "deny" {
-		t.Fatalf("expected risk_graph node decision=deny, got %v", resp.RiskGraph.Nodes[0]["decision"])
+	if !riskGraphHasEdgeType(resp.RiskGraph, "governs") || !riskGraphHasEdgeType(resp.RiskGraph, "audited_as") {
+		t.Fatalf("expected denied graph to preserve policy and audit edges, got %#v", resp.RiskGraph.Edges)
 	}
+}
+
+func riskGraphHasNode(graph *auditclient.RiskGraph, key string, value any) bool {
+	for _, node := range graph.Nodes {
+		if node[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func riskGraphHasEdgeType(graph *auditclient.RiskGraph, edgeType string) bool {
+	for _, edge := range graph.Edges {
+		if edge["type"] == edgeType {
+			return true
+		}
+	}
+	return false
 }
 
 func TestEngineFinalAnswerOnlyHasNilRiskGraph(t *testing.T) {

@@ -1,6 +1,9 @@
 package tools
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 const (
 	ToolProtocol        = "mcp-like"
@@ -9,6 +12,7 @@ const (
 
 type ToolMetadata struct {
 	Name              string         `json:"name"`
+	DisplayName       string         `json:"display_name,omitempty"`
 	Description       string         `json:"description"`
 	Category          string         `json:"category"`
 	Version           string         `json:"version"`
@@ -24,6 +28,14 @@ type ToolMetadata struct {
 	Dangerous         bool           `json:"dangerous"`
 	Enabled           bool           `json:"enabled"`
 	DirectCallAllowed bool           `json:"direct_call_allowed"`
+	LLMCallable       bool           `json:"llm_callable"`
+	Platforms         []string       `json:"platforms,omitempty"`
+	Architectures     []string       `json:"architectures,omitempty"`
+	Tags              []string       `json:"tags,omitempty"`
+	UseCases          []string       `json:"use_cases,omitempty"`
+	SafetyNotes       []string       `json:"safety_notes,omitempty"`
+	ExampleInput      map[string]any `json:"example_input,omitempty"`
+	AuditEventType    string         `json:"audit_event_type,omitempty"`
 }
 
 func (m ToolMetadata) ArgumentKeys() []string {
@@ -46,7 +58,7 @@ func (m ToolMetadata) IsReadOnly() bool {
 }
 
 func DefaultToolMetadata() map[string]ToolMetadata {
-	return map[string]ToolMetadata{
+	return withMetadataDefaults(map[string]ToolMetadata{
 		"os_info": {
 			Name:              "os_info",
 			Description:       "Collect operating system information.",
@@ -508,7 +520,152 @@ func DefaultToolMetadata() map[string]ToolMetadata {
 			Enabled:           true,
 			DirectCallAllowed: true,
 		},
+	})
+}
+
+func withMetadataDefaults(input map[string]ToolMetadata) map[string]ToolMetadata {
+	result := make(map[string]ToolMetadata, len(input))
+	for name, metadata := range input {
+		result[name] = normalizeToolMetadata(name, metadata)
 	}
+	return result
+}
+
+func normalizeToolMetadata(name string, metadata ToolMetadata) ToolMetadata {
+	if metadata.Name == "" {
+		metadata.Name = name
+	}
+	if metadata.DisplayName == "" {
+		metadata.DisplayName = humanizeToolName(metadata.Name)
+	}
+	if len(metadata.Platforms) == 0 {
+		metadata.Platforms = []string{"linux", "kylin-v11"}
+	}
+	if len(metadata.Architectures) == 0 {
+		metadata.Architectures = []string{"x86_64", "aarch64", "loongarch64"}
+	}
+	if len(metadata.Tags) == 0 {
+		metadata.Tags = defaultToolTags(metadata)
+	}
+	if len(metadata.UseCases) == 0 {
+		metadata.UseCases = defaultToolUseCases(metadata)
+	}
+	if len(metadata.SafetyNotes) == 0 {
+		metadata.SafetyNotes = defaultSafetyNotes(metadata)
+	}
+	if metadata.ExampleInput == nil {
+		metadata.ExampleInput = defaultExampleInput(metadata)
+	}
+	if metadata.AuditEventType == "" {
+		metadata.AuditEventType = metadata.OperationType + ":" + metadata.ResourceType
+	}
+	metadata.LLMCallable = metadata.Enabled && metadata.DirectCallAllowed && metadata.AllowedByPolicy && metadata.IsReadOnly() && !metadata.Dangerous
+	return metadata
+}
+
+func humanizeToolName(name string) string {
+	words := strings.Split(strings.ReplaceAll(name, "-", "_"), "_")
+	for i, word := range words {
+		if word == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	return strings.Join(words, " ")
+}
+
+func defaultToolTags(metadata ToolMetadata) []string {
+	tags := []string{"kylin", "read_only", metadata.Category, metadata.OperationType, metadata.ResourceType}
+	if metadata.RequiresPrivilege {
+		tags = append(tags, "privileged_read")
+	}
+	if metadata.RiskLevel != "" {
+		tags = append(tags, "risk_"+metadata.RiskLevel)
+	}
+	return compactUnique(tags)
+}
+
+func defaultToolUseCases(metadata ToolMetadata) []string {
+	switch metadata.Category {
+	case "security":
+		return []string{"ssh_login_diagnosis", "authentication_anomaly_review", "security_event_triage"}
+	case "service":
+		return []string{"service_recovery", "systemd_inventory", "availability_diagnosis"}
+	case "network":
+		return []string{"port_reachability_check", "connection_state_review", "service_access_diagnosis"}
+	case "log":
+		return []string{"journal_review", "system_log_triage", "incident_evidence_collection"}
+	case "resource":
+		return []string{"system_health_check", "performance_bottleneck_triage", "capacity_review"}
+	case "configuration":
+		return []string{"configuration_drift_review", "rpm_inventory", "baseline_integrity_check"}
+	case "process":
+		return []string{"process_health_check", "open_file_review", "resource_owner_triage"}
+	default:
+		return []string{"ops_diagnosis", "read_only_inspection"}
+	}
+}
+
+func defaultSafetyNotes(metadata ToolMetadata) []string {
+	notes := []string{
+		"Read-only by default; no system mutation is performed.",
+		"Every call is mediated by Tool Policy and Exec Proxy.",
+		"Tool output is converted into tool_trace and audited before being shown as evidence.",
+	}
+	if metadata.RequiresPrivilege {
+		notes = append(notes, "May require elevated read permission on real Kylin systems.")
+	}
+	if metadata.Name == "safe_shell" {
+		notes = append(notes, "Not exposed for LLM/direct calls; only a conservative internal whitelist may execute.")
+	}
+	return notes
+}
+
+func defaultExampleInput(metadata ToolMetadata) map[string]any {
+	switch metadata.Name {
+	case "service_status":
+		return map[string]any{"service_name": "sshd"}
+	case "journalctl_reader":
+		return map[string]any{"service_name": "sshd", "lines": 100}
+	case "log_reader", "ssh_login_analyzer":
+		return map[string]any{"lines": 100}
+	case "port_checker":
+		return map[string]any{"host": "127.0.0.1", "port": 22}
+	case "process_inspector":
+		return map[string]any{"limit": 20, "state": "ALL"}
+	case "network_connection_inspector":
+		return map[string]any{"state": "LISTEN", "limit": 100}
+	case "disk_memory_checker":
+		return map[string]any{"include_tmpfs": false}
+	case "disk_io_checker":
+		return map[string]any{"sample_ms": 500}
+	case "configuration_drift_detector":
+		return map[string]any{"packages": []string{"openssh-server"}}
+	case "rpm_package_inventory":
+		return map[string]any{"query": "openssh", "limit": 50}
+	case "systemd_unit_inventory", "block_device_inventory", "mount_inventory":
+		return map[string]any{"limit": 100}
+	case "open_file_inspector":
+		return map[string]any{"path": "/var/log/secure", "limit": 20}
+	case "safe_shell":
+		return map[string]any{"command": "uname -a"}
+	default:
+		return map[string]any{}
+	}
+}
+
+func compactUnique(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }
 
 func DefaultToolMetadataList() []ToolMetadata {

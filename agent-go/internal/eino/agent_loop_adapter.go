@@ -40,8 +40,8 @@ func (a *RemoteLLMAgentAdapter) callLLM(ctx context.Context, systemPrompt string
 func (a *RemoteLLMAgentAdapter) buildAgentSystemPrompt(availableTools []agentloop.ToolDef) string {
 	toolLines := make([]string, len(availableTools))
 	for i, t := range availableTools {
-		toolLines[i] = fmt.Sprintf("  - %s: %s (args: %v, boundary: %s)",
-			t.ToolName, t.Description, t.ArgKeys, t.BoundaryLevel)
+		toolLines[i] = fmt.Sprintf("  - %s [%s]: %s (args: %v, use_cases: %v, operation: %s, resource: %s, boundary: %s, risk: %s)",
+			t.ToolName, t.Category, t.Description, t.ArgKeys, t.UseCases, t.OperationType, t.ResourceType, t.BoundaryLevel, t.RiskLevel)
 	}
 
 	return fmt.Sprintf(`You are a KylinGuard security operations agent. You must output ONLY valid JSON.

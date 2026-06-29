@@ -877,8 +877,7 @@ func aggregateRiskGraphFromSteps(steps []agentloop.AgentStep) *auditclient.RiskG
 	if len(steps) == 0 {
 		return nil
 	}
-	nodes := make([]map[string]any, 0, len(steps))
-	edges := make([]map[string]any, 0, maxInt(0, len(steps)-1))
+	semanticSteps := make([]auditclient.SemanticGraphStep, 0, len(steps))
 	for index, step := range steps {
 		stepID := fmt.Sprintf("step-%03d", step.StepIndex)
 		decision := ""
@@ -894,49 +893,28 @@ func aggregateRiskGraphFromSteps(steps []agentloop.AgentStep) *auditclient.RiskG
 			riskScore = step.AuditReport.RiskScore
 			violationsCount = len(step.AuditReport.Violations)
 		}
-		nodes = append(nodes, map[string]any{
-			"id":                stepID,
-			"step_id":           stepID,
-			"step_index":        step.StepIndex,
-			"type":              "tool_call",
-			"label":             step.ToolName,
-			"tool_name":         step.ToolName,
-			"decision":          decision,
-			"risk_score":        riskScore,
-			"risk_level":        severityForAuditDecision(decision),
-			"violations_count":  violationsCount,
-			"method":            method,
-			"policy_decision":   step.PolicyDecision,
-			"operation_type":    step.OperationType,
-			"resource_type":     step.ResourceType,
-			"resource_path":     step.ResourcePath,
-			"boundary_level":    step.BoundaryLevel,
-			"allowed_by_policy": step.AllowedByPolicy,
-			"policy_reason":     step.PolicyReason,
-		})
-		if index > 0 {
-			prevID := fmt.Sprintf("step-%03d", steps[index-1].StepIndex)
-			if steps[index-1].AuditReport != nil && steps[index-1].AuditReport.StepID != "" {
-				prevID = steps[index-1].AuditReport.StepID
-			}
-			edges = append(edges, map[string]any{
-				"from":   prevID,
-				"to":     stepID,
-				"source": prevID,
-				"target": stepID,
-				"type":   "sequence",
-				"label":  "sequence",
-			})
+		if step.StepIndex == 0 {
+			step.StepIndex = index + 1
 		}
+		semanticSteps = append(semanticSteps, auditclient.SemanticGraphStep{
+			StepID:          stepID,
+			StepIndex:       step.StepIndex,
+			ToolName:        step.ToolName,
+			Decision:        decision,
+			RiskScore:       riskScore,
+			RiskLevel:       severityForAuditDecision(decision),
+			Method:          method,
+			PolicyDecision:  step.PolicyDecision,
+			OperationType:   step.OperationType,
+			ResourceType:    step.ResourceType,
+			ResourcePath:    step.ResourcePath,
+			BoundaryLevel:   step.BoundaryLevel,
+			AllowedByPolicy: step.AllowedByPolicy,
+			PolicyReason:    step.PolicyReason,
+			ViolationsCount: violationsCount,
+		})
 	}
-	return &auditclient.RiskGraph{Nodes: nodes, Edges: edges}
-}
-
-func maxInt(a, b int) int {
-	if b > a {
-		return b
-	}
-	return a
+	return auditclient.RiskGraphFromSemanticSteps(semanticSteps)
 }
 
 // attachLLMMetadata injects remote LLM execution metadata into the security report.

@@ -31,8 +31,11 @@ func TestLocalSafetyFallbackUsesOnlyRetainedTraces(t *testing.T) {
 	if len(result.EvidenceChain) != 1 || result.EvidenceChain[0].StepID != trace.StepID {
 		t.Fatalf("fallback evidence must derive from retained traces: %#v", result.EvidenceChain)
 	}
-	if result.RiskGraph == nil || len(result.RiskGraph.Nodes) != 1 || result.RiskGraph.Nodes[0]["step_id"] != trace.StepID {
+	if result.RiskGraph == nil || !graphHasNode(result.RiskGraph, "step_id", trace.StepID) {
 		t.Fatalf("fallback graph must derive from the retained trace: %#v", result.RiskGraph)
+	}
+	if !graphHasEdgeType(result.RiskGraph, "targets") || !graphHasEdgeType(result.RiskGraph, "audited_as") {
+		t.Fatalf("fallback graph must include semantic resource and decision edges: %#v", result.RiskGraph.Edges)
 	}
 }
 
@@ -58,7 +61,7 @@ func TestLocalSafetyFallbackFlagsDeniedTrace(t *testing.T) {
 	if len(result.Violations) == 0 {
 		t.Fatalf("expected violation for denied trace: %#v", result)
 	}
-	if result.RiskGraph == nil || result.RiskGraph.Nodes[0]["risk_level"] != "high" {
+	if result.RiskGraph == nil || !graphHasNode(result.RiskGraph, "risk_level", "high") {
 		t.Fatalf("expected high-risk graph node, got %#v", result.RiskGraph)
 	}
 }
@@ -90,7 +93,25 @@ func TestHTTPClientEnrichesSparseAuditCoreResultWithTraceEvidence(t *testing.T) 
 	if len(result.EvidenceChain) != 1 || result.EvidenceChain[0].Reason != trace.OutputSummary {
 		t.Fatalf("expected trace-backed evidence, got %#v", result.EvidenceChain)
 	}
-	if result.RiskGraph == nil || len(result.RiskGraph.Nodes) != 1 {
+	if result.RiskGraph == nil || !graphHasNode(result.RiskGraph, "step_id", trace.StepID) {
 		t.Fatalf("expected trace-backed risk graph, got %#v", result.RiskGraph)
 	}
+}
+
+func graphHasNode(graph *RiskGraph, key string, value any) bool {
+	for _, node := range graph.Nodes {
+		if node[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func graphHasEdgeType(graph *RiskGraph, edgeType string) bool {
+	for _, edge := range graph.Edges {
+		if edge["type"] == edgeType {
+			return true
+		}
+	}
+	return false
 }

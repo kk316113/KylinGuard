@@ -1,5 +1,16 @@
 import { useMemo, useState } from "react";
-import { GitBranch, LocateFixed, Route, ShieldAlert, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Background,
+  Controls,
+  Handle,
+  MiniMap,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
+import { GitBranch, Route, ShieldAlert } from "lucide-react";
 import {
   asText,
   boundaryLevelLabel,
@@ -11,34 +22,51 @@ import {
 } from "@/lib/formatters";
 import type { AgentRun, RiskGraph, RiskGraphEdge, RiskGraphNode } from "@/types/agent";
 
-type DrawableNode = {
-  id: string;
-  node: RiskGraphNode;
-  index: number;
-  x: number;
-  y: number;
-  tone: "good" | "warn" | "danger" | "neutral";
+type GraphTone = "good" | "warn" | "danger" | "neutral";
+
+type SemanticNodeData = {
+  raw: RiskGraphNode;
+  label: string;
+  summary: string;
+  role: string;
+  tone: GraphTone;
 };
 
-type DrawableEdge = {
-  id: string;
-  edge: RiskGraphEdge;
-  index: number;
-  from: DrawableNode;
-  to: DrawableNode;
-  tone: "good" | "warn" | "danger" | "neutral";
+type SemanticFlowNode = Node<SemanticNodeData, "semantic">;
+
+type GraphModel = {
+  nodes: SemanticFlowNode[];
+  edges: Edge[];
+  nodeMap: Map<string, SemanticFlowNode>;
+  edgeMap: Map<string, RiskGraphEdge>;
+  dangerCount: number;
+  semanticRoles: number;
 };
 
-const nodeWidth = 188;
-const nodeHeight = 78;
-const horizontalGap = 86;
-const verticalGap = 68;
-const graphPadding = 42;
+const roleOrder = ["policy", "tool_call", "operation", "resource", "boundary", "decision", "unknown"];
+const roleLabels: Record<string, string> = {
+  policy: "策略",
+  tool_call: "工具",
+  operation: "操作",
+  resource: "资源",
+  boundary: "边界",
+  decision: "结论",
+  unknown: "未知",
+};
+const roleX: Record<string, number> = {
+  policy: 0,
+  tool_call: 240,
+  operation: 500,
+  resource: 760,
+  boundary: 1020,
+  decision: 1280,
+  unknown: 500,
+};
+const rowGap = 116;
 
 export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
   const graph = findRiskGraph(run);
   const [selectedId, setSelectedId] = useState<string>("");
-  const [zoom, setZoom] = useState(1);
   const model = useMemo(() => buildGraphModel(graph), [graph]);
 
   if (!run) {
@@ -55,30 +83,24 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
     );
   }
 
-  const selected =
-    model.nodes.find((item) => item.id === selectedId) ||
-    model.edges.find((item) => item.id === selectedId) ||
-    model.nodes.find((item) => item.tone === "danger") ||
-    model.nodes[0] ||
-    null;
-  const selectedNode = isDrawableNode(selected) ? selected : null;
-  const selectedEdge = isDrawableEdge(selected) ? selected : null;
-  const selectedNodeIds = selectedEdge ? new Set([selectedEdge.from.id, selectedEdge.to.id]) : new Set([selectedNode?.id || ""]);
+  const selectedNode = selectedId ? model.nodeMap.get(selectedId) : undefined;
+  const selectedEdge = selectedId ? model.edgeMap.get(selectedId) : undefined;
+  const nodeTypes = { semantic: SemanticRiskNode };
 
   return (
     <div className="risk-graph-view">
       <section className="risk-graph-summary">
         <div className="graph-stat">
           <strong>{model.nodes.length}</strong>
-          <span>风险节点</span>
+          <span>语义节点</span>
         </div>
         <div className="graph-stat">
           <strong>{model.edges.length}</strong>
-          <span>关联路径</span>
+          <span>语义关系</span>
         </div>
         <div className="graph-stat danger">
           <strong>{model.dangerCount}</strong>
-          <span>高风险节点</span>
+          <span>风险热点</span>
         </div>
       </section>
 
@@ -87,135 +109,47 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
           <div>
             <div className="mini-heading">
               <GitBranch size={16} />
-              <span>审计风险图</span>
+              <span>联合语义风险图</span>
             </div>
-            <p>从真实工具调用链生成，节点表示审计事件，连线表示执行与证据传递顺序。</p>
+            <p>基于工具调用、操作类型、资源对象、边界等级、策略结论和审计结论联合生成。</p>
           </div>
-          <div className="risk-map-controls" aria-label="风险图缩放">
-            <button type="button" onClick={() => setZoom((value) => Math.max(0.75, value - 0.15))}>
-              <ZoomOut size={15} />
-              <span>缩小</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setZoom(1);
-                setSelectedId("");
-              }}
-            >
-              <LocateFixed size={15} />
-              <span>重置</span>
-            </button>
-            <button type="button" onClick={() => setZoom((value) => Math.min(1.6, value + 0.15))}>
-              <ZoomIn size={15} />
-              <span>放大</span>
-            </button>
+          <div className="risk-map-legend" aria-label="风险图图例">
+            <span className="legend-item good">低风险</span>
+            <span className="legend-item warn">需复核</span>
+            <span className="legend-item danger">高风险</span>
           </div>
         </div>
 
-        <div className="risk-map-legend" aria-label="风险图图例">
-          <span className="legend-item good">低风险</span>
-          <span className="legend-item warn">需复核</span>
-          <span className="legend-item danger">高风险</span>
-        </div>
-
-        <div className="risk-map-scroll">
-          <svg
-            className="risk-map-svg"
-            width={model.width * zoom}
-            height={model.height * zoom}
-            viewBox={`0 0 ${model.width} ${model.height}`}
-            role="img"
-            aria-label="KylinGuard 安全审计风险图"
+        <div className="semantic-flow-shell">
+          <ReactFlow
+            nodes={model.nodes}
+            edges={model.edges}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.2, minZoom: 0.45, maxZoom: 1.2 }}
+            minZoom={0.25}
+            maxZoom={1.8}
+            nodesDraggable
+            nodesConnectable={false}
+            elementsSelectable
+            onNodeClick={(_, node) => setSelectedId(node.id)}
+            onEdgeClick={(_, edge) => setSelectedId(edge.id)}
           >
-            <defs>
-              <linearGradient id="riskEdgeGradient" x1="0%" x2="100%" y1="0%" y2="0%">
-                <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.25" />
-                <stop offset="100%" stopColor="var(--brand)" stopOpacity="0.8" />
-              </linearGradient>
-              <filter id="riskNodeShadow" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="10" stdDeviation="10" floodColor="rgba(15, 23, 42, 0.16)" />
-              </filter>
-              <marker id="riskArrow" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
-                <path d="M 0 0 L 8 4 L 0 8 z" fill="currentColor" />
-              </marker>
-            </defs>
-
-            <g className="risk-map-grid">
-              {Array.from({ length: Math.ceil(model.width / 80) + 1 }).map((_, index) => (
-                <line key={`v-${index}`} x1={index * 80} x2={index * 80} y1={0} y2={model.height} />
-              ))}
-              {Array.from({ length: Math.ceil(model.height / 80) + 1 }).map((_, index) => (
-                <line key={`h-${index}`} x1={0} x2={model.width} y1={index * 80} y2={index * 80} />
-              ))}
-            </g>
-
-            <g className="risk-map-edges">
-              {model.edges.map((edge) => {
-                const active = selectedId === edge.id;
-                const related = selectedNode ? edge.from.id === selectedNode.id || edge.to.id === selectedNode.id : active;
-                return (
-                  <g key={edge.id}>
-                    <path
-                      className={["risk-map-edge-hit", active ? "active" : "", related ? "related" : ""]
-                        .filter(Boolean)
-                        .join(" ")}
-                      d={edgePath(edge)}
-                      onClick={() => setSelectedId(edge.id)}
-                    />
-                    <path
-                      className={["risk-map-edge", edge.tone, active ? "active" : "", related ? "related" : ""]
-                        .filter(Boolean)
-                        .join(" ")}
-                      d={edgePath(edge)}
-                      markerEnd="url(#riskArrow)"
-                    />
-                  </g>
-                );
-              })}
-            </g>
-
-            <g className="risk-map-nodes">
-              {model.nodes.map((item) => {
-                const active = selectedId === item.id || selectedNodeIds.has(item.id);
-                return (
-                  <g
-                    className={["risk-map-node", item.tone, active ? "active" : ""].filter(Boolean).join(" ")}
-                    key={item.id}
-                    role="button"
-                    tabIndex={0}
-                    transform={`translate(${item.x}, ${item.y})`}
-                    onClick={() => setSelectedId(item.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedId(item.id);
-                      }
-                    }}
-                  >
-                    <rect width={nodeWidth} height={nodeHeight} rx="16" filter="url(#riskNodeShadow)" />
-                    <circle cx="22" cy="24" r="7" />
-                    <text className="risk-map-node-index" x="38" y="28">
-                      #{item.index + 1}
-                    </text>
-                    <text className="risk-map-node-title" x="16" y="52">
-                      {truncateText(nodeLabel(item.node, item.index), 15)}
-                    </text>
-                    <text className="risk-map-node-meta" x="16" y="68">
-                      {truncateText(nodeSummary(item.node), 22)}
-                    </text>
-                  </g>
-                );
-              })}
-            </g>
-          </svg>
+            <Background gap={24} size={1} />
+            <Controls showInteractive={false} />
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor={(node) => toneColor((node.data as SemanticNodeData | undefined)?.tone || "neutral")}
+            />
+          </ReactFlow>
         </div>
       </section>
 
       <section className="risk-graph-detail">
-        {selectedNode ? <NodeDetail item={selectedNode} /> : null}
-        {selectedEdge ? <EdgeDetail item={selectedEdge} /> : null}
-        {!selectedNode && !selectedEdge ? <p>点击图中的节点或连线查看审计细节。</p> : null}
+        {selectedNode ? <NodeDetail node={selectedNode} /> : null}
+        {selectedEdge ? <EdgeDetail edge={selectedEdge} model={model} /> : null}
+        {!selectedNode && !selectedEdge ? <GraphOverview graph={graph} model={model} /> : null}
       </section>
 
       {graph.risk_hotspots?.length ? (
@@ -238,17 +172,31 @@ export function RiskGraphPanel({ run }: { run?: AgentRun | null }) {
   );
 }
 
-function NodeDetail({ item }: { item: DrawableNode }) {
-  const node = item.node;
+function SemanticRiskNode({ data, selected }: NodeProps<SemanticFlowNode>) {
+  return (
+    <div className={["semantic-risk-node", data.tone, selected ? "selected" : ""].filter(Boolean).join(" ")}>
+      <Handle type="target" position={Position.Left} />
+      <div className="semantic-node-role">{roleLabel(data.role)}</div>
+      <strong>{data.label}</strong>
+      <span>{data.summary}</span>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+
+function NodeDetail({ node }: { node: SemanticFlowNode }) {
+  const raw = node.data.raw;
   const rows = [
-    ["工具", nodeLabel(node, item.index)],
-    ["风险", riskLevelLabel(asText(node.risk_level))],
-    ["结论", node.decision ? decisionLabel(asText(node.decision)) : "未记录"],
-    ["操作", operationTypeLabel(asText(node.operation_type))],
-    ["资源", resourceTypeLabel(asText(node.resource_type))],
-    ["边界", boundaryLevelLabel(asText(node.boundary_level))],
-    ["路径", asText(node.resource_path)],
-    ["策略", node.allowed_by_policy === undefined ? "未记录" : node.allowed_by_policy ? "允许" : "拦截"],
+    ["类型", roleLabel(node.data.role)],
+    ["名称", node.data.label],
+    ["风险", riskLevelLabel(asText(raw.risk_level))],
+    ["结论", raw.decision ? decisionLabel(asText(raw.decision)) : "未记录"],
+    ["工具", raw.tool_name ? toolNameLabel(asText(raw.tool_name)) : "未记录"],
+    ["操作", raw.operation_type ? operationTypeLabel(asText(raw.operation_type)) : "未记录"],
+    ["资源", raw.resource_type ? resourceTypeLabel(asText(raw.resource_type)) : "未记录"],
+    ["边界", raw.boundary_level ? boundaryLevelLabel(asText(raw.boundary_level)) : "未记录"],
+    ["路径", asText(raw.resource_path || "未记录")],
+    ["策略", raw.allowed_by_policy === undefined ? "未记录" : raw.allowed_by_policy ? "允许" : "拦截"],
   ];
 
   return (
@@ -269,25 +217,55 @@ function NodeDetail({ item }: { item: DrawableNode }) {
   );
 }
 
-function EdgeDetail({ item }: { item: DrawableEdge }) {
+function EdgeDetail({ edge, model }: { edge: RiskGraphEdge; model: GraphModel }) {
+  const fromID = edgeFrom(edge);
+  const toID = edgeTo(edge);
+  const from = model.nodeMap.get(fromID);
+  const to = model.nodeMap.get(toID);
+
   return (
     <>
       <div className="mini-heading">
         <Route size={16} />
-        <span>路径详情</span>
+        <span>关系详情</span>
       </div>
       <div className="risk-detail-grid">
         <div>
           <span>起点</span>
-          <strong>{nodeLabel(item.from.node, item.from.index)}</strong>
+          <strong>{from?.data.label || fromID}</strong>
         </div>
         <div>
           <span>终点</span>
-          <strong>{nodeLabel(item.to.node, item.to.index)}</strong>
+          <strong>{to?.data.label || toID}</strong>
         </div>
         <div>
           <span>关系</span>
-          <strong>{item.edge.label || item.edge.type || "执行顺序"}</strong>
+          <strong>{edgeLabel(edge)}</strong>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function GraphOverview({ graph, model }: { graph: RiskGraph; model: GraphModel }) {
+  return (
+    <>
+      <div className="mini-heading">
+        <GitBranch size={16} />
+        <span>图谱说明</span>
+      </div>
+      <div className="risk-detail-grid">
+        <div>
+          <span>语义层数</span>
+          <strong>{model.semanticRoles}</strong>
+        </div>
+        <div>
+          <span>边界穿越</span>
+          <strong>{graph?.boundary_crossings?.length || 0}</strong>
+        </div>
+        <div>
+          <span>决策路径</span>
+          <strong>{graph?.decision_path?.length || 0}</strong>
         </div>
       </div>
     </>
@@ -308,79 +286,108 @@ function findRiskGraph(run?: AgentRun | null): RiskGraph {
   return run?.risk_graph || run?.audit_result?.risk_graph || run?.security_report?.risk_graph || null;
 }
 
-function buildGraphModel(graph: RiskGraph) {
+function buildGraphModel(graph: RiskGraph): GraphModel {
   const rawNodes = graph?.nodes || [];
-  const columns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(rawNodes.length || 1))));
-  const rows = Math.max(1, Math.ceil((rawNodes.length || 1) / columns));
-  const width = graphPadding * 2 + columns * nodeWidth + Math.max(0, columns - 1) * horizontalGap;
-  const height = graphPadding * 2 + rows * nodeHeight + Math.max(0, rows - 1) * verticalGap;
-  const nodes = rawNodes.map((node, index): DrawableNode => {
-    const col = index % columns;
-    const row = Math.floor(index / columns);
+  const grouped = groupNodes(rawNodes);
+  const nodes = rawNodes.map((node, index): SemanticFlowNode => {
+    const id = nodeID(node, index);
+    const role = nodeRole(node);
+    const position = semanticPosition(role, grouped.get(role)?.indexOf(node) ?? index);
     return {
-      id: nodeID(node, index),
-      node,
-      index,
-      x: graphPadding + col * (nodeWidth + horizontalGap),
-      y: graphPadding + row * (nodeHeight + verticalGap),
-      tone: nodeTone(node),
+      id,
+      type: "semantic",
+      position,
+      data: {
+        raw: node,
+        label: nodeLabel(node, index),
+        summary: nodeSummary(node),
+        role,
+        tone: nodeTone(node),
+      },
     };
   });
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const edgeMap = new Map<string, RiskGraphEdge>();
   const edges = (graph?.edges || [])
-    .map((edge, index): DrawableEdge | null => {
+    .map((edge, index): Edge | null => {
       const source = edgeFrom(edge);
       const target = edgeTo(edge);
-      const from = nodeMap.get(source) || nodes[index];
-      const to = nodeMap.get(target) || nodes[index + 1];
-      if (!from || !to) {
+      if (!nodeMap.has(source) || !nodeMap.has(target)) {
         return null;
       }
+      const id = asText(edge.id || `${source}-${target}-${edge.type || "edge"}-${index}`);
+      edgeMap.set(id, edge);
+      const tone = edgeTone(edge, nodeMap);
       return {
-        id: `${from.id}-${to.id}-${index}`,
-        edge,
-        index,
-        from,
-        to,
-        tone: edgeTone(from, to),
+        id,
+        source,
+        target,
+        type: "smoothstep",
+        label: edgeLabel(edge),
+        animated: edge.type === "next_action" || edge.type === "crosses_boundary",
+        style: { stroke: toneColor(tone), strokeWidth: tone === "danger" ? 2.6 : 2 },
+        markerEnd: { type: "arrowclosed", color: toneColor(tone) },
+        labelStyle: { fill: "var(--muted)", fontSize: 11, fontWeight: 600 },
+        labelBgStyle: { fill: "var(--surface)", fillOpacity: 0.88 },
+        data: { tone },
       };
     })
-    .filter((edge): edge is DrawableEdge => Boolean(edge));
+    .filter((edge): edge is Edge => Boolean(edge));
 
   return {
     nodes,
     edges,
-    width,
-    height,
-    dangerCount: nodes.filter((node) => node.tone === "danger").length,
+    nodeMap,
+    edgeMap,
+    dangerCount: nodes.filter((node) => node.data.tone === "danger").length,
+    semanticRoles: new Set(nodes.map((node) => node.data.role)).size,
   };
 }
 
-function edgePath(edge: DrawableEdge) {
-  const startX = edge.from.x + nodeWidth;
-  const startY = edge.from.y + nodeHeight / 2;
-  const endX = edge.to.x;
-  const endY = edge.to.y + nodeHeight / 2;
-  const sameColumn = Math.abs(startX - endX) < nodeWidth / 2;
-  if (sameColumn) {
-    const x = edge.from.x + nodeWidth / 2;
-    const y1 = edge.from.y + nodeHeight;
-    const y2 = edge.to.y;
-    const c1 = y1 + Math.max(28, (y2 - y1) / 2);
-    const c2 = y2 - Math.max(28, (y2 - y1) / 2);
-    return `M ${x} ${y1} C ${x} ${c1}, ${x} ${c2}, ${x} ${y2}`;
+function groupNodes(nodes: RiskGraphNode[]) {
+  const grouped = new Map<string, RiskGraphNode[]>();
+  for (const node of nodes) {
+    const role = nodeRole(node);
+    const list = grouped.get(role) || [];
+    list.push(node);
+    grouped.set(role, list);
   }
-  const mid = Math.max(36, Math.abs(endX - startX) / 2);
-  return `M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`;
+  return grouped;
+}
+
+function semanticPosition(role: string, row: number) {
+  const normalizedRole = roleOrder.includes(role) ? role : "unknown";
+  return {
+    x: roleX[normalizedRole] ?? roleX.unknown,
+    y: 40 + row * rowGap,
+  };
 }
 
 function nodeID(node: RiskGraphNode, index: number) {
   return asText(node.id || node.step_id || node.tool_name || `node-${index}`);
 }
 
+function nodeRole(node: RiskGraphNode) {
+  const role = asText(node.semantic_role || node.type || "unknown");
+  switch (role) {
+    case "tool_event":
+      return "tool_call";
+    case "policy_guard":
+      return "policy";
+    case "audit_decision":
+      return "decision";
+    default:
+      return role;
+  }
+}
+
+function roleLabel(role: string) {
+  return roleLabels[role] || roleLabels.unknown;
+}
+
 function nodeLabel(node: RiskGraphNode, index: number) {
   if (typeof node.label === "string" && node.label.trim()) {
-    return node.label;
+    return node.type === "tool_call" && node.tool_name ? toolNameLabel(node.tool_name) : node.label;
   }
   if (typeof node.tool_name === "string" && node.tool_name.trim()) {
     const prefix = typeof node.step_index === "number" ? `#${node.step_index} ` : "";
@@ -393,6 +400,19 @@ function nodeLabel(node: RiskGraphNode, index: number) {
 }
 
 function nodeSummary(node: RiskGraphNode) {
+  const role = nodeRole(node);
+  if (role === "operation") {
+    return operationTypeLabel(asText(node.operation_type || node.label));
+  }
+  if (role === "resource") {
+    return [resourceTypeLabel(asText(node.resource_type)), asText(node.resource_path)].filter(Boolean).join(" / ");
+  }
+  if (role === "boundary") {
+    return boundaryLevelLabel(asText(node.boundary_level || node.label));
+  }
+  if (role === "decision") {
+    return decisionLabel(asText(node.decision || node.label));
+  }
   const parts = [
     node.risk_level ? riskLevelLabel(asText(node.risk_level)) : "",
     node.decision ? decisionLabel(asText(node.decision)) : "",
@@ -402,7 +422,7 @@ function nodeSummary(node: RiskGraphNode) {
   return parts.length ? parts.join(" / ") : "普通节点";
 }
 
-function nodeTone(node: RiskGraphNode): DrawableNode["tone"] {
+function nodeTone(node: RiskGraphNode): GraphTone {
   const risk = asText(node.risk_level || node.decision || node.boundary_level).toLowerCase();
   if (risk.includes("high") || risk.includes("critical") || risk.includes("deny") || risk.includes("danger")) {
     return "danger";
@@ -416,17 +436,32 @@ function nodeTone(node: RiskGraphNode): DrawableNode["tone"] {
   return "neutral";
 }
 
-function edgeTone(from: DrawableNode, to: DrawableNode): DrawableEdge["tone"] {
-  if (from.tone === "danger" || to.tone === "danger") {
+function edgeTone(edge: RiskGraphEdge, nodeMap: Map<string, SemanticFlowNode>): GraphTone {
+  const risk = asText(edge.risk_level || edge.type).toLowerCase();
+  if (risk.includes("high") || risk.includes("danger") || risk.includes("deny")) {
     return "danger";
   }
-  if (from.tone === "warn" || to.tone === "warn") {
+  if (risk.includes("medium") || risk.includes("review") || risk.includes("boundary")) {
     return "warn";
   }
-  if (from.tone === "good" && to.tone === "good") {
-    return "good";
-  }
-  return "neutral";
+  const from = nodeMap.get(edgeFrom(edge));
+  const to = nodeMap.get(edgeTo(edge));
+  if (from?.data.tone === "danger" || to?.data.tone === "danger") return "danger";
+  if (from?.data.tone === "warn" || to?.data.tone === "warn") return "warn";
+  return "good";
+}
+
+function edgeLabel(edge: RiskGraphEdge) {
+  const label = asText(edge.label || edge.type);
+  const labels: Record<string, string> = {
+    governs: "策略约束",
+    performs: "执行操作",
+    targets: "访问资源",
+    crosses_boundary: "穿越边界",
+    audited_as: "审计结论",
+    next_action: "下一步",
+  };
+  return labels[label] || label || "关联";
 }
 
 function edgeFrom(edge: RiskGraphEdge) {
@@ -437,14 +472,15 @@ function edgeTo(edge: RiskGraphEdge) {
   return asText(edge.target || edge.to || "");
 }
 
-function truncateText(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
-}
-
-function isDrawableNode(value: DrawableNode | DrawableEdge | null): value is DrawableNode {
-  return Boolean(value && "node" in value);
-}
-
-function isDrawableEdge(value: DrawableNode | DrawableEdge | null): value is DrawableEdge {
-  return Boolean(value && "edge" in value);
+function toneColor(tone: GraphTone) {
+  switch (tone) {
+    case "danger":
+      return "#ef4444";
+    case "warn":
+      return "#f59e0b";
+    case "good":
+      return "#22c55e";
+    default:
+      return "#64748b";
+  }
 }
