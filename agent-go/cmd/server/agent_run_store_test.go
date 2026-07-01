@@ -40,6 +40,63 @@ func TestAgentRunStorePersistsReloadsAndListsRuns(t *testing.T) {
 	}
 }
 
+func TestAgentRunSQLiteStorePersistsNormalizedTablesAndReloads(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "kylinguard.db")
+	store := newAgentRunSQLiteStoreWithOptions(dbPath, 10)
+	if err := store.load(); err != nil {
+		t.Fatalf("load sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	run := sampleStoredRun("kg-sqlite", "我的 key 是 sk-testsecret123456", "review")
+	run.FinalAnswer = "不要泄露 DEEPSEEK_API_KEY=sk-testsecret123456"
+	saved := store.Save(run)
+
+	reloaded := newAgentRunSQLiteStoreWithOptions(dbPath, 10)
+	if err := reloaded.load(); err != nil {
+		t.Fatalf("reload sqlite store: %v", err)
+	}
+	defer reloaded.Close()
+	got, ok := reloaded.Get(saved.RunID)
+	if !ok || got.RunID != saved.RunID || got.Task != saved.Task {
+		t.Fatalf("expected saved run after sqlite reload, ok=%v run=%#v", ok, got)
+	}
+	list := reloaded.List(10, "")
+	if list.Count != 1 || list.Runs[0].RunID != saved.RunID {
+		t.Fatalf("expected sqlite list with saved run, got %#v", list)
+	}
+
+	assertSQLiteCount(t, reloaded, "agent_runs", 1)
+	assertSQLiteCount(t, reloaded, "agent_steps", 1)
+	assertSQLiteCount(t, reloaded, "tool_traces", 1)
+	assertSQLiteCount(t, reloaded, "audit_results", 1)
+
+	var payload string
+	if err := reloaded.db.QueryRow(`SELECT sanitized_json FROM agent_runs WHERE run_id = ?`, saved.RunID).Scan(&payload); err != nil {
+		t.Fatalf("read sqlite payload: %v", err)
+	}
+	if strings.Contains(payload, "sk-testsecret123456") {
+		t.Fatalf("sqlite payload leaked secret: %s", payload)
+	}
+	if !strings.Contains(payload, "[REDACTED]") {
+		t.Fatalf("expected sqlite payload to include redaction marker: %s", payload)
+	}
+}
+
+func TestAgentRunSQLiteStoreImportsJSONRuns(t *testing.T) {
+	dir := t.TempDir()
+	jsonStore := newAgentRunStoreWithOptions(dir, 10)
+	jsonStore.Save(sampleStoredRun("kg-json-import", "legacy json run", "allow"))
+
+	sqliteStore := newAgentRunStoreFromConfig(runStoreBackendSQLite, dir, filepath.Join(t.TempDir(), "kylinguard.db"), 10)
+	defer sqliteStore.Close()
+	got, ok := sqliteStore.Get("kg-json-import")
+	if !ok || got.RunID != "kg-json-import" {
+		t.Fatalf("expected sqlite store to import legacy JSON run, ok=%v run=%#v", ok, got)
+	}
+	assertSQLiteCount(t, sqliteStore, "agent_runs", 1)
+}
+
 func TestAgentRunStoreEnforcesLimitAndSkipsCorruptFiles(t *testing.T) {
 	dir := t.TempDir()
 	store := newAgentRunStoreWithOptions(dir, 2)
@@ -175,5 +232,19 @@ func sampleStoredRun(runID, task, decision string) agent.AgentRunResponse {
 			},
 		},
 		FinalAnswer: "已完成检查。",
+	}
+}
+
+func assertSQLiteCount(t *testing.T, store *agentRunStore, table string, expected int) {
+	t.Helper()
+	if store == nil || store.db == nil {
+		t.Fatal("sqlite store is not open")
+	}
+	var count int
+	if err := store.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	if count != expected {
+		t.Fatalf("expected %s count %d, got %d", table, expected, count)
 	}
 }

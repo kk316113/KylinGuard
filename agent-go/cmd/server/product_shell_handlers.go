@@ -21,6 +21,7 @@ type runtimeStatusResponse struct {
 	OK             bool                      `json:"ok"`
 	Runtime        runtimeStatusRuntime      `json:"runtime"`
 	Services       runtimeStatusServices     `json:"services"`
+	Storage        runtimeStatusStorage      `json:"storage"`
 	SecurityLayers map[string]string         `json:"security_layers"`
 	SecretSafety   runtimeStatusSecretSafety `json:"secret_safety"`
 	UpdatedAt      string                    `json:"updated_at"`
@@ -41,6 +42,14 @@ type runtimeStatusServices struct {
 	GoAgent   serviceStatus `json:"go_agent"`
 	AuditCore serviceStatus `json:"audit_core"`
 	Frontend  serviceStatus `json:"frontend"`
+}
+
+type runtimeStatusStorage struct {
+	Backend     string `json:"backend"`
+	DBPath      string `json:"db_path,omitempty"`
+	JSONDir     string `json:"json_dir,omitempty"`
+	Limit       int    `json:"limit"`
+	Persistence string `json:"persistence"`
 }
 
 type serviceStatus struct {
@@ -236,6 +245,13 @@ func buildRuntimeStatus(ctx context.Context, cfg config.Config) runtimeStatusRes
 			GoAgent:   serviceStatus{Status: "ok", Port: portFromAddr(cfg.Addr, 8080)},
 			AuditCore: auditCoreStatus(ctx, cfg.AuditCoreURL),
 			Frontend:  serviceStatus{Status: "unknown", Port: getenvInt("FRONTEND_PORT", 5173)},
+		},
+		Storage: runtimeStatusStorage{
+			Backend:     cfg.RunStoreBackend,
+			DBPath:      cfg.RunStoreDBPath,
+			JSONDir:     cfg.RunStoreDir,
+			Limit:       cfg.RunStoreLimit,
+			Persistence: "agent runs, steps, tool traces, audit results",
 		},
 		SecurityLayers: map[string]string{
 			"intent_guard":    "enabled",

@@ -42,7 +42,12 @@ func main() {
 		LLMAPIKey:      cfg.EinoLLMAPIKey,
 		AgentMaxSteps:  cfg.EinoAgentMaxSteps,
 	}))
-	runStore := newAgentRunStoreFromConfig(cfg.RunStoreDir, cfg.RunStoreLimit)
+	runStore := newAgentRunStoreFromConfig(cfg.RunStoreBackend, cfg.RunStoreDir, cfg.RunStoreDBPath, cfg.RunStoreLimit)
+	defer func() {
+		if err := runStore.Close(); err != nil {
+			log.Printf("agent run store close failed: %v", err)
+		}
+	}()
 	toolPolicy := security.NewToolPolicy()
 
 	mux := http.NewServeMux()

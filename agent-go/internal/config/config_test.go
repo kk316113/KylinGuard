@@ -56,6 +56,24 @@ func TestLoadWithoutAPIKeyKeepsDeterministicMode(t *testing.T) {
 	}
 }
 
+func TestLoadSupportsSQLiteRunStoreConfiguration(t *testing.T) {
+	t.Setenv("KYLIN_GUARD_RUN_STORE_BACKEND", "json")
+	t.Setenv("KYLIN_GUARD_RUN_STORE_DB_PATH", "run/test-kylinguard.db")
+	t.Setenv("KYLIN_GUARD_RUN_STORE_LIMIT", "17")
+
+	cfg := Load()
+
+	if cfg.RunStoreBackend != "json" {
+		t.Fatalf("expected explicit run store backend, got %q", cfg.RunStoreBackend)
+	}
+	if cfg.RunStoreDBPath != "run/test-kylinguard.db" {
+		t.Fatalf("expected explicit run store DB path, got %q", cfg.RunStoreDBPath)
+	}
+	if cfg.RunStoreLimit != 17 {
+		t.Fatalf("expected explicit run store limit, got %d", cfg.RunStoreLimit)
+	}
+}
+
 func TestLoadTrimsRemoteLLMEnvironmentValues(t *testing.T) {
 	clearLLMEnvironment(t)
 	t.Setenv("OPENAI_COMPATIBLE_API_KEY", "  test-key\r\n")

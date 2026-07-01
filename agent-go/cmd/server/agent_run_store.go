@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -22,6 +23,9 @@ import (
 const (
 	defaultStoredAgentRuns = 200
 	runStoreIndexFile      = "index.json"
+	runStoreBackendMemory  = "memory"
+	runStoreBackendJSON    = "json"
+	runStoreBackendSQLite  = "sqlite"
 )
 
 var secretPatterns = []*regexp.Regexp{
@@ -31,12 +35,15 @@ var secretPatterns = []*regexp.Regexp{
 }
 
 type agentRunStore struct {
-	mu     sync.RWMutex
-	runs   map[string]agent.AgentRunResponse
-	order  []string
-	latest string
-	dir    string
-	limit  int
+	mu      sync.RWMutex
+	runs    map[string]agent.AgentRunResponse
+	order   []string
+	latest  string
+	dir     string
+	backend string
+	dbPath  string
+	db      *sql.DB
+	limit   int
 }
 
 type agentRunSummary struct {
@@ -101,7 +108,23 @@ func newAgentRunStore() *agentRunStore {
 	return newAgentRunStoreWithOptions("", defaultStoredAgentRuns)
 }
 
-func newAgentRunStoreFromConfig(dir string, limit int) *agentRunStore {
+func newAgentRunStoreFromConfig(backend, dir, dbPath string, limit int) *agentRunStore {
+	backend = normalizeRunStoreBackend(backend)
+	if backend == runStoreBackendSQLite {
+		store := newAgentRunSQLiteStoreWithOptions(dbPath, limit)
+		if err := store.load(); err != nil {
+			log.Printf("sqlite agent run store load failed, falling back to JSON store: %v", err)
+			jsonStore := newAgentRunStoreWithOptions(dir, limit)
+			if loadErr := jsonStore.load(); loadErr != nil {
+				log.Printf("json agent run store fallback load failed, continuing with empty history: %v", loadErr)
+			}
+			return jsonStore
+		}
+		if dir != "" {
+			store.importJSONRuns(dir)
+		}
+		return store
+	}
 	store := newAgentRunStoreWithOptions(dir, limit)
 	if err := store.load(); err != nil {
 		log.Printf("agent run store load failed, continuing with empty history: %v", err)
@@ -114,10 +137,44 @@ func newAgentRunStoreWithOptions(dir string, limit int) *agentRunStore {
 		limit = defaultStoredAgentRuns
 	}
 	return &agentRunStore{
-		runs:  make(map[string]agent.AgentRunResponse),
-		dir:   strings.TrimSpace(dir),
-		limit: limit,
+		runs:    make(map[string]agent.AgentRunResponse),
+		dir:     strings.TrimSpace(dir),
+		backend: backendForDir(dir),
+		limit:   limit,
 	}
+}
+
+func newAgentRunSQLiteStoreWithOptions(dbPath string, limit int) *agentRunStore {
+	if limit <= 0 {
+		limit = defaultStoredAgentRuns
+	}
+	return &agentRunStore{
+		runs:    make(map[string]agent.AgentRunResponse),
+		backend: runStoreBackendSQLite,
+		dbPath:  strings.TrimSpace(dbPath),
+		limit:   limit,
+	}
+}
+
+func normalizeRunStoreBackend(backend string) string {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case "", runStoreBackendSQLite:
+		return runStoreBackendSQLite
+	case runStoreBackendJSON, "file", "files":
+		return runStoreBackendJSON
+	case runStoreBackendMemory:
+		return runStoreBackendMemory
+	default:
+		log.Printf("unknown KYLIN_GUARD_RUN_STORE_BACKEND=%q, using sqlite", backend)
+		return runStoreBackendSQLite
+	}
+}
+
+func backendForDir(dir string) string {
+	if strings.TrimSpace(dir) == "" {
+		return runStoreBackendMemory
+	}
+	return runStoreBackendJSON
 }
 
 func (s *agentRunStore) Save(resp agent.AgentRunResponse) agent.AgentRunResponse {
@@ -206,7 +263,24 @@ func (s *agentRunStore) List(limit int, cursor string) agentRunListResponse {
 	}
 }
 
+func (s *agentRunStore) Close() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return nil
+	}
+	err := s.db.Close()
+	s.db = nil
+	return err
+}
+
 func (s *agentRunStore) load() error {
+	if s.backend == runStoreBackendSQLite {
+		return s.loadSQLite()
+	}
 	if s == nil || s.dir == "" {
 		return nil
 	}
@@ -309,7 +383,11 @@ func (s *agentRunStore) enforceLimitLocked() {
 		oldest := s.order[0]
 		s.order = s.order[1:]
 		delete(s.runs, oldest)
-		if s.dir != "" {
+		if s.backend == runStoreBackendSQLite {
+			if err := s.deleteSQLiteRunLocked(oldest); err != nil {
+				log.Printf("agent run sqlite store failed to remove old run %s: %v", oldest, err)
+			}
+		} else if s.dir != "" {
 			if err := os.Remove(filepath.Join(s.dir, oldest+".json")); err != nil && !os.IsNotExist(err) {
 				log.Printf("agent run store failed to remove old run %s: %v", oldest, err)
 			}
@@ -330,6 +408,9 @@ func (s *agentRunStore) pruneMissingLocked() {
 }
 
 func (s *agentRunStore) persistRunLocked(resp agent.AgentRunResponse) error {
+	if s.backend == runStoreBackendSQLite {
+		return s.persistSQLiteRunLocked(resp)
+	}
 	if s.dir == "" {
 		return nil
 	}
@@ -340,6 +421,9 @@ func (s *agentRunStore) persistRunLocked(resp agent.AgentRunResponse) error {
 }
 
 func (s *agentRunStore) persistIndexLocked() error {
+	if s.backend == runStoreBackendSQLite || s.backend == runStoreBackendMemory {
+		return nil
+	}
 	if s.dir == "" {
 		return nil
 	}

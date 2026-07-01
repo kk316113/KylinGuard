@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -17,6 +19,8 @@ type Config struct {
 	EinoLLMModel       string
 	EinoLLMAPIKey      string
 	EinoAgentMaxSteps  int
+	RunStoreBackend    string
+	RunStoreDBPath     string
 	RunStoreDir        string
 	RunStoreLimit      int
 }
@@ -60,9 +64,18 @@ func Load() Config {
 		EinoLLMModel:       model,
 		EinoLLMAPIKey:      apiKey,
 		EinoAgentMaxSteps:  getenvInt("EINO_AGENT_MAX_STEPS", 8),
+		RunStoreBackend:    strings.ToLower(getenv("KYLIN_GUARD_RUN_STORE_BACKEND", "sqlite")),
+		RunStoreDBPath:     getenv("KYLIN_GUARD_RUN_STORE_DB_PATH", defaultRunStoreDBPath()),
 		RunStoreDir:        getenv("KYLIN_GUARD_RUN_STORE_DIR", "/var/lib/kylinguard/runs"),
 		RunStoreLimit:      getenvInt("KYLIN_GUARD_RUN_STORE_LIMIT", 200),
 	}
+}
+
+func defaultRunStoreDBPath() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join("run", "kylinguard.db")
+	}
+	return "/var/lib/kylinguard/kylinguard.db"
 }
 
 func firstNonEmpty(values ...string) string {

@@ -83,6 +83,44 @@ npm run typecheck - PASS
 npm run build - PASS
 ```
 
+## SQLite Persistent Agent Run Store
+
+Agent run history now supports a SQLite-backed persistent store while keeping
+the existing JSON file store as a compatibility/fallback backend.
+
+Configuration:
+
+```text
+KYLIN_GUARD_RUN_STORE_BACKEND=sqlite
+KYLIN_GUARD_RUN_STORE_DB_PATH=/var/lib/kylinguard/kylinguard.db
+KYLIN_GUARD_RUN_STORE_DIR=/var/lib/kylinguard/runs
+KYLIN_GUARD_RUN_STORE_LIMIT=200
+```
+
+Storage model:
+
+```text
+agent_runs stores the sanitized full run response plus queryable summary columns
+agent_steps stores normalized Agent next_action/tool step records
+tool_traces stores normalized tool evidence records
+audit_results stores audit result, evidence, violations, and risk_graph JSON
+legacy JSON runs can be imported into SQLite on startup
+```
+
+Safety constraints:
+
+```text
+Only sanitized run responses are persisted
+Real API keys are still redacted before database writes
+The database store does not change Agent Loop planning or tool policy behavior
+```
+
+Verification:
+
+```text
+GOMAXPROCS=1 go test -p 1 ./... - PASS
+```
+
 ## Stage 18D Persistent History and Export Enhancements
 
 Implementation is in progress and locally verified.
@@ -90,7 +128,7 @@ Implementation is in progress and locally verified.
 Added production-code capabilities:
 
 ```text
-JSON-file persistent Agent run history
+SQLite-backed persistent Agent run history with JSON-file compatibility fallback
 GET /api/agent/runs?limit=&cursor= history list
 GET /api/agent/runs/{run_id}/report.md Markdown export
 GET /api/agent/runs/{run_id}/risk-graph/artifact JSON export
@@ -103,9 +141,11 @@ More actionable Chinese runtime/error copy
 Defaults:
 
 ```text
+KYLIN_GUARD_RUN_STORE_BACKEND=sqlite
+KYLIN_GUARD_RUN_STORE_DB_PATH=/var/lib/kylinguard/kylinguard.db
 KYLIN_GUARD_RUN_STORE_DIR=/var/lib/kylinguard/runs
 KYLIN_GUARD_RUN_STORE_LIMIT=200
-No SQLite, PDF renderer, login system, or heavy ML dependency introduced.
+No PDF renderer, login system, or heavy ML dependency introduced.
 ```
 
 Local verification:
@@ -516,7 +556,7 @@ Current local implementation:
 POST /api/agent/run uses the Agent Loop adapter as the primary task API.
 POST /api/agent/run-eino remains available for existing acceptance scripts.
 Each run receives run_id / task_id / scene_type / scene_summary / run_status / created_at.
-An in-memory recent run store keeps the latest responses without adding a database.
+SQLite persistent storage keeps sanitized run responses plus normalized steps, tool traces, and audit records.
 GET /api/agent/runs/{run_id} returns the stored run response.
 GET /api/agent/runs/{run_id}/audit-reports returns per-step audit reports when present.
 GET /api/agent/runs/{run_id}/risk-graph returns the real backend risk_graph or an empty graph.
