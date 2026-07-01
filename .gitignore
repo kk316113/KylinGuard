@@ -28,6 +28,7 @@ scripts/ssh_kylin.py
 
 # Logs and generated outputs
 *.log
+run/
 data/reports/*
 !data/reports/.gitkeep
 
